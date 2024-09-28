@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -30,7 +30,10 @@
 #include <cassert>
 
 #include "detection/detection_engine.h"
+#include "flow/stream_flow.h"
+
 #include "app_info_table.h"
+#include "appid_cpu_profile_table.h"
 #include "appid_debug.h"
 #include "appid_discovery.h"
 #include "appid_http_session.h"
@@ -51,6 +54,7 @@ void HttpEventHandler::handle(DataEvent& event, Flow* flow)
     auto direction = event_type == REQUEST_EVENT ? APP_ID_FROM_INITIATOR : APP_ID_FROM_RESPONDER;
     bool is_debug_active = false;
 
+    const AppIdConfig& config = inspector.get_config();
     if ( !asd )
     {
         // The event is received before appid has seen any packet, e.g., data on SYN
@@ -59,11 +63,9 @@ void HttpEventHandler::handle(DataEvent& event, Flow* flow)
         if ( appidDebug->is_enabled() )
         {
             appidDebug->activate(flow, asd, inspector.get_ctxt().config.log_all_sessions);
-            if ( appidDebug->is_active() )
-                LogMessage("AppIdDbg %s New AppId session at HTTP event\n",
-                    appidDebug->get_debug_session());
             is_debug_active = true;
         }
+        appid_log(p, TRACE_DEBUG_LEVEL, "New AppId session at HTTP event\n");
     }
     else if ( asd->get_odp_ctxt_version() != pkt_thread_odp_ctxt->get_version() )
         return; // Skip detection for sessions using old odp context after odp reload
@@ -82,12 +84,17 @@ void HttpEventHandler::handle(DataEvent& event, Flow* flow)
         !http_event->get_is_httpx())
         return;
 
-    if (appidDebug->is_enabled() and !is_debug_active)
-        appidDebug->activate(flow, asd, inspector.get_ctxt().config.log_all_sessions);
+    bool is_appid_cpu_profiling_running = (asd->get_odp_ctxt().is_appid_cpu_profiler_running());
+    Stopwatch<SnortClock> per_appid_event_cpu_timer;
 
-    if (appidDebug->is_active())
-        LogMessage("AppIdDbg %s Processing HTTP metadata from HTTP Inspector for stream %" PRId64 "\n",
-            appidDebug->get_debug_session(), http_event->get_httpx_stream_id());
+    if (is_appid_cpu_profiling_running)
+        per_appid_event_cpu_timer.start();
+    
+    if (appidDebug->is_enabled() and !is_debug_active)
+        appidDebug->activate(flow, asd, config.log_all_sessions);
+
+    appid_log(p, TRACE_DEBUG_LEVEL, "Processing HTTP metadata from HTTP Inspector for stream %" PRId64 "\n",
+        http_event->get_httpx_stream_id());
 
     asd->set_session_flags(APPID_SESSION_HTTP_SESSION);
 
@@ -96,7 +103,8 @@ void HttpEventHandler::handle(DataEvent& event, Flow* flow)
     {
         if (direction == APP_ID_FROM_INITIATOR)
         {
-            if (asd->get_prev_httpx_raw_packet() != asd->session_packet_count)
+            AppId http_app_id = flow->stream_intf->get_appid_from_stream(flow);
+            if (http_app_id != APP_ID_HTTP3 and asd->get_prev_httpx_raw_packet() != asd->session_packet_count)
             {
                 asd->delete_all_http_sessions();
                 asd->set_prev_httpx_raw_packet(asd->session_packet_count);
@@ -201,5 +209,10 @@ void HttpEventHandler::handle(DataEvent& event, Flow* flow)
 
     asd->publish_appid_event(change_bits, *p, http_event->get_is_httpx(),
         asd->get_api().get_hsessions_size() - 1);
-}
 
+    if (is_appid_cpu_profiling_running)
+    {
+        per_appid_event_cpu_timer.stop();
+        asd->stats.processing_time += TO_USECS(per_appid_event_cpu_timer.get());
+    }
+}

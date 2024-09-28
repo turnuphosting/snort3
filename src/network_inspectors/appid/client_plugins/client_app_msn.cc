@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -97,6 +97,7 @@ int MsnClientDetector::validate(AppIdDiscoveryArgs& args)
         }
 
         /* Get the product */
+        // cppcheck-suppress knownConditionTrueFalse
         if ( end - args.data >= (int)sizeof(MSNMSGR) && memcmp(args.data, MSNMSGR, sizeof(MSNMSGR)-
             1) == 0 )
         {
@@ -105,6 +106,7 @@ int MsnClientDetector::validate(AppIdDiscoveryArgs& args)
 
             args.data++; /* skip the space */
         }
+        // cppcheck-suppress knownConditionTrueFalse
         else if ( end - args.data >= (int)sizeof(MACMSGS) &&
             memcmp(args.data, MACMSGS, sizeof(MACMSGS)-1) == 0 )
         {
@@ -113,6 +115,7 @@ int MsnClientDetector::validate(AppIdDiscoveryArgs& args)
 
             args.data++; /* skip the space */
         }
+        // cppcheck-suppress knownConditionTrueFalse
         else if ( end - args.data >= (int)sizeof(MSMSGS) &&
             memcmp(args.data, MSMSGS, sizeof(MSMSGS)-1) == 0 )
         {

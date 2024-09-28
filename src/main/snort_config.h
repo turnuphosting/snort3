@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -30,13 +30,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include "actions/actions.h"
-#include "events/event_queue.h"
-#include "framework/bits.h"
+#include "framework/inspector.h"
+#include "framework/ips_action.h"
 #include "helpers/scratch_allocator.h"
 #include "main/policy.h"
-#include "main/thread.h"
 #include "sfip/sf_cidr.h"
+#include "utils/bits.h"
 
 #define DEFAULT_LOG_DIR "."
 
@@ -222,7 +221,6 @@ public:
     int pcre_ovector_size = 0;
     bool pcre_override = true;
 
-    int asn1_mem = 0;
     uint32_t run_flags = 0;
 
     unsigned offload_limit = 99999;  // disabled
@@ -287,6 +285,7 @@ public:
     uint32_t max_attribute_hosts = 0;
     uint32_t max_attribute_services_per_host = 0;
     uint32_t max_metadata_services = 0;
+    uint32_t segment_count_host = 4;
 
     //------------------------------------------------------
     // packet module stuff
@@ -417,6 +416,7 @@ public:
     DumpConfigType dump_config_type = DUMP_CONFIG_NONE;
 private:
     std::list<ReloadResourceTuner*> reload_tuners;
+    static std::mutex reload_id_mutex;
     unsigned reload_id = 0;
     static std::mutex static_names_mutex;
     static std::unordered_map<std::string, std::string> static_names;
@@ -470,7 +470,10 @@ public:
     void set_utc(bool);
     void set_watchdog(uint16_t);
     void set_watchdog_min_thread_count(uint16_t);
-    SO_PUBLIC bool set_latency_enable();
+    SO_PUBLIC bool set_packet_latency(bool) const;
+    SO_PUBLIC bool get_packet_latency() const;
+    SO_PUBLIC bool set_rule_latency(bool) const;
+    SO_PUBLIC bool get_rule_latency() const;
 
     //------------------------------------------------------
     // accessor methods
@@ -516,7 +519,10 @@ public:
     { return run_flags & RUN_FLAG__READ; }
 
     bool ips_inline_mode() const
-    { return get_ips_policy()->policy_mode == POLICY_MODE__INLINE; }
+    {   
+        // cppcheck-suppress nullPointer
+        return get_ips_policy()->policy_mode == POLICY_MODE__INLINE; 
+    }
 
     bool ips_inline_test_mode() const
     { return get_ips_policy()->policy_mode == POLICY_MODE__INLINE_TEST; }
@@ -540,10 +546,7 @@ public:
     uint16_t get_event_log_id() const
     { return event_log_id; }
 
-    bool process_all_events() const
-    { return event_queue_config->process_all_events; }
-
-    int get_eval_index(Actions::Type type) const
+    int get_eval_index(IpsAction::Type type) const
     { return evalOrder[type]; }
 
     // output stuff
@@ -626,6 +629,9 @@ public:
 
     uint32_t get_max_attribute_hosts() const
     { return max_attribute_hosts; }
+
+    uint32_t get_segment_count_host() const
+    { return segment_count_host; }
 
     uint32_t get_max_services_per_host() const
     { return max_attribute_services_per_host; }
@@ -732,6 +738,7 @@ public:
     { return logging_flags & LOGGING_FLAG__SHOW_PLUGINS; }
 
     SO_PUBLIC static const char* get_static_name(const char* name);
+    SO_PUBLIC static int get_classification_id(const char* name);
 };
 }
 

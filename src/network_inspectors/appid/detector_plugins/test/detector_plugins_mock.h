@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -19,23 +19,28 @@
 
 #ifndef DETECTOR_PLUGINS_MOCK_H
 #define DETECTOR_PLUGINS_MOCK_H
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+#include "log/messages.h"
+#include "utils/stats.h"
+
 #include "appid_detector.h"
 #include "appid_module.h"
 #include "appid_peg_counts.h"
-#include "utils/stats.h"
 
 namespace snort
 {
 // Stubs for messages
-void ErrorMessage(const char*,...) { }
 // LCOV_EXCL_START
-void WarningMessage(const char*,...) { }
-void LogMessage(const char*,...) { }
 void ParseWarning(WarningGroup, const char*, ...) { }
 // LCOV_EXCL_STOP
 
 // Stubs for appid sessions
-FlowData::FlowData(unsigned, Inspector*) { }
+FlowData::FlowData(unsigned, Inspector*) : next(nullptr), prev(nullptr), handler(nullptr), id(0)
+{ }
 FlowData::~FlowData() = default;
 
 // Stubs for packet
@@ -84,7 +89,7 @@ char* snort_strdup(const char* str)
 // LCOV_EXCL_START
 DiscoveryFilter::~DiscoveryFilter(){}
 void show_stats(PegCount*, const PegInfo*, unsigned, const char*) { }
-void show_stats(PegCount*, const PegInfo*, const IndexVec&, const char*, FILE*) { }
+void show_stats(PegCount*, const PegInfo*, const std::vector<unsigned>&, const char*, FILE*) { }
 // LCOV_EXCL_STOP
 
 #ifndef SIP_UNIT_TEST
@@ -94,12 +99,6 @@ public:
     AppIdInspector(AppIdModule&) { }
     ~AppIdInspector() override = default;
     bool configure(snort::SnortConfig*) override;
-// LCOV_EXCL_START
-    void eval(Packet*) override { }
-    void show(const SnortConfig*) const override { }
-    void tinit() override { }
-    void tterm() override { }
-// LCOV_EXCL_STOP
 private:
     AppIdContext* ctxt = nullptr;
 };
@@ -142,7 +141,8 @@ PegCount* AppIdModule::get_counts() const
     return nullptr;
 }
 
-snort::ProfileStats* AppIdModule::get_profile() const
+snort::ProfileStats* AppIdModule::get_profile(
+        unsigned, const char*&, const char*&) const
 {
     return nullptr;
 }
@@ -157,7 +157,11 @@ AppIdConfig stub_config;
 AppIdContext stub_ctxt(stub_config);
 OdpContext stub_odp_ctxt(stub_config, nullptr);
 AppIdSession::AppIdSession(IpProtocol, const SfIp* ip, uint16_t, AppIdInspector& inspector,
-    OdpContext& odpctxt, uint32_t) : snort::FlowData(inspector_id, (snort::Inspector*)&inspector),
+    OdpContext& odpctxt, uint32_t
+#ifndef DISABLE_TENANT_ID
+    ,uint32_t
+#endif
+    ) : snort::FlowData(inspector_id, (snort::Inspector*)&inspector),
         config(stub_config), api(*(new AppIdSessionApi(this, *ip))), odp_ctxt(odpctxt)
 {
     this->set_session_flags(APPID_SESSION_DISCOVER_APP);

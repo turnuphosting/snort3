@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,14 +24,12 @@
 // which is just a single response deferred until end of current packet
 // processing.
 
-#include "actions/actions.h"
 #include "framework/ips_action.h"
 #include "framework/module.h"
 
 namespace snort
 {
 struct ActionApi;
-class IpsAction;
 struct SnortConfig;
 struct Packet;
 }
@@ -54,9 +52,9 @@ public:
             snort::SnortConfig*, IpsPolicy* ips = nullptr );
     static void initialize_policies(snort::SnortConfig*);
 
-    static std::string get_action_string(Actions::Type);
-    static Actions::Type get_action_type(const char*);
-    static Actions::Type get_max_action_types();
+    static std::string get_action_string(snort::IpsAction::Type);
+    static snort::IpsAction::Type get_action_type(const char*);
+    static snort::IpsAction::Type get_max_action_types();
     static std::string get_action_priorities(bool);
 
     static void thread_init(const snort::SnortConfig*);

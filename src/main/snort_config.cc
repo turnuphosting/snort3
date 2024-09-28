@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -36,6 +36,7 @@
 #include "detection/fp_create.h"
 #include "dump_config/json_config_output.h"
 #include "dump_config/text_config_output.h"
+#include "events/event_queue.h"
 #include "file_api/file_service.h"
 #include "filters/detection_filter.h"
 #include "filters/rate_filter.h"
@@ -44,9 +45,11 @@
 #include "flow/ha_module.h"
 #include "framework/policy_selector.h"
 #include "hash/xhash.h"
-#include "helpers/process.h"
+#include "host_tracker/host_cache_segmented.h"
 #include "latency/latency_config.h"
 #include "log/messages.h"
+#include "main/policy.h"
+#include "main/process.h"
 #include "managers/action_manager.h"
 #include "managers/event_manager.h"
 #include "managers/inspector_manager.h"
@@ -232,10 +235,10 @@ SnortConfig::~SnortConfig()
         return;
     }
 
-    for ( auto ct : classifications )
+    for ( const auto & ct : classifications )
         delete ct.second;
 
-    for ( auto rs : references )
+    for ( const auto & rs : references )
         delete rs.second;
 
     for ( auto* s : scratchers )
@@ -264,7 +267,8 @@ SnortConfig::~SnortConfig()
         (fast_pattern_config->get_search_api() !=
         get_conf()->fast_pattern_config->get_search_api())) )
     {
-        MpseManager::stop_search_engine(fast_pattern_config->get_search_api());
+        if ( fast_pattern_config->get_search_api() )
+            MpseManager::stop_search_engine(fast_pattern_config->get_search_api());
     }
     delete fast_pattern_config;
 
@@ -278,7 +282,7 @@ SnortConfig::~SnortConfig()
     delete trace_config;
     delete overlay_trace_config;
     delete ha_config;
-        delete global_dbus;
+    delete global_dbus;
 
     delete profiler;
     delete latency;
@@ -307,7 +311,7 @@ void SnortConfig::setup()
     ParseRules(this);
 
     // Allocate evalOrder before calling the OrderRuleLists
-    evalOrder = new int[Actions::get_max_types()]();
+    evalOrder = new int[IpsAction::get_max_types()]();
 
     OrderRuleLists(this);
 
@@ -335,16 +339,13 @@ void SnortConfig::post_setup()
     for ( unsigned i = 0; i < num_slots; ++i )
         state[i].resize(handler_count);
 
-    for ( auto* s : scratch_handlers )
-    {
-        if ( s and s->setup(this) )
-            scratchers.push_back(s);
-    }
+    std::copy_if(scratch_handlers.begin(), scratch_handlers.end(), std::back_inserter(scratchers),
+        [this](ScratchAllocator* s){ return s and s->setup(this); });
 }
 
 void SnortConfig::update_scratch(ControlConn* ctrlcon)
 {
-    main_broadcast_command(new ACScratchUpdate(this, scratch_handlers, ctrlcon));
+    main_broadcast_command(new ACScratchUpdate(this, scratch_handlers, ctrlcon), ctrlcon);
 }
 
 void SnortConfig::clone(const SnortConfig* const conf)
@@ -384,14 +385,13 @@ void SnortConfig::merge(const SnortConfig* cmd_line_conf)
     daq_config->overlay(cmd_line_conf->daq_config);
 
     // -k (only configures eval, not drop)
-    int cl_chk = cmd_line_conf->policy_map->get_network_policy()->checksum_eval;
+    uint32_t cl_chk = cmd_line_conf->policy_map->get_network_policy()->checksum_eval;
     if (!(cl_chk & CHECKSUM_FLAG__DEF))
     {
         for (unsigned idx = 0; idx < policy_map->network_policy_count(); ++idx)
         {
             NetworkPolicy* nw_policy = policy_map->get_network_policy(idx);
-            if (!(cl_chk & CHECKSUM_FLAG__DEF))
-                nw_policy->checksum_eval = cl_chk;
+            nw_policy->checksum_eval = cl_chk;
         }
     }
 
@@ -489,9 +489,6 @@ bool SnortConfig::verify() const
 
     if (!policy_map->setup_network_policies())
         ReloadError("Network policy user ids must be unique\n");
-
-    if ( sc->asn1_mem != asn1_mem )
-        ReloadError("Changing detection.asn1_mem requires a restart.\n");
 
     else if ( sc->bpf_filter != bpf_filter )
         ReloadError("Changing packets.bfp_filter requires a restart.\n");
@@ -802,13 +799,37 @@ void SnortConfig::set_overlay_trace_config(TraceConfig* tc)
     overlay_trace_config = tc;
 }
 
-bool SnortConfig::set_latency_enable()
+bool SnortConfig::set_packet_latency(bool is_enabled) const
 {
-    if (latency)
+    if ( latency )
     {
-        latency->packet_latency.force_enable = true;
-        return true;
+        latency->packet_latency.force_enable = is_enabled;
+        return is_enabled;
     }
+    return false;
+}
+
+bool SnortConfig::get_packet_latency() const
+{
+    if ( latency->packet_latency.force_enabled() )
+        return true;
+    return false;
+}
+
+bool SnortConfig::set_rule_latency(bool is_enabled) const
+{
+    if ( latency )
+    {
+        latency->rule_latency.force_enable = is_enabled;
+        return is_enabled;
+    }
+    return false;
+}
+
+bool SnortConfig::get_rule_latency() const
+{
+    if ( latency->rule_latency.force_enabled() )
+        return true;
     return false;
 }
 
@@ -854,7 +875,8 @@ void SnortConfig::set_tunnel_verdicts(const char* args)
 
         else
         {
-            ParseError("unknown tunnel bypass protocol");
+            ParseError("unknown tunnel bypass protocol %s", tok);
+            snort_free(tmp);
             return;
         }
 
@@ -965,24 +987,24 @@ bool SnortConfig::get_default_rule_state() const
 
 ConfigOutput* SnortConfig::create_config_output() const
 {
-    ConfigOutput* output = nullptr;
+    ConfigOutput* output_cfg = nullptr;
 
     switch (dump_config_type)
     {
     case DUMP_CONFIG_JSON_ALL:
-        output = new JsonAllConfigOutput();
+        output_cfg = new JsonAllConfigOutput();
         break;
     case DUMP_CONFIG_JSON_TOP:
-        output = new JsonTopConfigOutput();
+        output_cfg = new JsonTopConfigOutput();
         break;
     case DUMP_CONFIG_TEXT:
-        output = new TextConfigOutput();
+        output_cfg = new TextConfigOutput();
         break;
     default:
         break;
     }
 
-    return output;
+    return output_cfg;
 }
 
 bool SnortConfig::tunnel_bypass_enabled(uint16_t proto) const
@@ -1014,8 +1036,13 @@ const SnortConfig* SnortConfig::get_conf()
 unsigned SnortConfig::get_thread_reload_id()
 { return thread_snort_config.reload_id; }
 
+std::mutex SnortConfig::reload_id_mutex;
+
 void SnortConfig::update_thread_reload_id()
-{ thread_snort_config.reload_id = thread_snort_config.snort_conf->reload_id; }
+{
+    std::lock_guard<std::mutex> reload_id_lock(reload_id_mutex);
+    thread_snort_config.reload_id = thread_snort_config.snort_conf->reload_id;
+}
 
 void SnortConfig::set_conf(const SnortConfig* sc)
 {
@@ -1046,6 +1073,7 @@ void SnortConfig::clear_reload_resource_tuner_list()
 
 void SnortConfig::update_reload_id()
 {
+    std::lock_guard<std::mutex> reload_id_lock(reload_id_mutex);
     static unsigned reload_id_tracker = 0;
     reload_id = ++reload_id_tracker;
 }
@@ -1064,6 +1092,7 @@ void SnortConfig::cleanup_fatal_error()
         EventManager::release_plugins();
         IpsManager::release_plugins();
         InspectorManager::release_plugins();
+        host_cache.term();
     }
 #endif
 }
@@ -1080,3 +1109,15 @@ const char* SnortConfig::get_static_name(const char* name)
     static_names.emplace(name, name);
     return static_names[name].c_str();
 }
+
+int SnortConfig::get_classification_id(const char* name)
+{
+    auto& cls = get_conf()->classifications;
+    auto itr = cls.find(name);
+
+    if (itr != cls.end())
+        return itr->second->id;
+
+    return 0;
+}
+

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -39,6 +39,7 @@
 #include "hash/ghash.h"
 #include "hash/hash_defs.h"
 #include "hash/xhash.h"
+#include "log/log_stats.h"
 #include "log/messages.h"
 #include "main/snort.h"
 #include "main/snort_config.h"
@@ -118,12 +119,15 @@ static int finalize_detection_option_tree(SnortConfig* sc, detection_option_tree
         if ( void* dup_node = add_detection_option_tree(sc, node) )
         {
             // FIXIT-L delete dup_node and keep original?
-            free_detection_option_tree(node);
+            delete node;
             root->children[i] = (detection_option_tree_node_t*)dup_node;
         }
-        fixup_tree(root->children[i], true, 0);
+        else
+        {
+            fixup_tree(root->children[i], true, 0);
+        }
 
-        debug_logf(detection_trace, TRACE_OPTION_TREE, nullptr, "%3d %3d  %p %4s\n",
+        trace_logf(detection_trace, TRACE_OPTION_TREE, nullptr, "%3d %3d  %p %4s\n",
             0, root->num_children, (void*)root, "root");
 
         print_option_tree(root->children[i], 0);
@@ -142,8 +146,8 @@ static bool new_sig(int num_children, detection_option_tree_node_t** nodes, OptT
             continue;
 
         OptTreeNode* cotn = (OptTreeNode*)child->option_data;
-        SigInfo& csi = cotn->sigInfo;
-        SigInfo& osi = otn->sigInfo;
+        const SigInfo& csi = cotn->sigInfo;
+        const SigInfo& osi = otn->sigInfo;
 
         if ( csi.gid == osi.gid and csi.sid == osi.sid and csi.rev == osi.rev )
             return false;
@@ -157,7 +161,7 @@ static int otn_create_tree(OptTreeNode* otn, void** existing_tree, Mpse::MpseTyp
         return -1;
 
     if (!*existing_tree)
-        *existing_tree = new_root(otn);
+        *existing_tree = new detection_option_tree_root_t(otn);
 
     detection_option_tree_root_t* const root = (detection_option_tree_root_t*)*existing_tree;
     detection_option_tree_bud_t* bud = root;
@@ -208,7 +212,7 @@ static int otn_create_tree(OptTreeNode* otn, void** existing_tree, Mpse::MpseTyp
         if (!child)
         {
             /* No children at this node */
-            child = new_node(opt_fp->type, option_data);
+            child = new detection_option_tree_node_t(opt_fp->type, option_data);
             child->evaluate = opt_fp->OptTestFunc;
 
             bud->children[i] = child;
@@ -227,7 +231,7 @@ static int otn_create_tree(OptTreeNode* otn, void** existing_tree, Mpse::MpseTyp
         {
             bool found_child_match = child->option_data == option_data;
 
-            for (i = 1; !found_child_match && i < bud->num_children; i++)
+            for (i = 1; !found_child_match and i < bud->num_children; i++)
             {
                 child = bud->children[i];
                 if (child->option_data == option_data)
@@ -238,11 +242,11 @@ static int otn_create_tree(OptTreeNode* otn, void** existing_tree, Mpse::MpseTyp
             {
                 /* No matching child node, create a new and add to array */
                 detection_option_tree_node_t** tmp_children;
-                child = new_node(opt_fp->type, option_data);
+                child = new detection_option_tree_node_t(opt_fp->type, option_data);
                 child->evaluate = opt_fp->OptTestFunc;
                 child->num_children++;
                 child->children = (detection_option_tree_node_t**)
-                    snort_calloc(child->num_children, sizeof(child->children));
+                    snort_calloc(child->num_children, sizeof(detection_option_tree_node_t*));
                 child->is_relative = opt_fp->isRelative;
 
                 bud->num_children++;
@@ -274,7 +278,7 @@ static int otn_create_tree(OptTreeNode* otn, void** existing_tree, Mpse::MpseTyp
         return 0;
 
     /* Append a leaf node that has option data of the SigInfo/otn pointer */
-    child = new_node(RULE_OPTION_TYPE_LEAF_NODE, otn);
+    child = new detection_option_tree_node_t(RULE_OPTION_TYPE_LEAF_NODE, otn);
 
     if (bud->children[0])
     {
@@ -315,7 +319,7 @@ static int otn_create_tree(OptTreeNode* otn, void** existing_tree, Mpse::MpseTyp
         }
 
         void* option_data = fbs->ips_opt;
-        child = new_node(fbs->type, option_data);
+        child = new detection_option_tree_node_t(fbs->type, option_data);
         child->evaluate = fbs->OptTestFunc;
         child->is_relative = fbs->isRelative;
         bud->children[i++] = child;
@@ -376,7 +380,7 @@ static int pmx_create_tree(SnortConfig* sc, void* id, void** existing_tree, Mpse
     OptTreeNode* otn = (OptTreeNode*)pmx->rule_node.rnRuleData;
 
     if (!*existing_tree)
-        *existing_tree = new_root(otn);
+        *existing_tree = new detection_option_tree_root_t(otn);
 
     return otn_create_tree(otn, existing_tree, mpse_type);
 }
@@ -406,6 +410,14 @@ static int fpFinishRuleGroupRule(
     {
         pattern = pmd->pattern_buf;
         pattern_length = pmd->pattern_size;
+
+        // alt buffer's pmd isn't guaranteed to be filled fully,
+        // so on first pass, setting fp_length to correct value
+        if (pmd->fp_length == 0)
+        {
+            pmd->fp_length = pmd->pattern_size;
+            pmd->fp_offset = 0;
+        }
     }
 
     if (pmd->pattern_size > otn->longestPatternLen)
@@ -432,12 +444,12 @@ static int fpFinishRuleGroup(SnortConfig* sc, RuleGroup* pg)
     {
         for ( auto& it : pg->pm_list[sect] )
         {
-            if ( it->group.normal_mpse && !it->group.normal_is_dup)
+            if ( it->group.normal_mpse and !it->group.normal_is_dup)
             {
                 queue_mpse(it->group.normal_mpse);
                 has_rules = true;
             }
-            if ( it->group.offload_mpse && !it->group.offload_is_dup)
+            if ( it->group.offload_mpse and !it->group.offload_is_dup)
             {
                 queue_mpse(it->group.offload_mpse);
                 has_rules = true;
@@ -472,7 +484,7 @@ static int fpFinishRuleGroup(SnortConfig* sc, RuleGroup* pg)
 
 static bool srvc_supports_section(const char* srvc)
 {
-    return (srvc && ( !strcmp("http", srvc) || !strcmp("http2",srvc) || !strcmp("http3",srvc)));
+    return (srvc and ( !strcmp("http", srvc) or !strcmp("http2",srvc) or !strcmp("http3",srvc)));
 }
 
 static int fpAddRuleGroupRule(
@@ -568,7 +580,7 @@ static int fpAddRuleGroupRule(
                 {
                     PatternMatcher* pm = pg->get_pattern_matcher(pmt, s, (PduSection)sect);
                     MpseGroup* mpg = &pm->group;
-                    const bool update_mpse = srvc || is_first_sect;
+                    const bool update_mpse = srvc or is_first_sect;
 
                     if ( !mpg->normal_mpse )
                     {
@@ -598,7 +610,7 @@ static int fpAddRuleGroupRule(
                         }
                     }
 
-                    if ( add_to_offload && !mpg->offload_mpse )
+                    if ( add_to_offload and !mpg->offload_mpse )
                     {
                         // Keep the created mpse alongside the same pm type as the main pmd
                         if (!update_mpse)
@@ -627,7 +639,7 @@ static int fpAddRuleGroupRule(
                         }
                     }
 
-                    if ( mpg->normal_mpse && update_mpse )
+                    if ( mpg->normal_mpse and update_mpse )
                     {
                         add_rule = true;
                         if ( main_pmd->is_negated() )
@@ -647,7 +659,7 @@ static int fpAddRuleGroupRule(
 
                             main_pmd->sticky_buf = pm->name;
 
-                            if ( fp->get_debug_print_fast_patterns() and !otn->soid )
+                            if ( !otn->soid )
                                 print_fp_info(s_group, otn, main_pmd, sect);
 
                             // Add Alternative patterns
@@ -656,13 +668,13 @@ static int fpAddRuleGroupRule(
                                 fpFinishRuleGroupRule(mpg->normal_mpse, otn, alt_pmd, fp, false);
                                 alt_pmd->sticky_buf = pm->name;
 
-                                if ( fp->get_debug_print_fast_patterns() and !otn->soid )
+                                if ( !otn->soid )
                                     print_fp_info(s_group, otn, alt_pmd, sect);
                             }
                         }
                     }
 
-                    if ( ol_pmd and mpg->offload_mpse && update_mpse )
+                    if ( ol_pmd and mpg->offload_mpse and update_mpse )
                     {
                         add_rule = true;
                         if ( ol_pmd->is_negated() )
@@ -682,7 +694,7 @@ static int fpAddRuleGroupRule(
 
                             main_pmd->sticky_buf = pm->name;
 
-                            if ( fp->get_debug_print_fast_patterns() and !otn->soid )
+                            if ( !otn->soid )
                                 print_fp_info(s_group, otn, main_pmd, sect);
 
                             // Add Alternative patterns
@@ -691,7 +703,7 @@ static int fpAddRuleGroupRule(
                                 fpFinishRuleGroupRule(mpg->offload_mpse, otn, alt_pmd, fp, false);
                                 alt_pmd->sticky_buf = pm->name;
 
-                                if ( fp->get_debug_print_fast_patterns() and !otn->soid )
+                                if ( !otn->soid )
                                     print_fp_info(s_group, otn, alt_pmd, sect);
                             }
                         }
@@ -939,10 +951,12 @@ static int fpGetFinalPattern(
     {
         ret_pattern = pattern;
         ret_bytes = bytes;
+        pmd->fp_length = pmd->pattern_size;
+
         return 0;
     }
 
-    if ( pmd->is_fast_pattern() && (pmd->fp_offset || pmd->fp_length) )
+    if ( pmd->is_fast_pattern() and (pmd->fp_offset or pmd->fp_length) )
     {
         /* (offset + length) potentially being larger than the pattern itself
          * is taken care of during parsing */
@@ -954,7 +968,7 @@ static int fpGetFinalPattern(
     ret_pattern = pattern;
     ret_bytes = fp->set_max(bytes);
 
-    if ( ret_bytes < pmd->pattern_size )
+    if ( ret_bytes < pmd->pattern_size or !pmd->fp_length )
         pmd->fp_length = ret_bytes;
 
     return 0;
@@ -1327,7 +1341,7 @@ static void fpPrintServiceRuleMapTable(GHash* p, const char* dir)
 {
     GHashNode* n;
 
-    if ( !p || !p->get_count() )
+    if ( !p or !p->get_count() )
         return;
 
     std::string label = "service rule counts - ";
@@ -1357,9 +1371,9 @@ static void fpPrintServiceRuleMaps(SnortConfig* sc)
     fpPrintServiceRuleMapTable(sc->srmmTable->to_cli, "to client");
 }
 
-static void fp_print_service_rules(SnortConfig* sc, GHash* cli, GHash* srv)
+static void fp_print_service_rules(SnortConfig* sc, GHash* to_srv, GHash* to_cli)
 {
-    if ( !cli->get_count() and !srv->get_count() )
+    if ( !to_srv->get_count() and !to_cli->get_count() )
         return;
 
     LogLabel("service rule counts          to-srv  to-cli");
@@ -1369,8 +1383,8 @@ static void fp_print_service_rules(SnortConfig* sc, GHash* cli, GHash* srv)
 
     while ( const char* svc = sc->proto_ref->get_name_sorted(idx++) )
     {
-        SF_LIST* clist = (SF_LIST*)cli->find(svc);
-        SF_LIST* slist = (SF_LIST*)srv->find(svc);
+        SF_LIST* clist = (SF_LIST*)to_srv->find(svc);
+        SF_LIST* slist = (SF_LIST*)to_cli->find(svc);
 
         if ( !clist and !slist )
             continue;
@@ -1664,13 +1678,17 @@ static void print_nfp_info(const char* group, OptTreeNode* otn)
 void get_pattern_info(const PatternMatchData* pmd, string& hex, string& txt, string& opts)
 {
     char buf[8];
-
-    for ( unsigned i = 0; i < pmd->pattern_size; ++i )
+    hex = "| ";
+    txt = "'";
+    for ( unsigned i = pmd->fp_offset; i < pmd->fp_offset + pmd->fp_length; ++i )
     {
         snprintf(buf, sizeof(buf), "%2.02X ", (uint8_t)pmd->pattern_buf[i]);
         hex += buf;
         txt += isprint(pmd->pattern_buf[i]) ? pmd->pattern_buf[i] : '.';
     }
+    hex += "|";
+    txt += "'";
+
     opts = "(";
     if ( pmd->is_fast_pattern() )
         opts += " user";
@@ -1679,13 +1697,14 @@ void get_pattern_info(const PatternMatchData* pmd, string& hex, string& txt, str
     opts += " )";
 }
 
-static void print_fp_info(const char* group, const OptTreeNode* otn, const PatternMatchData* pmd, int sect)
+static void print_fp_info(
+    const char* group, const OptTreeNode* otn, const PatternMatchData* pmd, int sect)
 {
     std::string hex, txt, opts;
 
     get_pattern_info(pmd, hex, txt, opts);
-    LogMessage("FP %s %u:%u:%u %s[%d] = '%s' |%s| %s, section %s\n",
-        group, otn->sigInfo.gid, otn->sigInfo.sid, otn->sigInfo.rev,
-        pmd->sticky_buf, pmd->pattern_size, txt.c_str(), hex.c_str(), opts.c_str(), section_to_str[sect]);
-}
 
+    trace_logf(detection_trace, TRACE_FP_INFO, nullptr, "%s group, %u:%u:%u %s[%u] = %s %s %s, section %s\n",
+        group, otn->sigInfo.gid, otn->sigInfo.sid, otn->sigInfo.rev, pmd->sticky_buf, pmd->fp_length,
+        txt.c_str(), hex.c_str(), opts.c_str(), section_to_str[sect]);
+}

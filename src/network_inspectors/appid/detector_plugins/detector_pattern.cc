@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -117,7 +117,7 @@ static void read_patterns(PortPatternNode* portPatternList, PatternService** ser
         pattern->next = ps->pattern;
         ps->pattern = pattern;
 
-        AppIdContext& ctxt = inspector.get_ctxt();
+        const AppIdContext& ctxt = inspector.get_ctxt();
 
         ctxt.get_odp_ctxt().get_app_info_mgr().set_app_info_active(ps->id);
     }

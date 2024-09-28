@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -107,6 +107,7 @@ bool Dnp3ObjOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus Dnp3ObjOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(dnp3_obj_perf_stats);
 
     size_t header_size;
@@ -176,8 +177,8 @@ public:
     { return DETECT; }
 
 public:
-    uint8_t group;
-    uint8_t var;
+    uint8_t group = 0;
+    uint8_t var = 0;
 };
 
 bool Dnp3ObjModule::begin(const char*, int, SnortConfig*)
@@ -217,7 +218,7 @@ static void dnp3_obj_mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* dnp3_obj_ctor(Module* p, OptTreeNode*)
+static IpsOption* dnp3_obj_ctor(Module* p, IpsInfo&)
 {
     Dnp3ObjModule* m = (Dnp3ObjModule*)p;
     return new Dnp3ObjOption(m->group, m->var);

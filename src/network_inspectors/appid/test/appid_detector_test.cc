@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -49,6 +49,8 @@ void AppIdHttpSession::set_http_change_bits(AppidChangeBits&, HttpFieldIds) {}
 
 void AppIdModule::reset_stats() {}
 
+void appid_log(const snort::Packet*, unsigned char, char const*, ...) { }
+
 class TestDetector : public AppIdDetector
 {
 public:
@@ -69,7 +71,11 @@ TEST_GROUP(appid_detector_tests)
     {
         SfIp ip;
         mock_session = new AppIdSession(IpProtocol::TCP, &ip, 1492, dummy_appid_inspector,
-            dummy_appid_inspector.get_ctxt().get_odp_ctxt());
+            dummy_appid_inspector.get_ctxt().get_odp_ctxt(), 0
+#ifndef DISABLE_TENANT_ID
+            ,0
+#endif
+            );
         flow = new Flow;
         flow->set_flow_data(mock_session);
     }

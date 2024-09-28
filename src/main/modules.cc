@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,11 +26,14 @@
 
 #include <sys/resource.h>
 
+#include "actions/actions_module.h"
 #include "codecs/codec_module.h"
 #include "detection/detection_module.h"
 #include "detection/fp_config.h"
 #include "detection/rules.h"
 #include "detection/tag.h"
+#include "events/event_queue.h"
+#include "file_api/file_policy.h"
 #include "file_api/file_service.h"
 #include "filters/detection_filter.h"
 #include "filters/rate_filter.h"
@@ -38,7 +41,6 @@
 #include "filters/sfthd.h"
 #include "filters/sfthreshold.h"
 #include "flow/ha_module.h"
-#include "framework/file_policy.h"
 #include "framework/module.h"
 #include "host_tracker/host_tracker_module.h"
 #include "host_tracker/host_cache_module.h"
@@ -49,12 +51,14 @@
 #include "managers/plugin_manager.h"
 #include "memory/memory_module.h"
 #include "packet_io/active.h"
+#include "packet_io/active_counts.h"
+#include "packet_io/packet_tracer_module.h"
 #include "packet_io/sfdaq_module.h"
-#include "packet_tracer/packet_tracer_module.h"
 #include "parser/config_file.h"
 #include "parser/parse_conf.h"
 #include "parser/parse_ip.h"
 #include "parser/parser.h"
+#include "parser/var_dependency.h"
 #include "parser/vars.h"
 #include "payload_injector/payload_injector_module.h"
 #include "profiler/profiler_module.h"
@@ -194,9 +198,6 @@ static const Parameter search_engine_params[] =
     { "rule_db_dir", Parameter::PT_STRING, nullptr, nullptr,
       "deserialize rule databases from given directory" },
 
-    { "show_fast_patterns", Parameter::PT_BOOL, nullptr, "false",
-      "print fast pattern info for each rule" },
-
     { "split_any_any", Parameter::PT_BOOL, nullptr, "true",
       "evaluate any-any rules separately to save memory" },
 
@@ -223,7 +224,6 @@ const PegInfo mpse_pegs[] =
     { CountType::SUM, "total_unique", "total unique fast pattern hits" },
     { CountType::SUM, "non_qualified_events", "total non-qualified events" },
     { CountType::SUM, "qualified_events", "total qualified events" },
-    { CountType::SUM, "searched_bytes", "total bytes searched" },
     { CountType::END, nullptr, nullptr }
 };
 
@@ -307,8 +307,6 @@ bool SearchEngineModule::set(const char*, Value& v, SnortConfig* sc)
         if ( !fp->set_offload_search_method(v.get_string()) )
             return false;
     }
-    else if ( v.is("show_fast_patterns") )
-        fp->set_debug_print_fast_patterns(v.get_bool());
 
     else if ( v.is("split_any_any") )
         fp->set_split_any_any(v.get_bool());
@@ -358,7 +356,7 @@ public:
 private:
     string name;
     string text;
-    unsigned priority;
+    unsigned priority = 0;
 };
 
 bool ClassificationsModule::begin(const char*, int, SnortConfig*)
@@ -697,7 +695,7 @@ public:
     { return active_pegs; }
 
     PegCount* get_counts() const override
-    { return (PegCount*) &active_counts; }
+    { return (PegCount*) get_active_counts(); }
 
     Usage get_usage() const override
     { return GLOBAL; }
@@ -799,6 +797,9 @@ static const Parameter attribute_table_params[] =
     { "max_hosts", Parameter::PT_INT, "32:max53", "1024",
       "maximum number of hosts in attribute table" },
 
+    { "segments", Parameter::PT_INT, "1:32", "4",
+      "number of segments of hosts attribute table. It must be power of 2." },
+
     { "max_services_per_host", Parameter::PT_INT, "1:65535", "8",
       "maximum number of services per host entry in attribute table" },
 
@@ -830,6 +831,23 @@ bool AttributeTableModule::set(const char*, Value& v, SnortConfig* sc)
     else if ( v.is("max_hosts") )
         sc->max_attribute_hosts = v.get_uint32();
 
+    else if ( v.is("segments") )
+    {
+        auto segments = v.get_uint32();
+
+        if(segments > 32)
+            segments = 32;
+
+        if (segments == 0 || (segments & (segments - 1)) != 0)
+        {
+            uint8_t highestBitSet = 0;
+            while (segments >>= 1)
+                highestBitSet++;
+            segments = 1 << highestBitSet;
+            LogMessage("== WARNING: host attribute table segments count is not a power of 2. setting to %d\n", segments);
+        }
+        sc->segment_count_host = segments;
+    }
     else if ( v.is("max_services_per_host") )
         sc->max_attribute_services_per_host = v.get_uint16();
 
@@ -871,7 +889,6 @@ class InspectionModule : public Module
 public:
     InspectionModule() : Module("inspection", inspection_help, inspection_params) { }
     bool set(const char*, Value&, SnortConfig*) override;
-    bool end(const char*, int, SnortConfig*) override;
 
     Usage get_usage() const override
     { return INSPECT; }
@@ -913,15 +930,6 @@ bool InspectionModule::set(const char*, Value& v, SnortConfig* sc)
     else if ( v.is("max_aux_ip") )
         sc->max_aux_ip = v.get_int16();
 
-    return true;
-}
-
-bool InspectionModule::end(const char*, int, SnortConfig*)
-{
-    InspectionPolicy* p = get_inspection_policy();
-    NetworkPolicy* np = get_network_parse_policy();
-    assert(np);
-    np->set_user_inspection(p);
     return true;
 }
 
@@ -1118,6 +1126,11 @@ bool IpsModule::end(const char* fqn, int idx, SnortConfig* sc)
         p->includer = ModuleManager::get_includer("ips");
         sc->policy_map->set_user_ips(p);
     }
+    else if (!idx and !strcmp(fqn, "ips.variables.nets"))
+        resolve_nets();
+    else if (!idx and !strcmp(fqn, "ips.variables.ports"))
+        resolve_ports();
+
     return true;
 }
 
@@ -1192,8 +1205,8 @@ public:
     { return GLOBAL; }
 
 private:
-    int thread;
-    CpuSet* cpuset;
+    int thread = 0;
+    CpuSet* cpuset = nullptr;
     string type;
     string name;
 };
@@ -1359,7 +1372,7 @@ public:
     { return CONTEXT; }
 
 private:
-    THDX_STRUCT thdx;
+    THDX_STRUCT thdx = {};
 };
 
 bool SuppressModule::set(const char*, Value& v, SnortConfig*)
@@ -1478,7 +1491,7 @@ public:
     { return CONTEXT; }
 
 private:
-    THDX_STRUCT thdx;
+    THDX_STRUCT thdx = {};
 };
 
 bool EventFilterModule::set(const char*, Value& v, SnortConfig*)
@@ -1577,6 +1590,7 @@ class RateFilterModule : public Module
 public:
     RateFilterModule() : Module("rate_filter", rate_filter_help, rate_filter_params, true)
     { thdx.applyTo = nullptr; }
+
     ~RateFilterModule() override;
     bool set(const char*, Value&, SnortConfig*) override;
     bool begin(const char*, int, SnortConfig*) override;
@@ -1601,6 +1615,7 @@ private:
 
 RateFilterModule::~RateFilterModule()
 {
+    RateFilter_Cleanup();
     if ( thdx.applyTo )
         sfvar_free(thdx.applyTo);
 }
@@ -1630,9 +1645,9 @@ bool RateFilterModule::set(const char*, Value& v, SnortConfig*)
 
     else if ( v.is("new_action") )
     {
-        thdx.newAction = Actions::get_type(v.get_string());
+        thdx.newAction = IpsAction::get_type(v.get_string());
 
-        if ( !Actions::is_valid_action(thdx.newAction) )
+        if ( !IpsAction::is_valid_action(thdx.newAction) )
             ParseError("unknown new_action type rate_filter configuration %s",
                     v.get_string());
     }
@@ -1640,8 +1655,9 @@ bool RateFilterModule::set(const char*, Value& v, SnortConfig*)
     return true;
 }
 
-bool RateFilterModule::begin(const char*, int, SnortConfig*)
+bool RateFilterModule::begin(const char*, int, SnortConfig* sc)
 {
+    SFRF_Alloc(sc->rate_filter_config->memcap);
     memset(&thdx, 0, sizeof(thdx));
     return true;
 }
@@ -1697,7 +1713,7 @@ class HostsModule : public Module
 {
 public:
     HostsModule() : Module("hosts", hosts_help, hosts_params, true)
-    { host = nullptr; }
+    { }
 
     ~HostsModule() override
     { assert(!host); }
@@ -1717,7 +1733,7 @@ public:
 
 private:
     HostServiceDescriptor service;
-    HostAttributesEntry host;
+    HostAttributesEntry host = nullptr;
 };
 
 bool HostsModule::set(const char*, Value& v, SnortConfig* sc)
@@ -1949,6 +1965,7 @@ void module_init()
     ModuleManager::add_module(new SearchEngineModule);
     ModuleManager::add_module(new SFDAQModule);
     ModuleManager::add_module(new PayloadInjectorModule);
+    ModuleManager::add_module(new ActionsModule);
 
     // these could but probably shouldn't be policy specific
     // or should be broken into policy and non-policy parts

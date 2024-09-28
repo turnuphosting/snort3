@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -126,6 +126,7 @@ public:
     uint16_t get_service_port() const;
     const AppIdDnsSession* get_dns_session() const;
     const AppIdHttpSession* get_http_session(uint32_t stream_index = 0) const;
+    const AppIdHttpSession* get_matching_http_session(int64_t stream_id) const;
     const char* get_tls_host() const;
     bool is_http_inspection_done() const;
     const char* get_netbios_name() const;
@@ -156,6 +157,8 @@ public:
 
     void clear_user_logged_in() { flags.user_logged_in = false; }
 
+    const char* get_tls_sni() const { return tls_sni; }
+
 protected:
     AppIdSessionApi(const AppIdSession* asd, const SfIp& ip);
 
@@ -170,11 +173,12 @@ private:
         bool finished : 1;
         bool user_logged_in : 1;
     } flags = {};
-    std::vector<AppIdHttpSession*> hsessions;
+    std::vector<std::unique_ptr<AppIdHttpSession>> hsessions;
     AppIdDnsSession* dsession = nullptr;
     snort::SfIp initiator_ip;
     ServiceAppDescriptor service;
     char* tls_host = nullptr;
+    char* tls_sni = nullptr;
     char* netbios_name = nullptr;
     char* netbios_domain = nullptr;
     std::string session_id;
@@ -185,8 +189,6 @@ private:
     ClientAppDescriptor client;
     PayloadAppDescriptor payload;
 
-    static THREAD_LOCAL uint32_t appid_flow_data_id;
-
     void set_ss_application_ids(AppId service, AppId client, AppId payload, AppId misc,
         AppId referred, AppidChangeBits& change_bits, Flow& flow);
     void set_ss_application_ids(AppId client, AppId payload, AppidChangeBits& change_bits, Flow& flow);
@@ -194,6 +196,7 @@ private:
     void set_application_ids_service(AppId service_id, AppidChangeBits& change_bits, Flow& flow);
     void set_netbios_name(AppidChangeBits& change_bits, const char* name);
     void set_netbios_domain(AppidChangeBits& change_bits, const char* domain);
+    bool prefer_eve_client_over_appid_http_client() const;
 
     AppIdHttpSession* get_hsession(uint32_t stream_index = 0) const;
 
@@ -203,13 +206,12 @@ private:
         snort_free(tls_host);
         snort_free(netbios_name);
         snort_free(netbios_domain);
+        snort_free(tls_sni);
         delete dsession;
     }
 
     void delete_all_http_sessions()
     {
-        for (auto hsession : hsessions)
-            delete hsession;
         hsessions.clear();
     }
 
@@ -220,6 +222,16 @@ private:
             if (tls_host)
                 snort_free(tls_host);
             tls_host = snort_strdup(host);
+        }
+    }
+
+    void set_tls_sni(const char* sni)
+    {
+        if (sni and sni != tls_sni)
+        {
+            if (tls_sni)
+                snort_free(tls_sni);
+            tls_sni = snort_strdup(sni);
         }
     }
 

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,6 +28,7 @@
 #include "detection/detection_options.h"
 #include "detection/treenodes.h"
 #include "main/snort_config.h"
+#include "main/thread.h"
 #include "log/messages.h"
 #include "protocols/packet.h"
 #include "utils/stats.h"
@@ -243,6 +244,8 @@ inline bool Impl<Clock, RuleTree>::pop()
 {
     assert(!timers.empty());
     const auto& timer = timers.back();
+    if ( timer.packet->flow )
+        timer.packet->flow->flowstats.total_rule_latency += clock_usecs(TO_USECS(timer.elapsed()));
 
     bool timed_out = false;
 
@@ -254,12 +257,12 @@ inline bool Impl<Clock, RuleTree>::pop()
 #endif
         if ( timed_out )
         {
-            auto suspended = RuleTree::timeout_and_suspend(timer.root, config->suspend_threshold,
+            auto s = RuleTree::timeout_and_suspend(timer.root, config->suspend_threshold,
                 Clock::now(), config->suspend);
 
             Event e
             {
-                suspended ? Event::EVENT_SUSPENDED : Event::EVENT_TIMED_OUT,
+                s ? Event::EVENT_SUSPENDED : Event::EVENT_TIMED_OUT,
                 timer.elapsed(), timer.root, timer.packet
             };
 
@@ -337,7 +340,7 @@ static inline Impl<>& get_impl()
 
 void RuleLatency::push(const detection_option_tree_root_t& root, Packet* p)
 {
-    if ( rule_latency::config->enabled() )
+    if ( rule_latency::config->force_enabled() )
     {
         if ( rule_latency::get_impl().push(root, p) )
             ++latency_stats.rule_tree_enables;
@@ -348,7 +351,7 @@ void RuleLatency::push(const detection_option_tree_root_t& root, Packet* p)
 
 void RuleLatency::pop()
 {
-    if ( rule_latency::config->enabled() )
+    if ( rule_latency::config->force_enabled() )
     {
         if ( rule_latency::get_impl().pop() )
             ++latency_stats.rule_eval_timeouts;
@@ -477,7 +480,7 @@ TEST_CASE ( "rule latency impl", "[latency]" )
 
             SECTION( "push rule" )
             {
-                CHECK_FALSE( impl.push(root, &pkt) );
+                CHECK( false == impl.push(root, &pkt) );
                 CHECK( event_handler.count == 0 );
                 CHECK( RuleInterfaceSpy::reenable_called );
             }
@@ -486,7 +489,7 @@ TEST_CASE ( "rule latency impl", "[latency]" )
             {
                 RuleInterfaceSpy::reenable_result = true;
 
-                CHECK( impl.push(root, &pkt) );
+                CHECK( true == impl.push(root, &pkt) );
                 CHECK( event_handler.count == 1 );
                 CHECK( RuleInterfaceSpy::reenable_called );
             }
@@ -498,7 +501,7 @@ TEST_CASE ( "rule latency impl", "[latency]" )
 
             SECTION( "push rule" )
             {
-                CHECK_FALSE( impl.push(root, &pkt) );
+                CHECK( false == impl.push(root, &pkt) );
                 CHECK( event_handler.count == 0 );
                 CHECK_FALSE( RuleInterfaceSpy::reenable_called );
             }
@@ -515,7 +518,7 @@ TEST_CASE ( "rule latency impl", "[latency]" )
         {
             config.config.suspend = false;
 
-            CHECK_FALSE( impl.suspended() );
+            CHECK( false == impl.suspended() );
             CHECK_FALSE( RuleInterfaceSpy::is_suspended_called );
         }
 
@@ -523,7 +526,7 @@ TEST_CASE ( "rule latency impl", "[latency]" )
         {
             config.config.suspend = true;
 
-            CHECK( impl.suspended() );
+            CHECK( true == impl.suspended() );
             CHECK( RuleInterfaceSpy::is_suspended_called );
         }
     }
@@ -542,7 +545,7 @@ TEST_CASE ( "rule latency impl", "[latency]" )
             {
                 RuleInterfaceSpy::is_suspended_result = true;
 
-                CHECK_FALSE( impl.pop() );
+                CHECK( false == impl.pop() );
                 CHECK( event_handler.count == 0 );
                 CHECK_FALSE( RuleInterfaceSpy::timeout_and_suspend_called );
             }
@@ -552,7 +555,7 @@ TEST_CASE ( "rule latency impl", "[latency]" )
                 RuleInterfaceSpy::is_suspended_result = false;
                 RuleInterfaceSpy::timeout_and_suspend_result = true;
 
-                CHECK( impl.pop() );
+                CHECK( true == impl.pop() );
                 CHECK( event_handler.count == 1 );
                 CHECK( RuleInterfaceSpy::timeout_and_suspend_called );
             }
@@ -561,7 +564,7 @@ TEST_CASE ( "rule latency impl", "[latency]" )
             {
                 RuleInterfaceSpy::timeout_and_suspend_result = false;
 
-                CHECK( impl.pop() );
+                CHECK( true == impl.pop() );
                 CHECK( event_handler.count == 1 );
                 CHECK( RuleInterfaceSpy::timeout_and_suspend_called );
             }
@@ -573,7 +576,7 @@ TEST_CASE ( "rule latency impl", "[latency]" )
         {
             RuleInterfaceSpy::is_suspended_result = false;
 
-            CHECK_FALSE( impl.pop() );
+            CHECK( false == impl.pop() );
             CHECK( event_handler.count == 0 );
             CHECK_FALSE( RuleInterfaceSpy::timeout_and_suspend_called );
         }
@@ -590,27 +593,22 @@ TEST_CASE ( "default latency rule interface", "[latency]" )
     if ( !instances )
         instances = 1;
 
-    std::unique_ptr<RuleLatencyState[]> latency_state(new RuleLatencyState[instances]());
-
     std::unique_ptr<detection_option_tree_node_t*[]> children(
         new detection_option_tree_node_t*[1]());
 
-    detection_option_tree_node_t child;
+    detection_option_tree_node_t child(RULE_OPTION_TYPE_LEAF_NODE, nullptr);
     children[0] = &child;
 
-    std::unique_ptr<dot_node_state_t[]> child_state(new dot_node_state_t[instances]());
-    child.state = child_state.get();
-
     detection_option_tree_root_t root;
-    root.latency_state = latency_state.get();
+    root.latency_state = new RuleLatencyState[instances]();
     root.num_children = 1;
     root.children = children.get();
 
     SECTION( "is_suspended" )
     {
-        CHECK_FALSE( RuleInterface::is_suspended(root) );
+        CHECK( false == RuleInterface::is_suspended(root) );
         root.latency_state[0].suspend(hr_time(0_ticks));
-        CHECK( RuleInterface::is_suspended(root) );
+        CHECK( true == RuleInterface::is_suspended(root) );
     }
 
     SECTION( "reenable" )
@@ -618,7 +616,7 @@ TEST_CASE ( "default latency rule interface", "[latency]" )
         SECTION( "rule already enabled" )
         {
             REQUIRE_FALSE( root.latency_state[get_instance_id()].suspended );
-            CHECK_FALSE( RuleInterface::reenable(root, 0_ticks, hr_time(0_ticks)) );
+            CHECK( false == RuleInterface::reenable(root, 0_ticks, hr_time(0_ticks)) );
         }
 
         SECTION( "rule suspended" )
@@ -627,12 +625,12 @@ TEST_CASE ( "default latency rule interface", "[latency]" )
 
             SECTION( "suspend time not exceeded" )
             {
-                CHECK_FALSE( RuleInterface::reenable(root, 1_ticks, hr_time(0_ticks)) );
+                CHECK( false == RuleInterface::reenable(root, 1_ticks, hr_time(0_ticks)) );
             }
 
             SECTION( "suspend time exceeded" )
             {
-                CHECK( RuleInterface::reenable(root, 1_ticks, hr_time(2_ticks)) );
+                CHECK( true == RuleInterface::reenable(root, 1_ticks, hr_time(2_ticks)) );
             }
         }
     }
@@ -643,24 +641,24 @@ TEST_CASE ( "default latency rule interface", "[latency]" )
         {
             SECTION( "timeouts under threshold" )
             {
-                CHECK_FALSE( RuleInterface::timeout_and_suspend(root, 2, hr_time(0_ticks), true) );
-                CHECK( child_state[0].latency_timeouts == 1 );
-                CHECK( child_state[0].latency_suspends == 0 );
+                CHECK( false == RuleInterface::timeout_and_suspend(root, 2, hr_time(0_ticks), true) );
+                CHECK( child.state[0].latency_timeouts == 1 );
+                CHECK( child.state[0].latency_suspends == 0 );
             }
 
             SECTION( "timeouts exceed threshold" )
             {
-                CHECK( RuleInterface::timeout_and_suspend(root, 1, hr_time(0_ticks), true) );
-                CHECK( child_state[0].latency_timeouts == 1 );
-                CHECK( child_state[0].latency_suspends == 1 );
+                CHECK( true == RuleInterface::timeout_and_suspend(root, 1, hr_time(0_ticks), true) );
+                CHECK( child.state[0].latency_timeouts == 1 );
+                CHECK( child.state[0].latency_suspends == 1 );
             }
         }
 
         SECTION( "suspend disabled" )
         {
-            CHECK_FALSE( RuleInterface::timeout_and_suspend(root, 0, hr_time(0_ticks), false) );
-            CHECK( child_state[0].latency_timeouts == 1 );
-            CHECK( child_state[0].latency_suspends == 0 );
+            CHECK( false == RuleInterface::timeout_and_suspend(root, 0, hr_time(0_ticks), false) );
+            CHECK( child.state[0].latency_timeouts == 1 );
+            CHECK( child.state[0].latency_suspends == 0 );
         }
     }
 }

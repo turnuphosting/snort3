@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -55,8 +55,8 @@ private:
     static THREAD_LOCAL std::array<snort::ProfileStats, TEST_PSI_MAX> http_test_ps;
     const TestPsIdx idx;
     snort::RangeCheck check;
-    enum NumericValue numeric;
-    bool absent;
+    enum NumericValue numeric = NV_UNDEFINED;
+    bool absent = false;
 };
 
 class HttpTestIpsOption : public HttpIpsOption
@@ -68,7 +68,7 @@ public:
     EvalStatus eval(Cursor&, snort::Packet*) override;
     uint32_t hash() const override;
     bool operator==(const snort::IpsOption& ips) const override;
-    static IpsOption* opt_ctor(snort::Module* m, OptTreeNode*)
+    static IpsOption* opt_ctor(snort::Module* m, IpsInfo&)
         { return new HttpTestIpsOption((HttpTestRuleOptModule*)m); }
     static void opt_dtor(snort::IpsOption* p) { delete p; }
 

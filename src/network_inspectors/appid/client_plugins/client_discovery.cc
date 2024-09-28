@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -65,19 +65,19 @@ void ClientDiscovery::initialize(AppIdInspector& inspector)
     new TnsClientDetector(this);
     new VncClientDetector(this);
 
-    for ( auto kv : tcp_detectors )
+    for ( auto& kv : tcp_detectors )
         kv.second->initialize(inspector);
 
-    for ( auto kv : udp_detectors )
+    for ( auto& kv : udp_detectors )
         kv.second->initialize(inspector);
 }
 
 void ClientDiscovery::reload()
 {
-    for ( auto kv : tcp_detectors )
-        kv.second->reload();
-    for ( auto kv : udp_detectors )
-        kv.second->reload();
+    for ( auto& kv : tcp_detectors )
+        kv.second->do_custom_reload();
+    for ( auto& kv : udp_detectors )
+        kv.second->do_custom_reload();
 }
 
 void ClientDiscovery::finalize_client_patterns()
@@ -268,10 +268,9 @@ void ClientDiscovery::exec_client_detectors(AppIdSession& asd, Packet* p,
     {
         AppIdDiscoveryArgs disco_args(p->data, p->dsize, direction, asd, p, change_bits);
         ret = asd.client_detector->validate(disco_args);
-        if (appidDebug->is_active())
-            LogMessage("AppIdDbg %s %s client detector returned %s (%d)\n",
-                appidDebug->get_debug_session(), asd.client_detector->get_log_name().c_str(),
-                asd.client_detector->get_code_string((APPID_STATUS_CODE)ret), ret);
+        appid_log(p, TRACE_DEBUG_LEVEL, "%s client detector returned %s (%d)\n",
+            asd.client_detector->get_log_name().c_str(),
+            asd.client_detector->get_code_string((APPID_STATUS_CODE)ret), ret);
     }
     else
     {
@@ -279,10 +278,9 @@ void ClientDiscovery::exec_client_detectors(AppIdSession& asd, Packet* p,
         {
             AppIdDiscoveryArgs disco_args(p->data, p->dsize, direction, asd, p, change_bits);
             int result = kv->second->validate(disco_args);
-            if (appidDebug->is_active())
-                LogMessage("AppIdDbg %s %s client candidate returned %s (%d)\n",
-                    appidDebug->get_debug_session(), kv->second->get_log_name().c_str(),
-                    kv->second->get_code_string((APPID_STATUS_CODE)result), result);
+            appid_log(p, TRACE_DEBUG_LEVEL, "%s client candidate returned %s (%d)\n",
+                kv->second->get_log_name().c_str(),
+                kv->second->get_code_string((APPID_STATUS_CODE)result), result);
 
             if (result == APPID_SUCCESS)
             {

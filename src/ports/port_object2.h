@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -22,7 +22,7 @@
 #ifndef PORT_OBJECT2_H
 #define PORT_OBJECT2_H
 
-#include "framework/bits.h"
+#include "utils/bits.h"
 #include "utils/sflsq.h"
 
 //-------------------------------------------------------------------------

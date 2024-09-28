@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -30,6 +30,7 @@
 #include "framework/mpse.h"
 #include "framework/mpse_batch.h"
 #include "main/snort_config.h"
+#include "main/thread_config.h"
 
 #include "mpse_test_stubs.h"
 
@@ -105,7 +106,7 @@ TEST_GROUP(mpse_hs_match)
     void setup() override
     {
         CHECK(se_hyperscan);
-        mod = mpse_api->base.mod_ctor();
+        mod = mpse_api->base.mod_ctor();    // cppcheck-suppress unreadVariable
         hs = mpse_api->ctor(snort_conf, nullptr, &s_agent);
         CHECK(hs);
         hits = 0;
@@ -252,7 +253,7 @@ TEST_GROUP(mpse_hs_multi)
     {
         CHECK(se_hyperscan);
 
-        mod = mpse_api->base.mod_ctor();
+        mod = mpse_api->base.mod_ctor();    // cppcheck-suppress unreadVariable
 
         hs1 = mpse_api->ctor(snort_conf, nullptr, &s_agent);
         CHECK(hs1);
@@ -312,7 +313,7 @@ TEST_GROUP(mpse_hs_scratch)
     void setup() override
     {
         CHECK(se_hyperscan);
-        mod = mpse_api->base.mod_ctor();
+        mod = mpse_api->base.mod_ctor();    // cppcheck-suppress unreadVariable
         hs1 = mpse_api->ctor(snort_conf, nullptr, nullptr);
         hs2 = mpse_api->ctor(snort_conf, nullptr, nullptr);
         CHECK(hs1);

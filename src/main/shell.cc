@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -40,6 +40,10 @@
 
 #ifdef HAVE_LZMA
 #include <lzma.h>
+#endif
+
+#ifdef HAVE_LIBML
+#include <libml.h>
 #endif
 
 extern "C" {
@@ -91,6 +95,9 @@ static const char* dep_versions[] = {
 #endif
 #ifdef HAVE_LZMA
     "LZMA",
+#endif
+#ifdef HAVE_LIBML
+    "LIBML",
 #endif
     nullptr
 };
@@ -156,6 +163,9 @@ static void install_dependencies_strings(Shell* sh, lua_State* L)
 #endif
 #ifdef HAVE_LZMA
     vs.push_back(lzma_version_string());
+#endif
+#ifdef HAVE_LIBML
+    vs.push_back(libml_version());
 #endif
 
     lua_createtable(L, 0, vs.size());
@@ -649,9 +659,13 @@ bool Shell::configure(SnortConfig* sc, bool is_root)
 void Shell::install(const char* name, const luaL_Reg* reg)
 {
     if ( !strcmp(name, "snort") )
+    {
         luaL_register(lua, "_G", reg);
+        lua_pop(lua, 1);
+    }
 
     luaL_register(lua, name, reg);
+    lua_pop(lua, 1);
 }
 
 void Shell::set_network_policy_user_id(lua_State* L, uint64_t user_id)
@@ -757,3 +771,29 @@ void Shell::allowlist_update(const char* s, bool is_prefix)
         wlist->emplace(s);
 }
 
+// -----------------------------------------------------------------------------
+// unit tests
+// -----------------------------------------------------------------------------
+
+#ifdef UNIT_TEST
+#include "catch/snort_catch.h"
+
+static int test_closure(lua_State*)
+{ return 0; }
+
+TEST_CASE("lua stack size on commands install", "[Shell]")
+{
+    Shell sh;
+    int init_stack_size = lua_gettop(sh.get_lua());
+    luaL_Reg reg[2];
+    reg[0].name = "test_closure";
+    reg[0].func = test_closure;
+    reg[1].name = nullptr;
+    reg[1].func = nullptr;
+
+    sh.install("test_module", reg);
+    int stack_size = lua_gettop(sh.get_lua());
+    CHECK(stack_size == init_stack_size);
+}
+
+#endif

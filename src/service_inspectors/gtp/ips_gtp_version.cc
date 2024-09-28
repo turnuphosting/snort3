@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -78,6 +78,7 @@ bool GtpVersionOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus GtpVersionOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(gtp_ver_prof);
 
     if ( !p->flow )
@@ -120,7 +121,7 @@ public:
     { return DETECT; }
 
 public:
-    uint8_t version;
+    uint8_t version = 0;
 };
 
 bool GtpVersionModule::set(const char*, Value& v, SnortConfig*)
@@ -144,7 +145,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* opt_ctor(Module* m, OptTreeNode*)
+static IpsOption* opt_ctor(Module* m, IpsInfo&)
 {
     GtpVersionModule* mod = (GtpVersionModule*)m;
     return new GtpVersionOption(mod->version);

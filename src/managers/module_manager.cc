@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -30,7 +30,6 @@
 #include <cassert>
 #include <iostream>
 #include <sstream>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -46,7 +45,7 @@
 #include "managers/inspector_manager.h"
 #include "parser/parse_conf.h"
 #include "parser/parser.h"
-#include "profiler/profiler.h"
+#include "profiler/profiler_impl.h"
 #include "protocols/packet_manager.h"
 #include "utils/util.h"
 
@@ -74,6 +73,7 @@ static std::unordered_map<std::string, ModHook*> s_modules;
 static std::unordered_map<std::string, const Parameter*> s_pmap;
 
 static unsigned s_errors = 0;
+const char* ModuleManager::dynamic_stats_modules = "file_id appid";
 
 set<uint32_t> ModuleManager::gids;
 mutex ModuleManager::stats_mutex;
@@ -83,6 +83,7 @@ static string s_aliased_name;
 static string s_aliased_type;
 static string s_ips_includer;
 static string s_file_id_includer;
+static std::unordered_set<string> s_parallel_cmds;
 
 // for callbacks from Lua
 static SnortConfig* s_config = nullptr;
@@ -157,11 +158,19 @@ void ModHook::init()
     // would be out of date, out of sync, etc. QED
     reg = new luaL_Reg[++n];
     unsigned k = 0;
-
+    std::string cmd_name;
+    const char* dot = ".";
     while ( k < n )
     {
         reg[k].name = c[k].name;
         reg[k].func = c[k].func;
+        if (c[k].can_run_in_parallel)
+        {
+            cmd_name = mod->get_name();
+            cmd_name = cmd_name + dot + c[k].name;
+            s_parallel_cmds.insert(cmd_name);
+        }
+
         k++;
     }
 }
@@ -666,14 +675,12 @@ static bool interested(Module* m)
 // ffi methods - only called from Lua so cppcheck suppressions required
 //-------------------------------------------------------------------------
 
-// cppcheck-suppress unusedFunction
 SO_PUBLIC void clear_alias()
 {
     s_aliased_name.clear();
     s_aliased_type.clear();
 }
 
-// cppcheck-suppress unusedFunction
 SO_PUBLIC bool set_alias(const char* from, const char* to)
 {
     if ( !from or !to )
@@ -684,7 +691,7 @@ SO_PUBLIC bool set_alias(const char* from, const char* to)
     if ( !m or !m->is_bindable() )
         return false;
 
-    if ( (m->get_usage() == Module::GLOBAL) and from )
+    if ( m->get_usage() == Module::GLOBAL )
     {
         ParseError("global module type '%s' can't be aliased", to);
         return false;
@@ -702,19 +709,16 @@ SO_PUBLIC bool set_alias(const char* from, const char* to)
     return true;
 }
 
-// cppcheck-suppress unusedFunction
 SO_PUBLIC void snort_whitelist_append(const char* s)
 {
     Shell::allowlist_append(s, false);
 }
 
-// cppcheck-suppress unusedFunction
 SO_PUBLIC void snort_whitelist_add_prefix(const char* s)
 {
     Shell::allowlist_append(s, true);
 }
 
-// cppcheck-suppress unusedFunction
 SO_PUBLIC const char* push_include_path(const char* file)
 {
     static std::string path;
@@ -724,13 +728,11 @@ SO_PUBLIC const char* push_include_path(const char* file)
     return path.c_str();
 }
 
-// cppcheck-suppress unusedFunction
 SO_PUBLIC void pop_include_path()
 {
     pop_parse_location();
 }
 
-// cppcheck-suppress unusedFunction
 SO_PUBLIC bool set_includer(const char* fqn, const char* s)
 {
     if ( !strcmp(fqn, "ips.includer") )
@@ -743,7 +745,6 @@ SO_PUBLIC bool set_includer(const char* fqn, const char* s)
     return true;
 }
 
-// cppcheck-suppress unusedFunction
 SO_PUBLIC int get_module_version(const char* name, const char* type)
 {
     // not all modules are plugins
@@ -933,7 +934,7 @@ void ModuleManager::init()
 
 void ModuleManager::term()
 {
-    for ( auto& mh : s_modules )
+    for ( const auto& mh : s_modules )
         delete mh.second;
 
     s_modules.clear();
@@ -978,8 +979,8 @@ list<Module*> ModuleManager::get_all_modules()
 {
     list<Module*> ret;
 
-    for ( auto& mh : s_modules )
-       ret.emplace_back(mh.second->mod);
+    std::transform(s_modules.cbegin(), s_modules.cend(), std::back_inserter(ret),
+        [](const std::pair<const std::string, ModHook*>& mh){ return mh.second->mod; });
 
     return ret;
 }
@@ -988,8 +989,8 @@ static list<ModHook*> get_all_modhooks()
 {
     list<ModHook*> ret;
 
-    for ( auto& mh : s_modules )
-       ret.emplace_back(mh.second);
+    std::transform(s_modules.cbegin(), s_modules.cend(), std::back_inserter(ret),
+        [](const std::pair<const std::string, ModHook*>& mh){ return mh.second; });
 
     return ret;
 }
@@ -1331,7 +1332,7 @@ void ModuleManager::show_pegs(const char* pfx, bool exact)
         const Module* m = mh->mod;
         assert(m);
 
-        if ( !selected(m, pfx, exact) )
+        if ( !selected(m, pfx, exact) || m->stats_are_aggregated())
             continue;
 
         const PegInfo* pegs = m->get_pegs();
@@ -1431,9 +1432,34 @@ PegCount* ModuleManager::get_stats(const char* name)
     ModHook* mh = get_hook(name);
 
     if ( mh )
-        pc = &mh->mod->dump_stats_counts[0];
+        pc = &mh->mod->dump_stats_counts[0][0];
 
     return pc;
+}
+
+void ModuleManager::accumulate_dump_stats()
+{
+    auto mod_hooks = get_all_modhooks();
+    for ( auto* mh : mod_hooks )
+    {
+        mh->mod->main_accumulate_stats();
+    }
+}
+
+void ModuleManager::init_stats()
+{
+    auto mod_hooks = get_all_modhooks();
+    for ( auto* mh : mod_hooks )
+    {
+        mh->mod->init_stats();
+    }
+}
+
+void ModuleManager::add_thread_stats_entry(const char* name)
+{
+    ModHook* mh = get_hook(name);
+    if ( mh )
+        mh->mod->init_stats(true);
 }
 
 void ModuleManager::dump_stats(const char* skip, bool dynamic)
@@ -1445,11 +1471,21 @@ void ModuleManager::dump_stats(const char* skip, bool dynamic)
     {
         if ( !skip || !strstr(skip, mh->mod->get_name()) )
         {
-            lock_guard<mutex> lock(stats_mutex);
-            if ( dynamic )
-                mh->mod->show_dynamic_stats();
+            if (strstr(dynamic_stats_modules, mh->mod->get_name()) || mh->mod->global_stats())
+            {
+                lock_guard<mutex> lock(stats_mutex);
+                if ( dynamic )
+                    mh->mod->show_dynamic_stats();
+                else
+                    mh->mod->show_stats();
+            }
             else
-                mh->mod->show_stats();
+            {
+                if ( dynamic )
+                    mh->mod->show_dynamic_stats();
+                else
+                    mh->mod->show_stats();
+            }
         }
     }
 }
@@ -1463,9 +1499,17 @@ void ModuleManager::accumulate(const char* except)
         if ( except and !strcmp(mh->mod->name, except) )
             continue;
 
-        lock_guard<mutex> lock(stats_mutex);
-        mh->mod->prep_counts(true);
-        mh->mod->sum_stats(true);
+        if (strstr(dynamic_stats_modules, mh->mod->get_name()) || mh->mod->global_stats())
+        {
+            lock_guard<mutex> lock(stats_mutex);
+            mh->mod->prep_counts(true);
+            mh->mod->sum_stats(true);
+        }
+        else
+        {
+            mh->mod->prep_counts(true);
+            mh->mod->sum_stats(true);
+        }
     }
 }
 
@@ -1474,9 +1518,17 @@ void ModuleManager::accumulate_module(const char* name)
     ModHook* mh = get_hook(name);
     if ( mh )
     {
-        lock_guard<mutex> lock(stats_mutex);
-        mh->mod->prep_counts(true);
-        mh->mod->sum_stats(true);
+        if (strstr(dynamic_stats_modules, mh->mod->get_name()) || mh->mod->global_stats())
+        {
+            lock_guard<mutex> lock(stats_mutex);
+            mh->mod->prep_counts(true);
+            mh->mod->sum_stats(true);
+        }
+        else
+        {
+            mh->mod->prep_counts(true);
+            mh->mod->sum_stats(true);
+        }
     }
 }
 
@@ -1485,6 +1537,23 @@ void ModuleManager::reset_stats(SnortConfig*)
     auto mod_hooks = get_all_modhooks();
 
     for ( auto* mh : mod_hooks )
+    {
+        if (strstr(dynamic_stats_modules, mh->mod->get_name()) || mh->mod->global_stats())
+        {
+            lock_guard<mutex> lock(stats_mutex);
+            mh->mod->reset_stats();
+        }
+        else
+        {
+            mh->mod->reset_stats();
+        }
+    }
+}
+
+void ModuleManager::reset_module_stats(const char* name)
+{
+    ModHook* mh = get_hook(name);
+    if ( mh )
     {
         lock_guard<mutex> lock(stats_mutex);
         mh->mod->reset_stats();
@@ -1497,20 +1566,34 @@ void ModuleManager::clear_global_active_counters()
 
     for ( auto* mh : mod_hooks )
     {
-        lock_guard<mutex> lock(stats_mutex);
-        mh->mod->clear_global_active_counters();
+        if (strstr(dynamic_stats_modules, mh->mod->get_name()) || mh->mod->global_stats())
+        {
+            lock_guard<mutex> lock(stats_mutex);
+            mh->mod->clear_global_active_counters();
+        }
+        else
+        {
+            mh->mod->clear_global_active_counters();
+        }
     }
 }
 
 void ModuleManager::reset_stats(clear_counter_type_t type)
 {
-    if ( type != TYPE_MODULE and type != TYPE_UNKNOWN )
+    if ( type != TYPE_MODULE and type != TYPE_ALL )
     {
         ModHook* mh = get_hook(clear_counter_type_string_map[type]);
         if ( mh and mh->mod )
         {
-            lock_guard<mutex> lock(stats_mutex);
-            mh->mod->reset_stats();
+            if (strstr(dynamic_stats_modules, mh->mod->get_name()) || mh->mod->global_stats())
+            {
+                lock_guard<mutex> lock(stats_mutex);
+                mh->mod->reset_stats();
+            }
+            else
+            {
+                mh->mod->reset_stats();
+            }
         }
     }
     else
@@ -1531,14 +1614,21 @@ void ModuleManager::reset_stats(clear_counter_type_t type)
                 }
             }
 
-            if ( type == TYPE_UNKNOWN or !ignore )
+            if ( type == TYPE_ALL or !ignore )
             {
-                lock_guard<mutex> lock(stats_mutex);
-                mh->mod->reset_stats();
+                if (strstr(dynamic_stats_modules, mh->mod->get_name()) || mh->mod->global_stats())
+                {
+                    lock_guard<mutex> lock(stats_mutex);
+                    mh->mod->reset_stats();
+                }
+                else
+                {
+                    mh->mod->reset_stats();
+                }
             }
         }
     }
-    if ( type == TYPE_DAQ or type == TYPE_UNKNOWN )
+    if ( type == TYPE_DAQ or type == TYPE_ALL )
     {
         lock_guard<mutex> lock(stats_mutex);
         PacketManager::reset_stats();
@@ -1716,30 +1806,21 @@ static void dump_param_range_json(JsonStream& json, const Parameter* p)
         {
             std::string tr = range;
             const char* d = strchr(range, ':');
-            bool is_signed = ('-' == *range) || (d && '-' == d[1]);
             if ( *range == 'm' )
             {
                 if ( d )
-                {
-                    if (is_signed)
-                        tr = std::to_string(Parameter::get_int(range)) + tr.substr(tr.find(":"));
-                    else
-                        tr = std::to_string(Parameter::get_uint(range)) + tr.substr(tr.find(":"));
-                }
+                    tr = std::to_string(Parameter::get_uint(range)) + tr.substr(tr.find(":"));
                 else
-                {
-                    if (is_signed)
-                        tr = std::to_string(Parameter::get_int(range));
-                    else
-                        tr = std::to_string(Parameter::get_uint(range));
-                }
+                    tr = std::to_string(Parameter::get_uint(range));
             }
             if ( d and *++d == 'm' )
             {
-                if (is_signed)
-                    tr = tr.substr(0, tr.find(":") + 1) + std::to_string(Parameter::get_int(d));
+                bool is_signed = ('-' == *range);
+                tr.resize(tr.find(":") + 1);
+                if ( is_signed )
+                    tr += std::to_string(Parameter::get_int(d));
                 else
-                    tr = tr.substr(0, tr.find(":") + 1) + std::to_string(Parameter::get_uint(d));
+                    tr += std::to_string(Parameter::get_uint(d));
             }
             json.put("range", tr);
             break;
@@ -1942,6 +2023,30 @@ void ModuleManager::show_modules_json()
     json.close_array();
 }
 
+bool ModuleManager::is_parallel_cmd(std::string control_cmd)
+{
+    control_cmd = remove_whitespace(control_cmd);
+
+    std::string mod_cmd;
+
+    size_t dotPos = control_cmd.find('.');
+    size_t openParenthesisPos = control_cmd.find("(");
+
+    if (dotPos == std::string::npos)
+        mod_cmd = "snort.";
+
+    if (openParenthesisPos != std::string::npos)
+        mod_cmd = mod_cmd + control_cmd.substr(0,openParenthesisPos);
+
+    return 1 == s_parallel_cmds.count(mod_cmd);
+}
+
+std::string ModuleManager::remove_whitespace(std::string& control_cmd)
+{
+    control_cmd.erase(std::remove_if(control_cmd.begin(), control_cmd.end(), ::isspace), control_cmd.end());
+    return control_cmd;
+}
+
 #ifdef UNIT_TEST
 
 #include <catch/snort_catch.h>
@@ -2022,6 +2127,24 @@ TEST_CASE("param range JSON dumper", "[ModuleManager]")
         const Parameter p_min_max("int_min_max", Parameter::PT_INT, "max31:max32", nullptr, "help");
         dump_param_range_json(json, &p_min_max);
         x = R"-(, "range": "2147483647:4294967295")-";
+        CHECK(ss.str() == x);
+        ss.str("");
+
+        const Parameter p_s_int_max("s_int_max", Parameter::PT_INT, "-2:max63", nullptr, "help");
+        dump_param_range_json(json, &p_s_int_max);
+        x = R"-(, "range": "-2:9223372036854775807")-";
+        CHECK(ss.str() == x);
+        ss.str("");
+
+        const Parameter p_s_uint_max("s_uint_max", Parameter::PT_INT, "-5:max64", nullptr, "help");
+        dump_param_range_json(json, &p_s_uint_max);
+        x = R"-(, "range": "-5:-1")-";
+        CHECK(ss.str() == x);
+        ss.str("");
+
+        const Parameter p_max("uint_max", Parameter::PT_INT, ":max64", nullptr, "help");
+        dump_param_range_json(json, &p_max);
+        x = R"-(, "range": ":18446744073709551615")-";
         CHECK(ss.str() == x);
     }
 }

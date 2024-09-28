@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -30,6 +30,7 @@
 #include "utils/util_cstring.h"
 
 #include "parse_ports.h"
+#include "var_dependency.h"
 
 #ifdef UNIT_TEST
 #include "catch/snort_catch.h"
@@ -41,7 +42,7 @@ using namespace snort;
 // var table stuff
 //-------------------------------------------------------------------------
 
-void ParsePortVar(const char* name, const char* value)
+bool ParsePortVar(const char* name, const char* value)
 {
     PortObject* po;
     POParser pop;
@@ -67,9 +68,16 @@ void ParsePortVar(const char* name, const char* value)
         po = PortObjectParseString(portVarTable, &pop, name, value, 0);
         if (!po)
         {
-            const char* errstr = PortObjectParseError(&pop);
-            ParseAbort("PortVar Parse error: (pos=%d,error=%s)\n>>%s\n>>%*s.",
-                pop.pos,errstr,value,pop.pos,"^");
+            if (is_resolving_ports())
+            {
+                const char* errstr = PortObjectParseError(&pop);
+                ParseAbort("PortVar Parse error: (pos=%d,error=%s)\n>>%s\n>>%*s.",
+                    pop.pos,errstr,value,pop.pos,"^");
+            }
+            else
+                push_to_weak_ports(name, value);
+
+            return false;
         }
     }
 
@@ -85,6 +93,8 @@ void ParsePortVar(const char* name, const char* value)
         ParseWarning(WARN_VARS, "PortVar '%s', already defined.", po->name);
         PortObjectFree(po);
     }
+
+    return true;
 }
 
 VarEntry* VarAlloc()
@@ -425,7 +435,8 @@ const std::string ExpandVars(const std::string& input_str)
     if (input_str.find('$') == std::string::npos)
         return(input_str);
 
-    for (auto i = input_str.begin(); i < input_str.end(); i++)
+    auto i = input_str.begin();
+    while (i < input_str.end())
     {
         const char c = *i;
         if (c == '"')
@@ -434,69 +445,72 @@ const std::string ExpandVars(const std::string& input_str)
             quote_toggle = !quote_toggle;
         }
 
-        if (c == '$' && !quote_toggle)
-        {
-            auto begin = (i+1);
-            auto end = begin;
-            bool name_only = *begin != '(';
-            if (!name_only)
-                begin++;
-
-            while (*end != '\0' && (
-                ( name_only && (isalnum(*end) || *end == '_') ) ||
-                ( !name_only && *end != ')' ) ) ) {
-                end++;
-            }
-
-            std::string var_name(begin, end);
-            std::string var_aux;
-
-            i = end;
-
-            char var_modifier = ' ';
-
-            size_t p = var_name.find(':');
-
-            if (p != std::string::npos)
-            {
-                if (var_name.size() - p >= 2)
-                {
-                    var_modifier = var_name[p+1];
-                    var_aux = var_name.substr(p+2);
-                }
-                var_name = var_name.substr(0, p);
-            }
-
-            std::string var_contents = VarSearch(var_name);
-
-            switch (var_modifier)
-            {
-            case '-':
-                if (var_contents.empty())
-                    var_contents = var_aux.c_str();
-                break;
-
-            case '?':
-                if (var_contents.empty())
-                {
-                    if (!var_aux.empty())
-                        ParseAbort("%s", var_aux.c_str());
-                    else
-                        ParseAbort("undefined variable '%s'.", var_name.c_str());
-                }
-                break;
-            }
-
-            // If variable not defined now, we're toast
-            if (var_contents.empty())
-                ParseAbort("undefined variable name: %s.", var_name.c_str());
-
-            output << var_contents;
-        }
-        else
+        if (c != '$' or quote_toggle)
         {
             output << c;
+            i++;
+            continue;
         }
+
+        auto begin = (i+1);
+        auto end = begin;
+        bool name_only = *begin != '(';
+        if (!name_only)
+            begin++;
+
+        while (*end != '\0' and (
+            ( name_only and (isalnum(*end) or *end == '_') ) or
+            ( !name_only and *end != ')' ) ) ) {
+            end++;
+        }
+
+        std::string var_name(begin, end);
+        std::string var_aux;
+
+        i = end;
+
+        char var_modifier = ' ';
+
+        size_t p = var_name.find(':');
+
+        if (p != std::string::npos)
+        {
+            if (var_name.size() - p >= 2)
+            {
+                var_modifier = var_name[p+1];
+                var_aux = var_name.substr(p+2);
+            }
+            var_name.resize(p);
+        }
+
+        std::string var_contents = VarSearch(var_name);
+
+        switch (var_modifier)
+        {
+        case '-':
+            if (var_contents.empty())
+                var_contents = var_aux;
+            break;
+
+        case '?':
+            if (var_contents.empty())
+            {
+                if (!var_aux.empty())
+                    ParseAbort("%s", var_aux.c_str());
+                else
+                    ParseAbort("undefined variable '%s'.", var_name.c_str());
+            }
+            break;
+        }
+
+        // If variable not defined now, we're toast
+        if (var_contents.empty())
+            ParseAbort("undefined variable name: %s.", var_name.c_str());
+
+        output << var_contents;
+
+        if (!name_only)
+            i++;
     }
 
     return output.str();

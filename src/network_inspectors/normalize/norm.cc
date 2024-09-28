@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -296,7 +296,7 @@ static int Norm_ICMP6(
 
 struct ExtOpt
 {
-    uint8_t next;
+    uint8_t next;   // cppcheck-suppress unusedStructMember
     uint8_t xlen;
     uint8_t type;
     uint8_t olen;

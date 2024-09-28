@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -37,7 +37,8 @@
 class __attribute__((__packed__)) TcpConnectorMsgHdr
 {
 public:
-    TcpConnectorMsgHdr() = default;
+    TcpConnectorMsgHdr() : version(0), connector_msg_length(0)
+    { }
     TcpConnectorMsgHdr(uint32_t length)
     { version = TCP_FORMAT_VERSION; connector_msg_length = length; }
 

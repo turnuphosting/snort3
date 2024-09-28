@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -123,6 +123,14 @@ enum SMTPDataEndEnum
     DATA_END_LAST
 };
 
+enum SMTPEol
+{
+    EOL_NOT_SEEN,
+    EOL_LF,
+    EOL_CRLF,
+    EOL_MIXED
+};
+
 struct SMTPSearchInfo
 {
     int id;
@@ -140,7 +148,7 @@ class SmtpMime : public snort::MimeSession
 {
 public:
     using snort::MimeSession::MimeSession;
-    SmtpProtoConf* config;
+    SmtpProtoConf* config = nullptr;
 #ifndef UNIT_TEST
 private:
 #endif
@@ -173,7 +181,9 @@ struct SMTPData
                  auth_name{nullptr},
                  client_requested_starttls{false},
                  pipelined_command_counter{0},
-                 server_accepted_starttls{false}
+                 server_accepted_starttls{false},
+                 client_eol{EOL_NOT_SEEN},
+                 server_eol{EOL_NOT_SEEN}
     { }
 
     int state;
@@ -186,6 +196,8 @@ struct SMTPData
     bool client_requested_starttls;
     size_t pipelined_command_counter;
     bool server_accepted_starttls;
+    SMTPEol client_eol;
+    SMTPEol server_eol;
 };
 
 class SmtpFlowData : public snort::FlowData

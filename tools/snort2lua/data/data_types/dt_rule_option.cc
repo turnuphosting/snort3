@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -67,7 +67,7 @@ std::ostream& operator<<(std::ostream& out, const RuleOption& opt)
         out << ':' << opt.value;
     }
 
-    for (RuleSubOption* rso : opt.sub_options)
+    for (const RuleSubOption* rso : opt.sub_options)
     {
         if (first_print)
             first_print = false;

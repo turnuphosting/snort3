@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -23,6 +23,7 @@
 #endif
 
 #include "host_tracker/host_cache.h"
+#include "host_tracker/host_cache_segmented.h"
 #include "host_tracker/cache_allocator.cc"
 #include "network_inspectors/rna/rna_flow.h"
 
@@ -33,14 +34,19 @@
 #include <CppUTest/CommandLineTestRunner.h>
 #include <CppUTest/TestHarness.h>
 
-HostCacheIp host_cache(100);
+HostCacheIp default_host_cache(LRU_CACHE_INITIAL_SIZE);
+HostCacheSegmentedIp host_cache(4,100);
 
 using namespace std;
 using namespace snort;
 
+namespace snort
+{
+void FatalError(const char* fmt, ...) { (void)fmt; exit(1); }
+}
 // Derive an allocator from CacheAlloc:
 template <class T>
-class Allocator : public CacheAlloc<T>
+class Alloc : public CacheAlloc<T>
 {
 public:
 
@@ -48,12 +54,12 @@ public:
     template <class U>
     struct rebind
     {
-        typedef Allocator<U> other;
+        typedef Alloc<U> other;
     };
 
     using CacheAlloc<T>::lru;
 
-    Allocator();
+    Alloc();
 };
 
 
@@ -62,19 +68,19 @@ class Item
 {
 public:
     typedef int ValueType;
-    vector<ValueType, Allocator<ValueType>> data;
+    vector<ValueType, Alloc<ValueType>> data;
 };
 
 // Instantiate a cache, as soon as we know the Item type:
 typedef LruCacheSharedMemcap<string, Item, hash<string>> CacheType;
-CacheType cache(100);
+CacheType lru_cache(100);
 
 // Implement the allocator constructor AFTER we have a cache object
 // to point to and the implementation of our base CacheAlloc:
 template <class T>
-Allocator<T>::Allocator()
+Alloc<T>::Alloc()
 {
-    lru = &cache;
+    lru = &lru_cache;
 }
 
 namespace snort
@@ -96,19 +102,19 @@ TEST(cache_allocator, allocate)
     // room for n items in the cache and m data in the Item.
     const size_t max_size = n * item_sz + m * item_data_sz;
 
-    cache.set_max_size(max_size);
+    lru_cache.set_max_size(max_size);
 
     // insert n empty host trackers:
     for (size_t i=0; i<n; i++)
     {
         string key = to_string(i);
-        auto item_ptr = cache[key];
+        auto item_ptr = lru_cache[key];
         CHECK( item_ptr != nullptr );
     }
 
     // grow the oldest item in the cache enough to trigger pruning:
     string key = to_string(0);
-    auto item_ptr = cache[key];
+    auto item_ptr = lru_cache[key];
     CHECK( item_ptr != nullptr );
 
     for (size_t i = 0; i<m; i++)
@@ -116,16 +122,16 @@ TEST(cache_allocator, allocate)
 
     // the oldest (0) is no longer the oldest after the look-up above,
     // so it should still be in the cache:
-    CHECK( cache.find(key) != nullptr );
+    CHECK( lru_cache.find(key) != nullptr );
 
     // however, the second oldest should have become oldest and be pruned:
-    CHECK( cache.find(to_string(1)) == nullptr );
+    CHECK( lru_cache.find(to_string(1)) == nullptr );
 }
 
 int main(int argc, char** argv)
 {
-    // FIXIT-L There is currently no external way to fully release the memory from the global host
-    //   cache unordered_map in host_cache.cc
     MemoryLeakWarningPlugin::turnOffNewDeleteOverloads();
-    return CommandLineTestRunner::RunAllTests(argc, argv);
+    int ret =  CommandLineTestRunner::RunAllTests(argc, argv);
+    host_cache.term();
+    return ret;
 }

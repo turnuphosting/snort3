@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -28,25 +28,28 @@
 #include <glob.h>
 #include <climits>
 
+#include "log/messages.h"
+#include "main/snort_config.h"
+#include "utils/util.h"
+#include "target_based/snort_protocols.h"
+
 #include "app_info_table.h"
+#include "appid_debug.h"
 #include "appid_discovery.h"
 #include "appid_http_session.h"
 #include "appid_inspector.h"
 #include "appid_session.h"
+#include "detector_plugins/detector_dns.h"
 #include "detector_plugins/detector_imap.h"
 #include "detector_plugins/detector_kerberos.h"
 #include "detector_plugins/detector_pattern.h"
 #include "detector_plugins/detector_pop3.h"
 #include "detector_plugins/detector_smtp.h"
 #include "host_port_app_cache.h"
-#include "main/snort_config.h"
-#include "log/messages.h"
-#include "utils/util.h"
 #include "service_plugins/service_ssl.h"
-#include "detector_plugins/detector_dns.h"
-#include "target_based/snort_protocols.h"
 #include "tp_appid_utils.h"
 #include "tp_lib_handler.h"
+#include "profiler/profiler_defs.h"
 
 using namespace snort;
 
@@ -54,25 +57,25 @@ ThirdPartyAppIdContext* AppIdContext::tp_appid_ctxt = nullptr;
 OdpContext* AppIdContext::odp_ctxt = nullptr;
 uint32_t OdpContext::next_version = 0;
 
-static void map_app_names_to_snort_ids(SnortConfig* sc, AppIdConfig& config)
-{
-    // Have to create SnortProtocolIds during configuration initialization.
-    config.snort_proto_ids[PROTO_INDEX_UNSYNCHRONIZED] = sc->proto_ref->add("unsynchronized");
-    config.snort_proto_ids[PROTO_INDEX_FTP_DATA] = sc->proto_ref->add("ftp-data");
-    config.snort_proto_ids[PROTO_INDEX_HTTP2] = sc->proto_ref->add("http2");
-    config.snort_proto_ids[PROTO_INDEX_REXEC] = sc->proto_ref->add("rexec");
-    config.snort_proto_ids[PROTO_INDEX_RSH_ERROR] = sc->proto_ref->add("rsh-error");
-    config.snort_proto_ids[PROTO_INDEX_SNMP] = sc->proto_ref->add("snmp");
-    config.snort_proto_ids[PROTO_INDEX_SUNRPC] = sc->proto_ref->add("sunrpc");
-    config.snort_proto_ids[PROTO_INDEX_TFTP] = sc->proto_ref->add("tftp");
-    config.snort_proto_ids[PROTO_INDEX_SIP] = sc->proto_ref->add("sip");
-    config.snort_proto_ids[PROTO_INDEX_SSH] = sc->proto_ref->add("ssh");
-    config.snort_proto_ids[PROTO_INDEX_CIP] = sc->proto_ref->add("cip");
-}
-
 AppIdConfig::~AppIdConfig()
 {
     snort_free((void*)app_detector_dir);
+}
+
+void AppIdConfig::map_app_names_to_snort_ids(SnortConfig& sc)
+{
+    // Have to create SnortProtocolIds during configuration initialization.
+    snort_proto_ids[PROTO_INDEX_UNSYNCHRONIZED] = sc.proto_ref->add("unsynchronized");
+    snort_proto_ids[PROTO_INDEX_FTP_DATA] = sc.proto_ref->add("ftp-data");
+    snort_proto_ids[PROTO_INDEX_HTTP2] = sc.proto_ref->add("http2");
+    snort_proto_ids[PROTO_INDEX_REXEC] = sc.proto_ref->add("rexec");
+    snort_proto_ids[PROTO_INDEX_RSH_ERROR] = sc.proto_ref->add("rsh-error");
+    snort_proto_ids[PROTO_INDEX_SNMP] = sc.proto_ref->add("snmp");
+    snort_proto_ids[PROTO_INDEX_SUNRPC] = sc.proto_ref->add("sunrpc");
+    snort_proto_ids[PROTO_INDEX_TFTP] = sc.proto_ref->add("tftp");
+    snort_proto_ids[PROTO_INDEX_SIP] = sc.proto_ref->add("sip");
+    snort_proto_ids[PROTO_INDEX_SSH] = sc.proto_ref->add("ssh");
+    snort_proto_ids[PROTO_INDEX_CIP] = sc.proto_ref->add("cip");
 }
 
 void AppIdConfig::show() const
@@ -95,38 +98,54 @@ void AppIdConfig::show() const
     ConfigLogger::log_value("memcap", memcap);
 }
 
+static bool once = false;
+
 void AppIdContext::pterm()
 {
+    delete odp_control_thread_ctxt;
+    odp_control_thread_ctxt = nullptr;
+
     if (odp_ctxt)
     {
         odp_ctxt->get_app_info_mgr().cleanup_appid_info_table();
+        if (odp_ctxt->is_appid_cpu_profiler_enabled())
+            odp_ctxt->get_appid_cpu_profiler_mgr().display_appid_cpu_profiler_table(*odp_ctxt, APPID_CPU_PROFILER_DEFAULT_DISPLAY_ROWS, true);
+
+        odp_ctxt->get_appid_cpu_profiler_mgr().cleanup_appid_cpu_profiler_table();
         delete odp_ctxt;
+        odp_ctxt = nullptr;
     }
 
-    if (odp_thread_local_ctxt)
+    if (appidDebug)
     {
-        delete odp_thread_local_ctxt;
-        odp_thread_local_ctxt = nullptr;
+        delete appidDebug;
+        appidDebug = nullptr;
     }
+
+    once = false;
 }
 
 bool AppIdContext::init_appid(SnortConfig* sc, AppIdInspector& inspector)
 {
     // do not reload ODP on reload_config()
-    if (!odp_ctxt)
-        odp_ctxt = new OdpContext(config, sc);
-
-    if (!odp_thread_local_ctxt)
-        odp_thread_local_ctxt = new OdpThreadContext;
-
-    static bool once = false;
     if (!once)
     {
+        assert(!odp_ctxt);
+        odp_ctxt = new OdpContext(config, sc);
         odp_ctxt->get_client_disco_mgr().initialize(inspector);
         odp_ctxt->get_service_disco_mgr().initialize(inspector);
         odp_ctxt->set_client_and_service_detectors();
 
-        odp_thread_local_ctxt->initialize(sc, *this, true);
+        if (!appidDebug)
+        {
+            appidDebug = new AppIdDebug();
+            appidDebug->set_enabled(config.log_all_sessions);
+        }
+
+        assert(!odp_control_thread_ctxt);
+        odp_control_thread_ctxt = new OdpControlContext;
+        odp_control_thread_ctxt->initialize(sc, *this);
+
         odp_ctxt->initialize(inspector);
 
         // do not reload third party on reload_config()
@@ -136,12 +155,12 @@ bool AppIdContext::init_appid(SnortConfig* sc, AppIdInspector& inspector)
     }
     else
     {
+        assert(odp_ctxt);
         odp_ctxt->get_client_disco_mgr().reload();
         odp_ctxt->get_service_disco_mgr().reload();
         odp_ctxt->reload();
     }
 
-    map_app_names_to_snort_ids(sc, config);
     if (config.enable_rna_filter)
         discovery_filter = new DiscoveryFilter(config.rna_conf_path);
     return true;
@@ -176,6 +195,42 @@ unsigned OdpContext::get_pattern_count()
         ssl_matchers.get_pattern_count() +
         ssh_matchers.get_pattern_count() +
         dns_matchers.get_pattern_count();
+}
+
+void OdpContext::dump_appid_config()
+{
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: dns_host_reporting                   %s\n", (dns_host_reporting ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: referred_appId_disabled              %s\n", (referred_appId_disabled ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: mdns_user_reporting                  %s\n", (mdns_user_reporting ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: chp_userid_disabled                  %s\n", (chp_userid_disabled ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: is_host_port_app_cache_runtime       %s\n", (is_host_port_app_cache_runtime ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: check_host_port_app_cache            %s\n", (check_host_port_app_cache ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: check_host_cache_unknown_ssl         %s\n", (check_host_cache_unknown_ssl ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: ftp_userid_disabled                  %s\n", (ftp_userid_disabled ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: chp_body_collection_disabled         %s\n", (chp_body_collection_disabled ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: chp_body_collection_max              %d\n", chp_body_collection_max);
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: rtmp_max_packets                     %d\n", rtmp_max_packets);
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: max_tp_flow_depth                    %d\n", max_tp_flow_depth);
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: tp_allow_probes                      %s\n", (tp_allow_probes ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: host_port_app_cache_lookup_interval  %d\n", host_port_app_cache_lookup_interval);
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: host_port_app_cache_lookup_range     %d\n", host_port_app_cache_lookup_range);
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: allow_port_wildcard_host_cache       %s\n", (allow_port_wildcard_host_cache ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: recheck_for_portservice_appid        %s\n", (recheck_for_portservice_appid ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: max_bytes_before_service_fail        %" PRIu64" \n", max_bytes_before_service_fail);
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: max_packet_before_service_fail       %" PRIu16" \n", max_packet_before_service_fail);
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: max_packet_service_fail_ignore_bytes %" PRIu16" \n", max_packet_service_fail_ignore_bytes);
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: eve_http_client                      %s\n", (eve_http_client ? "True" : "False"));
+    appid_log(nullptr, TRACE_INFO_LEVEL, "Appid Config: appid_cpu_profiler                   %s\n", (appid_cpu_profiler ? "True" : "False"));
+}
+
+bool OdpContext::is_appid_cpu_profiler_running()
+{
+    return (TimeProfilerStats::is_enabled() and appid_cpu_profiler);
+}
+
+bool OdpContext::is_appid_cpu_profiler_enabled()
+{
+    return appid_cpu_profiler;
 }
 
 OdpContext::OdpContext(const AppIdConfig& config, SnortConfig* sc)
@@ -224,7 +279,7 @@ void OdpContext::set_client_and_service_detectors()
     Pop3ClientDetector* c_pop = (Pop3ClientDetector*) client_disco_mgr.get_client_detector("pop3");
     if (!s_pop or !c_pop)
     {
-        ErrorMessage("appid: failed to initialize pop3 detector\n");
+        appid_log(nullptr, TRACE_ERROR_LEVEL, "appid: failed to initialize pop3 detector\n");
         return;
     }
     s_pop->set_client_detector(c_pop);
@@ -234,7 +289,7 @@ void OdpContext::set_client_and_service_detectors()
     KerberosClientDetector* c_krb = (KerberosClientDetector*) client_disco_mgr.get_client_detector("kerberos");
     if (!s_krb or !c_krb)
     {
-        ErrorMessage("appid: failed to initialize kerberos detector\n");
+        appid_log(nullptr, TRACE_ERROR_LEVEL, "appid: failed to initialize kerberos detector\n");
         return;
     }
     s_krb->set_client_detector(c_krb);
@@ -244,7 +299,7 @@ void OdpContext::set_client_and_service_detectors()
     SmtpClientDetector* c_smtp = (SmtpClientDetector*) client_disco_mgr.get_client_detector("SMTP");
     if (!s_smtp or !c_smtp)
     {
-        ErrorMessage("appid: failed to initialize smtp detector\n");
+        appid_log(nullptr, TRACE_ERROR_LEVEL, "appid: failed to initialize smtp detector\n");
         return;
     }
     s_smtp->set_client_detector(c_smtp);
@@ -253,7 +308,7 @@ void OdpContext::set_client_and_service_detectors()
     ImapClientDetector* c_imap = (ImapClientDetector*) client_disco_mgr.get_client_detector("IMAP");
     if (!s_imap or !c_imap)
     {
-        ErrorMessage("appid: failed to initialize imap detector\n");
+        appid_log(nullptr, TRACE_ERROR_LEVEL, "appid: failed to initialize imap detector\n");
         return;
     }
     s_imap->set_client_detector(c_imap);
@@ -263,7 +318,7 @@ SipServiceDetector* OdpContext::get_sip_service_detector()
 {
     SipServiceDetector* s_sip = (SipServiceDetector*) service_disco_mgr.get_service_detector("sip");
     if (!s_sip)
-        ErrorMessage("appid: failed to initialize sip service detector\n");
+        appid_log(nullptr, TRACE_ERROR_LEVEL, "appid: failed to initialize sip service detector\n");
     return s_sip;
 }
 
@@ -271,7 +326,7 @@ SipUdpClientDetector* OdpContext::get_sip_client_detector()
 {
     SipUdpClientDetector* c_sip = (SipUdpClientDetector*) client_disco_mgr.get_client_detector("SIP");
     if (!c_sip)
-        ErrorMessage("appid: failed to initialize sip client detector\n");
+        appid_log(nullptr, TRACE_ERROR_LEVEL, "appid: failed to initialize sip client detector\n");
     return c_sip;
 }
 
@@ -282,7 +337,7 @@ void OdpContext::add_port_service_id(IpProtocol proto, uint16_t port, AppId appi
     else if (proto == IpProtocol::UDP)
         udp_port_only[port] = appid;
     else
-        ErrorMessage("appid: invalid port service for proto %d port %d app %d\n",
+        appid_log(nullptr, TRACE_ERROR_LEVEL, "appid: invalid port service for proto %d port %d app %d\n",
             static_cast<int>(proto), port, appid);
 }
 
@@ -308,17 +363,15 @@ AppId OdpContext::get_protocol_service_id(IpProtocol proto)
     return ip_protocol[(uint16_t)proto];
 }
 
-void OdpThreadContext::initialize(const SnortConfig* sc, AppIdContext& ctxt, bool is_control,
-    bool reload_odp)
+void OdpControlContext::initialize(const SnortConfig* sc, AppIdContext& ctxt)
 {
-    if (!is_control and reload_odp)
-        LuaDetectorManager::init_thread_manager(sc, ctxt);
-    else
-        LuaDetectorManager::initialize(sc, ctxt, is_control, reload_odp);
+    lua_detector_mgr = std::make_shared<ControlLuaDetectorManager>(ctxt);
+    lua_detector_mgr->initialize(sc);
 }
 
-OdpThreadContext::~OdpThreadContext()
+void OdpPacketThreadContext::initialize(const SnortConfig* sc)
 {
+    lua_detector_mgr = ControlLuaDetectorManager::get_packet_lua_detector_manager();
     assert(lua_detector_mgr);
-    delete lua_detector_mgr;
+    lua_detector_mgr->initialize(sc);
 }

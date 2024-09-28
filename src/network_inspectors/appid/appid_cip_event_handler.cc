@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2023-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2023-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License Version 2 as
@@ -75,12 +75,18 @@ void CipEventHandler::handle(DataEvent& event, Flow* flow)
     if (!asd->get_session_flags(APPID_SESSION_DISCOVER_APP | APPID_SESSION_SPECIAL_MONITORED))
         return;
 
+    bool is_appid_cpu_profiling_running = (asd->get_odp_ctxt().is_appid_cpu_profiler_running());
+    Stopwatch<SnortClock> per_appid_event_cpu_timer;
+
+    if (is_appid_cpu_profiling_running)
+        per_appid_event_cpu_timer.start();
+
     CipEvent& cip_event = (CipEvent&)event;
     const CipEventData* event_data = cip_event.get_event_data();
 
     if (!event_data)
         return;
-
+        
     const Packet* p = cip_event.get_packet();
     assert(p);
 
@@ -91,17 +97,22 @@ void CipEventHandler::handle(DataEvent& event, Flow* flow)
     asd->set_payload_id(payload_id);
     asd->set_ss_application_ids(APP_ID_CIP, APP_ID_CIP, payload_id, APP_ID_NONE, APP_ID_NONE, change_bits);
 
-    if (change_bits[APPID_PAYLOAD_BIT] and appidDebug->is_enabled())
+    if (change_bits[APPID_PAYLOAD_BIT])
     {
-        appidDebug->activate(flow, asd, inspector.get_ctxt().config.log_all_sessions);
-        if (appidDebug->is_active())
-        {
-            const char* app_name_service = asd->get_odp_ctxt().get_app_info_mgr().get_app_name(APP_ID_CIP);
-            const char* app_name_payload = asd->get_odp_ctxt().get_app_info_mgr().get_app_name(payload_id);
-            LogMessage("AppIdDbg %s CIP event handler service %s (%d) and payload %s (%d) are detected\n",
-                appidDebug->get_debug_session(), app_name_service, APP_ID_CIP, app_name_payload, payload_id);
-        }
+        if (appidDebug->is_enabled())
+            appidDebug->activate(flow, asd, inspector.get_ctxt().config.log_all_sessions);
+
+        const char* app_name_service = asd->get_odp_ctxt().get_app_info_mgr().get_app_name(APP_ID_CIP);
+        const char* app_name_payload = asd->get_odp_ctxt().get_app_info_mgr().get_app_name(payload_id);
+        appid_log(p, TRACE_DEBUG_LEVEL, "CIP event handler service %s (%d) and payload %s (%d) are detected\n",
+            app_name_service, APP_ID_CIP, app_name_payload, payload_id);
     }
 
     asd->publish_appid_event(change_bits, *p);
+
+    if (is_appid_cpu_profiling_running)
+    {
+        per_appid_event_cpu_timer.stop();
+        asd->stats.processing_time += TO_USECS(per_appid_event_cpu_timer.get());
+    }
 }

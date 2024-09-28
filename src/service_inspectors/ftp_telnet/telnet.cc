@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2004-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -70,6 +70,7 @@ static int TelnetCheckConfigs(SnortConfig*, void* pData)
 static int SnortTelnet(TELNET_PROTO_CONF* telnet_config, TELNET_SESSION* Telnetsession,
     Packet* p, int iInspectMode)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(telnetPerfStats);
 
     if ( !Telnetsession )
@@ -81,7 +82,7 @@ static int SnortTelnet(TELNET_PROTO_CONF* telnet_config, TELNET_SESSION* Telnets
 
     if ( telnet_config->normalize )
     {
-        DataBuffer& buf = DetectionEngine::get_alt_buffer(p);
+        DataBuffer& buf = DetectionEngine::acquire_alt_buffer(p);
         int ret = normalize_telnet(Telnetsession, p, buf, iInspectMode,
             FTPP_APPLY_TNC_ERASE_CMDS, false);
 

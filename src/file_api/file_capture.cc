@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -34,7 +34,9 @@
 
 #include <cassert>
 
+#include "log/log_stats.h"
 #include "log/messages.h"
+#include "main/thread.h"
 #include "utils/stats.h"
 #include "utils/util.h"
 
@@ -65,6 +67,8 @@ FileCaptureState FileCapture::error_capture(FileCaptureState state)
 // Only one writer thread supported
 void FileCapture::writer_thread()
 {
+    SET_THREAD_NAME(pthread_self(), "snort.filecap");
+
     while (true)
     {
         // Wait until there are files

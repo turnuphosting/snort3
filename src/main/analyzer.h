@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -72,13 +72,15 @@ public:
         RUNNING,
         PAUSED,
         STOPPED,
+        FAILED,
         NUM_STATES
     };
 
-    SO_PUBLIC static Analyzer* get_local_analyzer();
+    static Analyzer* get_local_analyzer();
     static ContextSwitcher* get_switcher();
     static void set_main_hook(MainHook_f);
 
+    Analyzer() = delete;
     Analyzer(snort::SFDAQInstance*, unsigned id, const char* source, uint64_t msg_cnt = 0);
     ~Analyzer();
 
@@ -95,7 +97,6 @@ public:
 
     void post_process_packet(snort::Packet*);
     bool process_rebuilt_packet(snort::Packet*, const DAQ_PktHdr_t*, const uint8_t* pkt, uint32_t pktlen);
-    SO_PUBLIC bool inspect_rebuilt(snort::Packet*);
     void finalize_daq_message(DAQ_Msg_h, DAQ_Verdict);
     void add_to_retry_queue(DAQ_Msg_h, snort::Flow*);
 
@@ -148,8 +149,8 @@ private:
     uint64_t skip_cnt = 0;
     std::string source;
     snort::SFDAQInstance* daq_instance;
-    RetryQueue* retry_queue = nullptr;
-    OopsHandler* oops_handler = nullptr;
+    RetryQueue* retry_queue;
+    OopsHandler* oops_handler;
     ContextSwitcher* switcher = nullptr;
     std::mutex pending_work_queue_mutex;
     std::list<UncompletedAnalyzerCommand*> uncompleted_work_queue;

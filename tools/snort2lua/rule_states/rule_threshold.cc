@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -97,7 +97,7 @@ bool Threshold::convert(std::istringstream& data_stream)
             std::streamoff off = 1 + (std::streamoff)(tmp_pos) +
                 (std::streamoff)(semi_colon_pos);
             data_stream.seekg(off);
-            rule_keyword = rule_keyword.substr(0, semi_colon_pos);
+            rule_keyword.resize(semi_colon_pos);
         }
 
         // now, lets get the next option.

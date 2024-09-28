@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -20,6 +20,8 @@
 
 #ifndef SFDAQ_MODULE_H
 #define SFDAQ_MODULE_H
+
+#include <daq_common.h>
 
 #include "framework/module.h"
 
@@ -63,6 +65,7 @@ struct DAQStats
     PegCount dropped;
     PegCount filtered;
     PegCount outstanding;
+    PegCount outstanding_max;
     PegCount injected;
     PegCount verdicts[MAX_DAQ_VERDICT];
     PegCount internal_blacklist;

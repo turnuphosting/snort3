@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,6 +27,7 @@
 #include <string>
 
 #include "framework/data_bus.h"
+#include "managers/inspector_manager.h"
 #include "protocols/protocol_ids.h"
 #include "pub_sub/appid_event_ids.h"
 #include "service_inspectors/http_inspect/http_msg_header.h"
@@ -34,6 +35,7 @@
 #include "appid_http_session.h"
 #include "tp_appid_module_api.h"
 #include "tp_appid_session_api.h"
+#include "appid_cpu_profile_table.h"
 
 #include "appid_mock_definitions.h"
 #include "appid_mock_http_session.h"
@@ -50,6 +52,7 @@ using namespace snort;
 
 static SnortProtocolId dummy_http2_protocol_id = 1;
 char const* APPID_UT_ORG_UNIT = "Google";
+THREAD_LOCAL bool TimeProfilerStats::enabled = false;
 
 namespace snort
 {
@@ -69,6 +72,8 @@ Packet* DetectionEngine::get_current_packet()
 AppIdSessionApi::AppIdSessionApi(const AppIdSession*, const SfIp&) :
     StashGenericObject(STASH_GENERIC_OBJECT_APPID) {}
 }
+
+void appid_log(const snort::Packet*, unsigned char, char const*, ...) { }
 
 void AppIdModule::reset_stats() {}
 
@@ -200,6 +205,10 @@ void AppIdSession::set_ss_application_ids(AppId client_id, AppId payload_id,
     }
 }
 
+bool OdpContext::is_appid_cpu_profiler_enabled() { return false; }
+
+void AppidCPUProfilingManager::cleanup_appid_cpu_profiler_table() {}
+
 AppIdHttpSession* AppIdSession::get_http_session(uint32_t) const { return nullptr; }
 
 Flow* flow = nullptr;
@@ -213,7 +222,11 @@ TEST_GROUP(appid_api)
         mock_init_appid_pegs();
         SfIp ip;
         mock_session = new AppIdSession(IpProtocol::TCP, &ip, 1492, dummy_appid_inspector,
-            dummy_appid_inspector.get_ctxt().get_odp_ctxt());
+            dummy_appid_inspector.get_ctxt().get_odp_ctxt(), 0
+#ifndef DISABLE_TENANT_ID
+            ,0
+#endif
+            );
         pkt_thread_odp_ctxt = &mock_session->get_odp_ctxt();
         flow = new Flow;
         flow->set_flow_data(mock_session);
@@ -248,7 +261,7 @@ TEST(appid_api, get_application_id)
 
 TEST(appid_api, ssl_app_group_id_lookup)
 {
-    mock().expectNCalls(6, "publish");
+    mock().expectNCalls(7, "publish");
     AppId service, client, payload = APP_ID_NONE;
     bool val = false;
 
@@ -275,6 +288,7 @@ TEST(appid_api, ssl_app_group_id_lookup)
     STRCMP_EQUAL(mock_session->tsession->get_tls_host(), APPID_UT_TLS_HOST);
     STRCMP_EQUAL(mock_session->tsession->get_tls_first_alt_name(), APPID_UT_TLS_HOST);
     STRCMP_EQUAL(mock_session->tsession->get_tls_cname(), APPID_UT_TLS_HOST);
+    STRCMP_EQUAL(mock_session->tsession->get_tls_sni(),  APPID_UT_TLS_HOST);
     STRCMP_EQUAL("Published change_bits == 00000000000100011000", test_log);
 
     // Common name based detection
@@ -310,7 +324,7 @@ TEST(appid_api, ssl_app_group_id_lookup)
     string host = "";
     change_bits.reset();
     mock_session->tsession->set_tls_host("", 0, change_bits);
-    val = appid_api.ssl_app_group_id_lookup(flow, (const char*)(host.c_str()), nullptr,
+    val = appid_api.ssl_app_group_id_lookup(flow, nullptr, nullptr,
         nullptr, (const char*)APPID_UT_ORG_UNIT, false, service, client, payload);
     CHECK_TRUE(val);
     CHECK_EQUAL(client, APPID_UT_ID + 3);
@@ -336,6 +350,18 @@ TEST(appid_api, ssl_app_group_id_lookup)
     STRCMP_EQUAL(mock_session->tsession->get_tls_first_alt_name(), APPID_UT_TLS_HOST);
     STRCMP_EQUAL(mock_session->tsession->get_tls_cname(), APPID_UT_TLS_HOST);
     STRCMP_EQUAL("Published change_bits == 00000000000100011000", test_log);
+
+    //check for sni mismatch being stored in sni field
+    change_bits.reset();
+    mock_session->tsession->set_tls_host("mismatchedsni.com", 17, change_bits);
+    service = APP_ID_NONE;
+    client = APP_ID_NONE;
+    payload = APP_ID_NONE;
+    val = appid_api.ssl_app_group_id_lookup(flow, (const char*)APPID_UT_TLS_HOST, (const char*)APPID_UT_TLS_HOST,
+        nullptr, nullptr, true, service, client, payload);
+    CHECK_TRUE(val);
+    STRCMP_EQUAL(APPID_UT_TLS_HOST, mock_session->tsession->get_tls_host());
+    STRCMP_EQUAL("mismatchedsni.com", mock_session->tsession->get_tls_sni());
 
     mock().checkExpectations();
 
@@ -401,11 +427,6 @@ TEST(appid_api, is_service_http_type)
     CHECK_TRUE(appid_api.is_service_http_type(APP_ID_HTTPS));
     CHECK_TRUE(appid_api.is_service_http_type(APP_ID_SMTPS));
     CHECK_FALSE(appid_api.is_service_http_type(APP_ID_SMTP));
-}
-
-TEST(appid_api, get_appid_detector_directory)
-{
-    STRCMP_EQUAL(appid_api.get_appid_detector_directory(), "/path/to/appid/detectors/");
 }
 
 int main(int argc, char** argv)

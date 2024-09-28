@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,12 +25,85 @@
 
 #include "tcp_normalizer.h"
 
-#include "tcp_module.h"
-#include "tcp_stream_session.h"
+#include "detection/detection_engine.h"
+#include "packet_io/packet_tracer.h"
+#include "stream/stream.h"
+#include "trace/trace.h"
+#include "trace/trace_api.h"
+
+#include "tcp_session.h"
 #include "tcp_stream_tracker.h"
-#include "packet_tracer/packet_tracer.h"
 
 using namespace snort;
+
+TcpNormalizer::NormStatus TcpNormalizer::apply_normalizations(
+    TcpNormalizerState& tns, TcpSegmentDescriptor& tsd, uint32_t seq, bool stream_is_inorder)
+{
+    // drop packet if sequence num is invalid
+    if ( !tns.tracker->is_segment_seq_valid(tsd) )
+    {
+        if ( is_keep_alive_probe(tns, tsd) )
+            return NORM_BAD_SEQ;
+
+        bool inline_mode = tsd.is_nap_policy_inline();
+        tcpStats.invalid_seq_num++;
+        log_drop_reason(tns, tsd, inline_mode, "stream", "Normalizer: Sequence number is invalid\n");
+        trim_win_payload(tns, tsd, 0, inline_mode);
+        return NORM_BAD_SEQ;
+    }
+
+    // trim to fit in listener's window and mss
+    log_drop_reason(tns, tsd, false, "stream", "Normalizer: Trimming payload to fit window size\n");
+    trim_win_payload(tns, tsd,
+        (tns.tracker->r_win_base + tns.tracker->get_snd_wnd() - tns.tracker->rcv_nxt));
+
+    if ( tns.tracker->get_mss() )
+        trim_mss_payload(tns, tsd, tns.tracker->get_mss());
+
+    ecn_stripper(tns, tsd);
+
+    if ( stream_is_inorder )
+    {
+        bool inline_mode = tsd.is_nap_policy_inline();
+
+        if ( get_stream_window(tns, tsd) == 0 )
+        {
+            if ( !data_inside_window(tns, tsd) )
+            {
+                log_drop_reason(tns, tsd, inline_mode, "stream", "Normalizer: Data is outside the TCP Window\n");
+                trim_win_payload(tns, tsd, 0, inline_mode);
+                return NORM_TRIMMED;
+            }
+
+            if ( tns.tracker->get_iss() )
+            {
+                tcpStats.zero_win_probes++;
+                set_zwp_seq(tns, seq);
+                log_drop_reason(tns, tsd, inline_mode, "stream", 
+                    "Normalizer: Maximum Zero Window Probe length supported at a time is 1 byte\n");
+                trim_win_payload(tns, tsd, MAX_ZERO_WIN_PROBE_LEN, inline_mode);
+            }
+        }
+    }
+    else if ( get_stream_window(tns, tsd) == 0 )
+    {
+        bool inline_mode = tsd.is_nap_policy_inline();
+
+        if ( SEQ_EQ(seq, get_zwp_seq(tns)) )
+        {
+            tcpStats.zero_win_probes++;
+            trim_win_payload(tns, tsd, MAX_ZERO_WIN_PROBE_LEN, inline_mode);
+            log_drop_reason(tns, tsd, inline_mode, "stream", "Normalizer: Maximum Zero Window Probe length supported at a time is 1 byte\n");
+            return NORM_TRIMMED;
+        }
+
+        log_drop_reason(tns, tsd, inline_mode, "stream", "Normalizer: Received data during a Zero Window that is not a Zero Window Probe\n");
+        trim_win_payload(tns, tsd, 0, inline_mode);
+        return NORM_TRIMMED;
+    }
+
+    return NORM_OK;
+}
 
 bool TcpNormalizer::trim_payload(TcpNormalizerState&, TcpSegmentDescriptor& tsd, uint32_t max,
     NormMode mode, PegCounts peg, bool force)
@@ -73,7 +146,7 @@ void TcpNormalizer::session_blocker(
     Packet *p = tsd.get_pkt();
     DetectionEngine::disable_all(p);
     p->active->block_session(p, true);
-    p->active->set_drop_reason("normalizer");
+    p->active->set_drop_reason("stream");
     if (PacketTracer::is_active())
         {
             PacketTracer::log("Normalizer: TCP Zero Window Probe byte data mismatch\n");
@@ -104,30 +177,58 @@ bool TcpNormalizer::packet_dropper(
 bool TcpNormalizer::trim_syn_payload(
     TcpNormalizerState& tns, TcpSegmentDescriptor& tsd, uint32_t max)
 {
-    if (tsd.get_len() > max)
+    uint32_t len = tsd.get_len();
+    
+    if (len > max)
+    {
+        if ( PacketTracer::is_active() && (NormMode)tns.trim_syn == NORM_MODE_ON )
+            PacketTracer::log("Normalizer: Trimming payload of SYN packet with length (%u) to a maximum value of %u\n", len, max);
+
         return trim_payload(tns, tsd, max, (NormMode)tns.trim_syn, PC_TCP_TRIM_SYN);
+    }
     return false;
 }
 
 void TcpNormalizer::trim_rst_payload(
     TcpNormalizerState& tns, TcpSegmentDescriptor& tsd, uint32_t max)
 {
-    if (tsd.get_len() > max)
+    uint32_t len = tsd.get_len();
+
+    if (len > max)
+    {
+        if ( PacketTracer::is_active() && (NormMode)tns.trim_rst == NORM_MODE_ON )
+            PacketTracer::log("Normalizer: Trimming payload of RST packet with length (%u) to a maximum value of %u\n", len, max);
+
         trim_payload(tns, tsd, max, (NormMode)tns.trim_rst, PC_TCP_TRIM_RST);
+    }
 }
 
 void TcpNormalizer::trim_win_payload(
     TcpNormalizerState& tns, TcpSegmentDescriptor& tsd, uint32_t max, bool force)
 {
-    if (tsd.get_len() > max)
+    uint32_t len = tsd.get_len();
+
+    if (len > max)
+    {
+        if ( PacketTracer::is_active() && (force || (NormMode)tns.trim_win == NORM_MODE_ON) )
+            PacketTracer::log("Normalizer: Trimming payload with length (%u) to a maximum value of %u\n", len, max);
+
         trim_payload(tns, tsd, max, (NormMode)tns.trim_win, PC_TCP_TRIM_WIN, force);
+    }
 }
 
 void TcpNormalizer::trim_mss_payload(
     TcpNormalizerState& tns, TcpSegmentDescriptor& tsd, uint32_t max)
 {
-    if (tsd.get_len() > max)
+    uint32_t len = tsd.get_len();
+
+    if (len > max)
+    {
+        if ( PacketTracer::is_active() && (NormMode)tns.trim_mss == NORM_MODE_ON )
+            PacketTracer::log("Normalizer: Trimming payload with length (%u) to fit MSS size (%u)\n", len, max);
+
         trim_payload(tns, tsd, max, (NormMode)tns.trim_mss, PC_TCP_TRIM_MSS);
+    }
 }
 
 void TcpNormalizer::ecn_tracker(
@@ -170,8 +271,6 @@ uint32_t TcpNormalizer::get_zwp_seq(
 uint32_t TcpNormalizer::get_stream_window(
     TcpNormalizerState& tns, TcpSegmentDescriptor& tsd)
 {
-    int32_t window;
-
     if ( tns.tracker->get_snd_wnd() )
     {
         if ( !(tns.session->flow->session_state & STREAM_STATE_MIDSTREAM ) )
@@ -181,11 +280,17 @@ uint32_t TcpNormalizer::get_stream_window(
         return tns.tracker->get_snd_wnd();
 
     // ensure the data is in the window
-    window = tsd.get_end_seq() - tns.tracker->r_win_base;
-    if ( window < 0 )
-        window = 0;
+    return data_inside_window(tns, tsd);
+}
 
-    return (uint32_t)window;
+uint32_t TcpNormalizer::data_inside_window(
+    TcpNormalizerState& tns, TcpSegmentDescriptor& tsd)
+{
+    int32_t window = tsd.get_end_seq() - tns.tracker->r_win_base;
+    if ( window < 0 )
+        return 0;
+
+    return (uint32_t) window;
 }
 
 uint32_t TcpNormalizer::get_tcp_timestamp(
@@ -405,6 +510,31 @@ void TcpNormalizer::set_zwp_seq(
     TcpNormalizerState& tns, uint32_t seq)
 {
     tns.zwp_seq = seq;
+}
+
+void TcpNormalizer::log_drop_reason(TcpNormalizerState& tns, const TcpSegmentDescriptor& tsd, bool force, const char *issuer, const std::string& log)
+{
+    if ( force || (NormMode)tns.trim_win == NORM_MODE_ON )
+    {
+        tsd.get_pkt()->active->set_drop_reason(issuer);
+        if (PacketTracer::is_active())
+            PacketTracer::log("%s", log.c_str());
+        if (stream_tcp_trace_enabled)
+            trace_logf(TRACE_WARNING_LEVEL, stream_tcp_trace, DEFAULT_TRACE_OPTION_ID, tsd.get_pkt(), "%s", log.c_str());
+    }
+}
+
+bool TcpNormalizer::is_keep_alive_probe(TcpNormalizerState& tns, const TcpSegmentDescriptor& tsd)
+{
+    if ( (tns.tracker->r_win_base - tsd.get_seq()) == MAX_KEEP_ALIVE_PROBE_LEN
+        and tsd.get_len() <= MAX_KEEP_ALIVE_PROBE_LEN and 
+        !(tsd.get_tcph()->th_flags & (TH_SYN|TH_FIN|TH_RST)) )
+    {
+        tcpStats.keep_alive_probes++;
+        return true;
+    }
+
+    return false;
 }
 
 uint16_t TcpNormalizer::set_urg_offset(

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -31,7 +31,6 @@
 
 #include "log/messages.h"
 #include "main/snort.h"
-#include "managers/inspector_manager.h"
 #include "protocols/packet.h"
 #include "pub_sub/appid_event_ids.h"
 #include "pub_sub/dhcp_events.h"
@@ -132,6 +131,7 @@ void RnaInspector::install_reload_handler(SnortConfig* sc)
 
 void RnaInspector::eval(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(rna_perf_stats);
     ++rna_stats.other_packets;
     update_rna_pkt_stats(p);

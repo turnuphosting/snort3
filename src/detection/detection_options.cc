@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2007-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -40,25 +40,22 @@
 #include "hash/hash_defs.h"
 #include "hash/hash_key_operations.h"
 #include "hash/xhash.h"
-#include "ips_options/extract.h"
 #include "ips_options/ips_flowbits.h"
 #include "latency/packet_latency.h"
 #include "latency/rule_latency_state.h"
 #include "log/messages.h"
 #include "main/snort_config.h"
-#include "main/thread_config.h"
 #include "managers/ips_manager.h"
 #include "parser/parser.h"
 #include "profiler/rule_profiler_defs.h"
 #include "protocols/packet_manager.h"
-#include "utils/util.h"
 #include "utils/util_cstring.h"
 
 #include "detection_continuation.h"
 #include "detection_engine.h"
 #include "detection_module.h"
-#include "detection_util.h"
 #include "detect_trace.h"
+#include "extract.h"
 #include "fp_create.h"
 #include "fp_detect.h"
 #include "ips_context.h"
@@ -210,16 +207,6 @@ static bool detection_option_tree_compare(
     return true;
 }
 
-void free_detection_option_tree(detection_option_tree_node_t* node)
-{
-    for (int i = 0; i < node->num_children; i++)
-        free_detection_option_tree(node->children[i]);
-
-    snort_free(node->children);
-    snort_free(node->state);
-    snort_free(node);
-}
-
 class DetectionOptionTreeHashKeyOps : public HashKeyOperations
 {
 public:
@@ -269,7 +256,7 @@ public:
 
     void free_user_data(HashNode* hnode) override
     {
-        free_detection_option_tree((detection_option_tree_node_t*)hnode->data);
+        delete (detection_option_tree_node_t*)hnode->data;
     }
 
 };
@@ -405,7 +392,6 @@ int detection_option_node_evaluate(
     bool continue_loop = true;
     int loop_count = 0;
 
-    char tmp_noalert_flag = 0;
     int result = 0;
     uint32_t tmp_byte_extract_vars[NUM_IPS_OPTIONS_VARS];
     IpsOption* buf_selector = eval_data.buf_selector;
@@ -425,14 +411,10 @@ int detection_option_node_evaluate(
             {
                 const auto& sig_info = node->otn->sigInfo;
 
-                for ( const auto& svc : sig_info.services )
-                {
-                    if ( snort_protocol_id == svc.snort_protocol_id )
-                    {
-                        check_ports = 0;
-                        break;  // out of for
-                    }
-                }
+                if ( std::any_of(sig_info.services.cbegin(), sig_info.services.cend(),
+                    [snort_protocol_id] (const SignatureServiceInfo& svc)
+                    { return snort_protocol_id == svc.snort_protocol_id; }) )
+                    check_ports = 0;
 
                 if ( !sig_info.services.empty() and check_ports )
                 {
@@ -515,7 +497,7 @@ int detection_option_node_evaluate(
             {
                 rval = node->evaluate(node->option_data, cursor, eval_data.p);
                 assert((flowbits_setter(node->option_data) and rval == (int)IpsOption::MATCH)
-                    or !flowbits_setter(node->option_data));
+                    or !flowbits_setter(node->option_data) or !eval_data.p->flow);
             }
             break;
 
@@ -541,7 +523,7 @@ int detection_option_node_evaluate(
                 Continuation::postpone<true>(cursor, *node, eval_data);
             return result;
         }
-        else if ( rval == (int)IpsOption::FAILED_BIT )
+        if ( rval == (int)IpsOption::FAILED_BIT )
         {
             debug_log(detection_trace, TRACE_RULE_EVAL, p, "failed bit\n");
             eval_data.flowbit_failed = 1;
@@ -550,11 +532,12 @@ int detection_option_node_evaluate(
             state.last_check.result = result;
             return 0;
         }
-        else if ( rval == (int)IpsOption::NO_ALERT )
+
+        // Cache the current flowbit_noalert flag, and set it
+        // so nodes below this don't alert.
+        char tmp_noalert_flag = eval_data.flowbit_noalert;
+        if ( rval == (int)IpsOption::NO_ALERT )
         {
-            // Cache the current flowbit_noalert flag, and set it
-            // so nodes below this don't alert.
-            tmp_noalert_flag = eval_data.flowbit_noalert;
             eval_data.flowbit_noalert = 1;
             debug_log(detection_trace, TRACE_RULE_EVAL, p, "flowbit no alert\n");
         }
@@ -579,6 +562,8 @@ int detection_option_node_evaluate(
 
         if ( PacketLatency::fastpath() )
         {
+            // Reset the flowbit_noalert flag in eval data
+            eval_data.flowbit_noalert = tmp_noalert_flag;
             profile.stop(result != (int)IpsOption::NO_MATCH);
             state.last_check.result = result;
             return result;
@@ -687,6 +672,16 @@ int detection_option_node_evaluate(
                     Continuation::recall(state, p);
                 }
 
+                if ( eval_data.leaf_reached and !eval_data.otn->sigInfo.file_id and
+                    node->option_type != RULE_OPTION_TYPE_LEAF_NODE and
+                    ((IpsOption*)node->option_data)->is_buffer_setter() )
+                {
+                    debug_logf(detection_trace, TRACE_BUFFER, p, "Collecting \"%s\" buffer of size %u\n",
+                        cursor.get_name(), cursor.size());
+                    p->context->matched_buffers.emplace_back(cursor.get_name(), cursor.buffer(), cursor.size());
+                    pc.buf_dumps++;
+                }
+
                 // Don't need to reset since it's only checked after we've gone
                 // through the loop at least once and the result will have
                 // been set again already
@@ -695,16 +690,13 @@ int detection_option_node_evaluate(
             }
         }
 
-        if ( rval == (int)IpsOption::NO_ALERT )
-        {
-            // Reset the flowbit_noalert flag in eval data
-            eval_data.flowbit_noalert = tmp_noalert_flag;
-        }
+        // Reset the flowbit_noalert flag in eval data
+        eval_data.flowbit_noalert = tmp_noalert_flag;
 
         if ( continue_loop && rval == (int)IpsOption::MATCH && node->relative_children )
         {
             IpsOption* opt = (IpsOption*)node->option_data;
-            continue_loop = opt->retry(cursor, orig_cursor);
+            continue_loop = opt->retry(cursor);
         }
         else
             continue_loop = false;
@@ -827,20 +819,8 @@ void detection_option_tree_reset_otn_stats(std::vector<HashNode*>& nodes, unsign
         auto* node = (detection_option_tree_node_t*)hnode->data;
         assert(node);
 
-        if ( node->state[thread_id].checks )
-            detection_option_node_reset_otn_stats(node, thread_id);
+        detection_option_node_reset_otn_stats(node, thread_id);
     }
-}
-
-detection_option_tree_root_t* new_root(OptTreeNode* otn)
-{
-    detection_option_tree_root_t* p = (detection_option_tree_root_t*)
-        snort_calloc(sizeof(detection_option_tree_root_t));
-
-    p->latency_state = new RuleLatencyState[ThreadConfig::get_instance_max()]();
-    p->otn = otn;
-
-    return p;
 }
 
 void free_detection_option_root(void** existing_tree)
@@ -853,21 +833,7 @@ void free_detection_option_root(void** existing_tree)
     root = (detection_option_tree_root_t*)*existing_tree;
     snort_free(root->children);
 
-    delete[] root->latency_state;
-    snort_free(root);
+    delete root;
     *existing_tree = nullptr;
 }
 
-detection_option_tree_node_t* new_node(option_type_t type, void* data)
-{
-    detection_option_tree_node_t* p =
-        (detection_option_tree_node_t*)snort_calloc(sizeof(*p));
-
-    p->option_type = type;
-    p->option_data = data;
-
-    p->state = (dot_node_state_t*)
-        snort_calloc(ThreadConfig::get_instance_max(), sizeof(*p->state));
-
-    return p;
-}

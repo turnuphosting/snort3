@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -35,6 +35,7 @@
 #include "managers/module_manager.h"
 #include "utils/stats.h"
 
+#include "profiler_impl.h"
 #include "rule_profiler.h"
 #include "rule_profiler_defs.h"
 #include "time_profiler.h"
@@ -269,7 +270,7 @@ static void time_profiling_start_cmd()
 static void time_profiling_stop_cmd()
 {
     TimeProfilerStats::set_enabled(false);
-    Profiler::stop((uint64_t)get_packet_number());
+    Profiler::stop(pc.analyzed_pkts);
     Profiler::consolidate_stats(snort::PROFILER_TYPE_TIME);
 }
 
@@ -417,6 +418,9 @@ static const Parameter profiler_memory_params[] =
     { "max_depth", Parameter::PT_INT, "-1:255", "-1",
       "limit depth to max_depth (-1 = no limit)" },
 
+    { "dump_file_size", Parameter::PT_INT, "4096:max53", "1073741824",
+      "files will be rolled over if they exceed this size" },
+
     { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
 };
 
@@ -453,7 +457,7 @@ static const Parameter profiler_params[] =
 class ProfilerReloadTuner : public snort::ReloadResourceTuner
 {
 public:
-    explicit ProfilerReloadTuner(bool enable_rule, bool enable_time) 
+    explicit ProfilerReloadTuner(bool enable_rule, bool enable_time)
         : enable_rule(enable_rule), enable_time(enable_time)
     {}
     ~ProfilerReloadTuner() override = default;
@@ -490,6 +494,14 @@ static bool s_profiler_module_set_max_depth(RuleProfilerConfig&, Value&)
 { return false; }
 
 template<typename T>
+static bool s_profiler_module_set_dump_file_size(T&, Value&)
+{ return false; }
+
+// cppcheck-suppress constParameter
+static bool s_profiler_module_set_dump_file_size(MemoryProfilerConfig& config, Value& v)
+{ config.dump_file_size = v.get_int64(); return true; }
+
+template<typename T>
 static bool s_profiler_module_set(T& config, Value& v)
 {
     if ( v.is("count") )
@@ -503,6 +515,9 @@ static bool s_profiler_module_set(T& config, Value& v)
 
     else if ( v.is("max_depth") )
         return s_profiler_module_set_max_depth(config, v);
+
+    else if ( v.is("dump_file_size") )
+        return s_profiler_module_set_dump_file_size(config, v);
 
     else
         return false;
@@ -536,6 +551,9 @@ bool ProfilerModule::end(const char* fqn, int, SnortConfig* sc)
     TimeProfilerStats::set_enabled(sc->profiler->time.show);
     RuleContext::set_enabled(sc->profiler->rule.show);
 
+    if ( sc->profiler->rule.show )
+        RuleContext::set_start_time(get_time_curr());
+
     if ( Snort::is_reloading() && strcmp(fqn, "profiler") == 0 )
         sc->register_reload_handler(new ProfilerReloadTuner(sc->profiler->rule.show,
             sc->profiler->time.show));
@@ -551,12 +569,12 @@ ProfileStats* ProfilerModule::get_profile(
     case 0:
         name = "total";
         parent = nullptr;
-        return &totalPerfStats;
+        return Profiler::get_total_perf_stats();
 
     case 1:
         name = "other";
         parent = nullptr;
-        return &otherPerfStats;
+        return Profiler::get_other_perf_stats();
     }
     return nullptr;
 }

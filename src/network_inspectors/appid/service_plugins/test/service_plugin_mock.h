@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -22,7 +22,10 @@
 #include "appid_detector.h"
 #include "appid_module.h"
 #include "appid_peg_counts.h"
-#include "utils/stats.h"
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 
 #define APPID_UT_ID 1492
 
@@ -32,7 +35,8 @@ namespace snort
 void ParseWarning(WarningGroup, const char*, ...) { }
 
 // Stubs for appid sessions
-FlowData::FlowData(unsigned, Inspector*) { }
+FlowData::FlowData(unsigned, Inspector*) : next(nullptr), prev(nullptr), handler(nullptr), id(0)
+{ }
 FlowData::~FlowData() = default;
 
 // Stubs for packet
@@ -46,7 +50,7 @@ bool Inspector::get_buf(const char*, Packet*, InspectionBuffer&) { return true; 
 class StreamSplitter* Inspector::get_splitter(bool) { return nullptr; }
 
 // Stubs for search_tool.cc
-SearchTool::SearchTool(bool) { }
+SearchTool::SearchTool(bool, const char*) { }
 SearchTool::~SearchTool() = default;
 
 // Stubs for util.cc
@@ -64,18 +68,14 @@ char* snort_strdup(const char* str)
     memcpy(p, str, n);
     return p;
 }
-class InspectorManager
-{
-public:
-SO_PUBLIC static Inspector* get_inspector(const char*, bool, SnortConfig*) {return nullptr;}
-};
 Module::Module(const char*, const char*) {}
 Module::Module(const char*, const char*, const Parameter*, bool)
 {}
 PegCount Module::get_global_count(char const*) const { return 0; }
 void Module::show_interval_stats(std::vector<unsigned int, std::allocator<unsigned int> >&, FILE*) {}
 void Module::show_stats(){}
-void Module::sum_stats(bool ){}
+void Module::sum_stats(bool){}
+void Module::main_accumulate_stats(){}
 void Module::reset_stats() {}
 
 AppIdSessionApi::AppIdSessionApi(const AppIdSession*, const SfIp&) :
@@ -94,9 +94,8 @@ void ClientDiscovery::reload() {}
 FpSMBData* smb_data = nullptr;
 
 int AppIdDetector::initialize(AppIdInspector&){return 0;}
-void AppIdDetector::reload() { }
 int AppIdDetector::data_add(AppIdSession&, void*, AppIdFreeFCN){return 0;}
-void* AppIdDetector::data_get(AppIdSession&) {return nullptr;}
+void* AppIdDetector::data_get(const AppIdSession&) {return nullptr;}
 void AppIdDetector::add_user(AppIdSession&, const char*, AppId, bool, AppidChangeBits&){}
 void AppIdDetector::add_payload(AppIdSession&, AppId){}
 void AppIdDetector::add_app(const snort::Packet&, AppIdSession&, AppidSessionDirection, AppId, AppId, const char*, AppidChangeBits&){}
@@ -116,13 +115,12 @@ int AppIdSession::add_flow_data(void*, unsigned, AppIdFreeFCN) { return 0; }
 int dcerpc_validate(const uint8_t*, int){return 0; }
 AppIdDiscovery::~AppIdDiscovery() { }
 void show_stats(PegCount*, const PegInfo*, unsigned, const char*) { }
-void show_stats(PegCount*, const PegInfo*, const IndexVec&, const char*, FILE*) { }
+void show_stats(PegCount*, const PegInfo*, const vector<unsigned>&, const char*, FILE*) { }
 AppIdConfig config;
 AppIdContext ctxt(config);
 class AppIdInspector : public snort::Inspector
 {
 public:
-    void eval(Packet*) override { }
     bool configure(snort::SnortConfig*) override { return true; }
 };
 
@@ -168,7 +166,11 @@ AppIdContext stub_ctxt(stub_config);
 static OdpContext stub_odp_ctxt(stub_config, nullptr);
 OdpContext* AppIdContext::odp_ctxt = &stub_odp_ctxt;
 AppIdSession::AppIdSession(IpProtocol, const SfIp* ip, uint16_t, AppIdInspector& inspector,
-    OdpContext&, uint16_t) : snort::FlowData(inspector_id, (snort::Inspector*)&inspector),
+    OdpContext&
+#ifndef DISABLE_TENANT_ID
+    ,uint16_t
+#endif
+    ) : snort::FlowData(inspector_id, (snort::Inspector*)&inspector),
     config(stub_config), api(*(new AppIdSessionApi(this, *ip))), odp_ctxt(stub_odp_ctxt) { }
 AppIdSession::~AppIdSession() = default;
 DiscoveryFilter::~DiscoveryFilter(){}
@@ -201,6 +203,7 @@ ServiceDiscoveryState* AppIdServiceState::add(SfIp const*, IpProtocol,
 {
   return nullptr;
 }
+
 void ServiceDiscoveryState::set_service_id_valid(ServiceDetector*) { }
 
 OdpContext::OdpContext(const AppIdConfig&, snort::SnortConfig*)

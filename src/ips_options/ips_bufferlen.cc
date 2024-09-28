@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -40,8 +40,8 @@ static THREAD_LOCAL ProfileStats lenCheckPerfStats;
 class LenOption : public IpsOption
 {
 public:
-    LenOption(const RangeCheck& c, bool r) : IpsOption(s_name)
-    { config = c; relative = r; }
+    LenOption(const RangeCheck& c, bool r) : IpsOption(s_name), config(c), relative(r)
+    { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -85,6 +85,7 @@ bool LenOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus LenOption::eval(Cursor& c, Packet*)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(lenCheckPerfStats);
     unsigned n = relative ? c.length() : c.size();
 
@@ -161,7 +162,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* len_ctor(Module* p, OptTreeNode*)
+static IpsOption* len_ctor(Module* p, IpsInfo&)
 {
     LenModule* m = (LenModule*)p;
     return new LenOption(m->data, m->relative);

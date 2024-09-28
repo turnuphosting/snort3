@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,7 +28,6 @@
 #include <sstream>
 
 #include "detection/detection_engine.h"
-#include "detection/detection_util.h"
 #include "service_inspectors/http2_inspect/http2_flow_data.h"
 #include "log/unified2.h"
 #include "protocols/packet.h"
@@ -117,13 +116,12 @@ HttpInspect::HttpInspect(const HttpParaList* params_) :
     {
         HttpTestManager::activate_test_output(HttpTestManager::IN_HTTP);
     }
-    if ((params->test_input) || (params->test_output))
-    {
-        HttpTestManager::set_print_amount(params->print_amount);
-        HttpTestManager::set_print_hex(params->print_hex);
-        HttpTestManager::set_show_pegs(params->show_pegs);
-        HttpTestManager::set_show_scan(params->show_scan);
-    }
+
+    HttpTestManager::set_print_amount(params->print_amount);
+    HttpTestManager::set_print_hex(params->print_hex);
+    HttpTestManager::set_show_pegs(params->show_pegs);
+    HttpTestManager::set_show_scan(params->show_scan);
+
 #endif
 
     if (params->script_detection)
@@ -139,10 +137,10 @@ HttpInspect::~HttpInspect()
     delete script_finder;
 }
 
-bool HttpInspect::configure(SnortConfig*)
+bool HttpInspect::configure(SnortConfig* sc)
 {
     params->js_norm_param.configure();
-    params->mime_decode_conf->sync_all_depths();
+    params->mime_decode_conf->sync_all_depths(sc);
     pub_id = DataBus::get_id(http_pub_key);
 
     return true;
@@ -379,7 +377,7 @@ int HttpInspect::get_xtra_uri(Flow* flow, uint8_t** buf, uint32_t* len, uint32_t
     HttpMsgRequest* const request = current_section->get_request();
     if (request == nullptr)
         return 0;
-    const Field& uri = request->get_uri();
+    const Field& uri = request->get_uri_norm_classic();
     if (uri.length() <= 0)
         return 0;
 
@@ -473,6 +471,7 @@ void HttpInspect::eval(Packet* p)
 
 void HttpInspect::eval(Packet* p, SourceId source_id, const uint8_t* data, uint16_t dsize)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(HttpModule::get_profile_stats());
 
     HttpFlowData* session_data = http_get_flow_data(p->flow);
@@ -636,6 +635,7 @@ void HttpInspect::process(const uint8_t* data, const uint16_t dsize, Flow* const
 
 void HttpInspect::clear(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(HttpModule::get_profile_stats());
 
     HttpFlowData* const session_data = http_get_flow_data(p->flow);
@@ -646,18 +646,12 @@ void HttpInspect::clear(Packet* p)
         return;
     }
 
-    Http2FlowData* h2i_flow_data = nullptr;
-    if (Http2FlowData::inspector_id != 0)
-    {
-        h2i_flow_data = (Http2FlowData*)p->flow->get_flow_data(Http2FlowData::inspector_id);
-    }
-
     HttpMsgSection* current_section = nullptr;
-    if (h2i_flow_data != nullptr)
+    if(p->flow->stream_intf)
     {
-        current_section = h2i_flow_data->get_hi_msg_section();
+        current_section = (HttpMsgSection*)p->flow->stream_intf->get_hi_msg_section(p->flow);
         assert(current_section != nullptr);
-        h2i_flow_data->set_hi_msg_section(nullptr);
+        p->flow->stream_intf->set_hi_msg_section(p->flow, nullptr);
     }
     else
         current_section = HttpContextData::clear_snapshot(p->context);
@@ -702,6 +696,10 @@ const uint8_t* HttpInspect::adjust_log_packet(Packet* p, uint16_t& length)
         id = HTTP_BUFFER_RAW_STATUS;
     }
     else
+        return nullptr;
+
+    assert(other_section != nullptr);
+    if (other_section == nullptr)
         return nullptr;
 
     const Field& start_line = other_section->get_classic_buffer(id, 0, 0);

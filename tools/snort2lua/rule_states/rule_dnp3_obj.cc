@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -39,18 +39,18 @@ public:
 bool DNP3Obj::convert(std::istringstream& data)
 {
     std::string val = util::get_rule_option_args(data);
-    std::string group = "group ";
-    std::string var = " var ";
 
     /* convert from dnp3_obj: xxx,xxx to
      * dnp3_obj: group xxx, var xxxx
      */
-    val.insert(0, group);
+    val.insert(0, "group ");
     size_t start_pos = val.find(',');
     if (start_pos == std::string::npos)
         rule_api.bad_rule(data, "dnp3_obj:expecting 2 args separated by comma");
     else
-        val.insert(start_pos+1, var);
+    {
+        val.insert(start_pos+1, " var ");
+    }
 
     rule_api.add_option("dnp3_obj", val);
     return set_next_rule_state(data);

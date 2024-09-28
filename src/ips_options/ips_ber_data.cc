@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,8 +25,8 @@
 #include "framework/ips_option.h"
 #include "framework/module.h"
 #include "hash/hash_key_operations.h"
+#include "helpers/ber.h"
 #include "profiler/profiler.h"
-#include "utils/util_ber.h"
 
 using namespace snort;
 
@@ -84,6 +84,7 @@ bool BerDataOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus BerDataOption::eval(Cursor& c, Packet*)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(berDataPerfStats);
 
     BerReader ber(c);
@@ -164,7 +165,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* ber_data_ctor(Module* p, OptTreeNode*)
+static IpsOption* ber_data_ctor(Module* p, IpsInfo&)
 {
     BerDataModule* m = (BerDataModule*)p;
     return new BerDataOption(m->type);

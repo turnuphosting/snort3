@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -111,7 +111,7 @@ bool S7commplusOpcodeOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus S7commplusOpcodeOption::eval(Cursor&, Packet* p)
 {
-    RuleProfile profile(s7commplus_opcode_prof);
+    RuleProfile profile(s7commplus_opcode_prof);    // cppcheck-suppress unreadVariable
 
     if ( !p->flow )
         return NO_MATCH;
@@ -157,7 +157,7 @@ public:
     { return DETECT; }
 
 public:
-    uint8_t opcode;
+    uint8_t opcode = 0;
 };
 
 bool S7commplusOpcodeModule::set(const char*, Value& v, SnortConfig*)
@@ -188,7 +188,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* opt_ctor(Module* m, OptTreeNode*)
+static IpsOption* opt_ctor(Module* m, IpsInfo&)
 {
     S7commplusOpcodeModule* mod = (S7commplusOpcodeModule*)m;
     return new S7commplusOpcodeOption(mod->opcode);

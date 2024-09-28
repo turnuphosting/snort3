@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -75,6 +75,8 @@ const RuleMap Http2Module::http2_events[] =
     { EVENT_LOSS_OF_SYNC,  "not HTTP/2 traffic or unrecoverable HTTP/2 protocol error" },
     { EVENT_INVALID_PRIORITY_FRAME, "invalid HTTP/2 PRIORITY frame" },
     { EVENT_INVALID_GOAWAY_FRAME, "invalid HTTP/2 GOAWAY frame" },
+    { EVENT_SETTINGS_QUEUE_OVERFLOW, "too many unacknowledged settings" },
+    { EVENT_SETTINGS_QUEUE_UNDERFLOW, "setting acknowledgment without actual settings" },
     { 0, nullptr }
 };
 

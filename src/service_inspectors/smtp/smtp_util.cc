@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,8 +25,8 @@
 
 #include "smtp_util.h"
 
+#include "detection/detection_buf.h"
 #include "detection/detection_engine.h"
-#include "detection/detection_util.h"
 #include "protocols/packet.h"
 #include "stream/stream.h"
 #include "utils/safec.h"
@@ -35,13 +35,14 @@
 
 using namespace snort;
 
-void SMTP_GetEOL(const uint8_t* ptr, const uint8_t* end,
+SMTPEol SMTP_GetEOL(const uint8_t* ptr, const uint8_t* end,
     const uint8_t** eol, const uint8_t** eolm)
 {
     assert(ptr and end and eol and eolm);
 
     const uint8_t* tmp_eolm;
     const uint8_t* tmp_eol = (const uint8_t*)memchr(ptr, '\n', end - ptr);
+    SMTPEol eol_state = EOL_NOT_SEEN;
 
     if (tmp_eol == nullptr)
     {
@@ -55,10 +56,12 @@ void SMTP_GetEOL(const uint8_t* ptr, const uint8_t* end,
         if ((tmp_eol > ptr) && (*(tmp_eol - 1) == '\r'))
         {
             tmp_eolm = tmp_eol - 1;
+            eol_state = EOL_CRLF;
         }
         else
         {
             tmp_eolm = tmp_eol;
+            eol_state = EOL_LF;
         }
 
         /* move past newline */
@@ -67,17 +70,17 @@ void SMTP_GetEOL(const uint8_t* ptr, const uint8_t* end,
 
     *eol = tmp_eol;
     *eolm = tmp_eolm;
+    return eol_state;
 }
 
 void SMTP_ResetAltBuffer(Packet* p)
 {
-    DataBuffer& buf = DetectionEngine::get_alt_buffer(p);
-    buf.len = 0;
+    DetectionEngine::reset_alt_buffer(p);
 }
 
 const uint8_t* SMTP_GetAltBuffer(Packet* p, unsigned& len)
 {
-    const DataBuffer& buf = DetectionEngine::get_alt_buffer(p);
+    const DataPointer& buf = DetectionEngine::get_alt_buffer(p);
     len = buf.len;
     return len ? buf.data : nullptr;
 }
@@ -92,8 +95,8 @@ int SMTP_CopyToAltBuffer(Packet* p, const uint8_t* start, int length)
     if (length == 0)
         return 0;
 
-    DataBuffer& buf = DetectionEngine::get_alt_buffer(p);
-    unsigned alt_size = sizeof(buf.data);
+    DataBuffer& buf = DetectionEngine::acquire_alt_buffer(p);
+    unsigned alt_size = buf.decode_blen;
 
     if ((unsigned long)length > alt_size - buf.len)
     {

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -115,6 +115,12 @@ bool HttpTestIpsOption::operator==(const IpsOption& ips) const
 
 static int64_t get_decimal_num(enum NumericValue& is_numeric, const uint8_t* start, int32_t length)
 {
+    if (!length)
+    {
+        is_numeric = NV_FALSE;
+        return -1;
+    }
+
     int64_t total = 0;
     int32_t k = 0;
     do
@@ -148,7 +154,7 @@ IpsOption::EvalStatus HttpTestIpsOption::eval_header_test(const Field& http_buff
     else
         is_numeric = NV_FALSE;
 
-    const bool absent_passed = !absent || (absent && is_absent);
+    const bool absent_passed = !absent || is_absent;
     const bool numeric_passed = (numeric == NumericValue::NV_UNDEFINED) ||
                                 (is_numeric == numeric);
     const bool range_passed = !check.is_set() || (is_numeric == NV_TRUE && check.eval(num));
@@ -158,6 +164,7 @@ IpsOption::EvalStatus HttpTestIpsOption::eval_header_test(const Field& http_buff
 
 IpsOption::EvalStatus HttpTestIpsOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(HttpTestRuleOptModule::http_test_ps[idx]);
 
     const HttpInspect* const hi = eval_helper(p);

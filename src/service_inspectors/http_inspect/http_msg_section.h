@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -20,7 +20,6 @@
 #ifndef HTTP_MSG_SECTION_H
 #define HTTP_MSG_SECTION_H
 
-#include "detection/detection_util.h"
 #include "framework/cursor.h"
 #include "framework/pdu_section.h"
 #include "protocols/packet.h"
@@ -120,10 +119,10 @@ protected:
     bool cleared = false;
 
     // Pointers to related message sections in the same transaction
-    HttpMsgRequest* request;
-    HttpMsgStatus* status;
-    HttpMsgHeader* header[2];
-    HttpMsgTrailer* trailer[2];
+    HttpMsgRequest* request = nullptr;
+    HttpMsgStatus* status = nullptr;
+    HttpMsgHeader* header[2] = {nullptr, nullptr};
+    HttpMsgTrailer* trailer[2] = {nullptr, nullptr};
 
 
     // Convenience methods shared by multiple subclasses

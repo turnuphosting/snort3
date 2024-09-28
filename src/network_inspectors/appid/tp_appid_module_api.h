@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -23,10 +23,18 @@
 
 #include <vector>
 #include <string>
-#include "main/thread.h"
+
+#include "main/snort_types.h"
+
 #include "tp_appid_types.h"
 
 #define THIRD_PARTY_APPID_API_VERSION 6
+
+struct TPAppidProfilerFunctions
+{
+    void* (*appid_malloc) (size_t);
+    void (*appid_free) (void*);
+};
 
 class ThirdPartyConfig
 {
@@ -38,6 +46,7 @@ public:
     std::string tp_appid_config;
     bool tp_appid_stats_enable = false;
     bool tp_appid_config_dump = false;
+    TPAppidProfilerFunctions tp_appid_profiler_functions = {};
 };
 
 class ThirdPartyAppIdContext

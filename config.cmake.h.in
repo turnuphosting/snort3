@@ -76,6 +76,9 @@
 /* enable memory profiler */
 #cmakedefine ENABLE_MEMORY_PROFILER 1
 
+/* disable tenant_id */
+#cmakedefine DISABLE_TENANT_ID 1
+
 /* enable rule profiler */
 #cmakedefine ENABLE_RULE_PROFILER 1
 
@@ -149,6 +152,9 @@
 
 /* numa available */
 #cmakedefine HAVE_NUMA 1
+
+/* libml available */
+#cmakedefine HAVE_LIBML 1
 
 /*  Availability of specific library functions */
 

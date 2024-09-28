@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -142,8 +142,8 @@ const Parameter HttpModule::http_params[] =
       "of preference as defined" },
 
     { "request_body_app_detection", Parameter::PT_BOOL, nullptr, "true",
-      "make HTTP/2 request message bodies available for application detection "
-          "(detection requires AppId)" },
+      "make HTTP request message bodies available for application detection "
+          "(AppId) and other inspectors" },
 
     { "allowed_methods", Parameter::PT_STRING, nullptr, nullptr,
       "list of allowed methods" },

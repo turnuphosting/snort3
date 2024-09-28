@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2004-2013 Sourcefire, Inc.
 // Copyright (C) 2001-2004 Jeff Nathan <jeff@snort.org>
 //
@@ -75,7 +75,6 @@
 #include <sstream>
 
 #include "detection/detection_engine.h"
-#include "events/event_queue.h"
 #include "log/messages.h"
 #include "profiler/profiler.h"
 #include "protocols/arp.h"
@@ -98,12 +97,9 @@ THREAD_LOCAL ProfileStats arpPerfStats;
 
 static const IPMacEntry* LookupIPMacEntryByIP(const IPMacEntryList& ipmel, uint32_t ipv4_addr)
 {
-    for ( auto& p : ipmel )
-    {
-        if (p.ipv4_addr == ipv4_addr)
-            return &p;
-    }
-    return nullptr;
+    auto it = std::find_if(ipmel.cbegin(), ipmel.cend(),
+        [ipv4_addr](const IPMacEntry& p){ return p.ipv4_addr == ipv4_addr; });
+    return (it != ipmel.cend()) ? &(*it) : nullptr;
 }
 
 static std::string to_hex_string(const uint8_t* data, size_t len)

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2017-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2017-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,7 +25,6 @@
 #include "detect_trace.h"
 
 #include "log/log.h"
-#include "main/thread.h"
 #include "protocols/packet.h"
 #include "utils/stats.h"
 #include "utils/util.h"
@@ -90,8 +89,8 @@ void print_pattern(const PatternMatchData* pmd, Packet* p)
     get_pattern_info(pmd, hex, txt, opts);
 
     debug_logf(detection_trace, TRACE_RULE_EVAL, p,
-        "Fast pattern %s[%u] = '%s' |%s| %s\n",
-        pmd->sticky_buf,  pmd->pattern_size, txt.c_str(), hex.c_str(), opts.c_str());
+        "Fast pattern %s[%u] = %s %s %s\n",
+        pmd->sticky_buf,  pmd->fp_length, txt.c_str(), hex.c_str(), opts.c_str());
 }
 
 void dump_buffer(const uint8_t* buff, unsigned len, Packet* p)

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -32,7 +32,7 @@ inline static void update_rna_pkt_stats(const snort::Packet* p)
     rna_stats.total_bytes_in_interval += p->pktlen;
 }
 
-inline static void update_rna_pkt_stats(snort::DataEvent& event)
+inline static void update_rna_pkt_stats(const snort::DataEvent& event)
 {
     update_rna_pkt_stats(event.get_packet());
 }

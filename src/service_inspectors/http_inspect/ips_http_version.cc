@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -47,17 +47,6 @@ bool HttpVersionRuleOptModule::begin(const char*, int, SnortConfig*)
     version_flags = 0;
     return true;
 }
-
-static const std::map <std::string, VersionId> VersionStrToEnum =
-{
-    { "malformed", VERS__PROBLEMATIC },
-    { "other", VERS__OTHER },
-    { "1.0", VERS_1_0 },
-    { "1.1", VERS_1_1 },
-    { "2.0", VERS_2_0 },
-    { "3.0", VERS_3_0 },
-    { "0.9", VERS_0_9 }
-};
 
 bool HttpVersionRuleOptModule::parse_version_list(Value& v)
 {
@@ -115,6 +104,7 @@ bool HttpVersionIpsOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus HttpVersionIpsOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(HttpVersionRuleOptModule::http_version_ps);
 
     const HttpInspect* const hi = eval_helper(p);

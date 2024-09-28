@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -410,9 +410,9 @@ void RnaAppDiscovery::discover_netbios_name(const snort::Packet* p, DiscoveryFil
 
     if ( rt->set_netbios_name(nb_name) )
     {
-        const auto& src_ip = p->ptrs.ip_api.get_src();
-        const auto& src_ip_ptr = (const struct in6_addr*) src_ip->get_ip6_ptr();
-        const auto& src_mac = layer::get_eth_layer(p)->ether_src;
+        const SfIp* src_ip = p->ptrs.ip_api.get_src();
+        const struct in6_addr* src_ip_ptr = (const struct in6_addr*) src_ip->get_ip6_ptr();
+        const uint8_t* src_mac = layer::get_eth_layer(p)->ether_src;
 
         logger.log(RNA_EVENT_CHANGE, CHANGE_NETBIOS_NAME, src_ip_ptr, src_mac,
             &rt, p, (uint32_t) packet_time(), 0, nullptr, nullptr, nullptr, nullptr, nullptr,

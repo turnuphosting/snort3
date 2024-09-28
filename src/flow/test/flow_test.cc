@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -36,14 +36,14 @@
 #include "protocols/ip.h"
 #include "protocols/layer.h"
 #include "protocols/packet.h"
+#include "time/clock_defs.h"
 
 #include <CppUTest/CommandLineTestRunner.h>
 #include <CppUTest/TestHarness.h>
 
-using namespace snort;
+#include "flow_stubs.h"
 
-Packet::Packet(bool) { }
-Packet::~Packet()  = default;
+using namespace snort;
 
 void Inspector::rem_ref() {}
 
@@ -61,30 +61,18 @@ void FlowStash::reset() {}
 
 void DetectionEngine::onload(Flow*) {}
 
-void set_network_policy(unsigned) { }
-void set_inspection_policy(unsigned) { }
-void set_ips_policy(const snort::SnortConfig*, unsigned) { }
-void select_default_policy(const _daq_pkt_hdr&, const SnortConfig*) { }
-namespace snort
-{
-NetworkPolicy* get_network_policy() { return nullptr; }
-InspectionPolicy* get_inspection_policy() { return nullptr; }
-IpsPolicy* get_ips_policy() { return nullptr; }
-void set_network_policy(NetworkPolicy*) { }
-void set_inspection_policy(InspectionPolicy*) { }
-void set_ips_policy(IpsPolicy*) { }
-unsigned SnortConfig::get_thread_reload_id() { return 0; }
-}
-
 Packet* DetectionEngine::set_next_packet(const Packet*, Flow*) { return nullptr; }
 
 ContextSwitcher* Analyzer::get_switcher() { return nullptr; }
 snort::IpsContext* ContextSwitcher::get_context() const { return nullptr; }
 IpsContext* DetectionEngine::get_context() { return nullptr; }
 
-DetectionEngine::DetectionEngine() = default;
+DetectionEngine::DetectionEngine() { context = nullptr; }
 
 DetectionEngine::~DetectionEngine() = default;
+
+Packet test_packet;
+Packet* DetectionEngine::get_current_packet() { return &test_packet; }
 
 bool layer::set_outer_ip_api(const Packet* const, ip::IpApi&, int8_t&)
 { return false; }
@@ -93,19 +81,10 @@ uint8_t ip::IpApi::ttl() const { return 0; }
 
 const Layer* layer::get_mpls_layer(const Packet* const) { return nullptr; }
 
-void DataBus::publish(unsigned, unsigned, Packet*, Flow*) {}
-
 const SnortConfig* SnortConfig::get_conf() { return nullptr; }
 
 TEST_GROUP(nondefault_timeout)
 {
-    void setup() override
-    {
-    }
-
-    void teardown() override
-    {
-    }
 };
 
 TEST(nondefault_timeout, hard_expiration)
@@ -124,6 +103,36 @@ TEST(nondefault_timeout, hard_expiration)
 
     CHECK( flow->is_hard_expiration() == true);
     CHECK( flow->expire_time == validate );
+
+    delete flow;
+}
+
+TEST_GROUP(inspection_time_presence)
+{
+};
+
+TEST(inspection_time_presence, inspection_time_addition)
+{
+    Flow *flow = new Flow;
+
+    flow->flowstats.client_pkts = 3;
+    flow->flowstats.server_pkts = 3;
+
+    flow->add_inspection_duration(2);
+    flow->add_inspection_duration(3);
+
+    CHECK(flow->get_inspection_duration() == 5);
+    CHECK(flow->get_inspected_packet_count() == 6);
+
+    flow->set_state(Flow::FlowState::ALLOW);
+
+    flow->add_inspection_duration(2);
+
+    flow->flowstats.client_pkts = 5;
+    flow->flowstats.server_pkts = 5;
+
+    CHECK(flow->get_inspection_duration() == 5);
+    CHECK(flow->get_inspected_packet_count() == 6);
 
     delete flow;
 }

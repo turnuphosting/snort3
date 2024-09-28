@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,9 +27,7 @@
 #include "cip.h"
 
 #include "detection/detection_engine.h"
-#include "events/event_queue.h"
 #include "log/messages.h"
-#include "managers/inspector_manager.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
 #include "pub_sub/cip_events.h"
@@ -127,7 +125,7 @@ static CipPacketDirection get_packet_direction(Packet* p)
 
 static void publish_data_to_appId(Packet* packet, CipCurrentData& current_data)
 {
-    CipEventData cip_event_data;
+    CipEventData cip_event_data = {};
     CipEvent cip_event(packet, &cip_event_data);
 
     bool publish_appid = true;
@@ -224,6 +222,7 @@ static void cip_current_data_process(CipSessionData* css, CipCurrentData& curren
 
 static void snort_cip(CipProtoConf* config, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(cip_perf_stats);
 
     if (p->has_tcp_data() && !p->is_full_pdu())

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -53,7 +53,7 @@ HttpMsgSection::HttpMsgSection(const uint8_t* buffer, const uint16_t buf_size,
     session_data(session_data_),
     flow(flow_),
     params(params_),
-    transaction(HttpTransaction::attach_my_transaction(session_data, source_id_)),
+    transaction(HttpTransaction::attach_my_transaction(session_data, source_id_, flow)),
     trans_num(session_data->expected_trans_num[source_id_]),
     status_code_num((source_id_ == SRC_SERVER) ? session_data->status_code_num : STAT_NOT_PRESENT),
     source_id(source_id_),
@@ -63,14 +63,10 @@ HttpMsgSection::HttpMsgSection(const uint8_t* buffer, const uint16_t buf_size,
 {
     assert((source_id == SRC_CLIENT) || (source_id == SRC_SERVER));
 
-    if (Http2FlowData::inspector_id != 0)
+    if (flow->stream_intf)
     {
-        Http2FlowData* const h2i_flow_data = (Http2FlowData*)flow->get_flow_data(Http2FlowData::inspector_id);
-        if (h2i_flow_data != nullptr)
-        {
-            h2i_flow_data->set_hi_msg_section(this);
-            return;
-        }
+        flow->stream_intf->set_hi_msg_section(flow, this);
+        return;
     }
 
     HttpContextData::save_snapshot(this);
@@ -287,7 +283,7 @@ const Field& HttpMsgSection::get_classic_buffer(const HttpBufferInfo& buf)
             return Field::FIELD_NULL;
     }
     default:
-        assert(false);
+        assert(buf.type <= HTTP__BUFFER_MAX);
         return Field::FIELD_NULL;
     }
 }
@@ -375,8 +371,8 @@ const Field& HttpMsgSection::get_param_buffer(Cursor& c, const HttpParam& param)
     {
         KeyValue* fields = query_kv[query_index];
 
-        Field& key = fields->key;
-        Field& value = fields->value;
+        const Field& key = fields->key;
+        const Field& value = fields->value;
 
         ++query_index;
 
@@ -391,8 +387,8 @@ const Field& HttpMsgSection::get_param_buffer(Cursor& c, const HttpParam& param)
     {
         KeyValue* fields = body_kv[body_index];
 
-        Field& key = fields->key;
-        Field& value = fields->value;
+        const Field& key = fields->key;
+        const Field& value = fields->value;
 
         ++body_index;
 

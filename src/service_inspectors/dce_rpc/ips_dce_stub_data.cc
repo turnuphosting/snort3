@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -46,7 +46,7 @@ static THREAD_LOCAL ProfileStats dce2_stub_data_perf_stats;
 class Dce2StubDataOption : public IpsOption
 {
 public:
-    Dce2StubDataOption() : IpsOption(s_name) { }
+    Dce2StubDataOption() :   IpsOption(s_name) { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -75,6 +75,7 @@ bool Dce2StubDataOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus Dce2StubDataOption::eval(Cursor& c, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(dce2_stub_data_perf_stats);
 
     if (p->dsize == 0)
@@ -109,7 +110,7 @@ IpsOption::EvalStatus Dce2StubDataOption::eval(Cursor& c, Packet* p)
 class Dce2StubDataModule : public Module
 {
 public:
-    Dce2StubDataModule() : Module(s_name, s_help) { }
+    Dce2StubDataModule() :   Module(s_name, s_help) { }
     ProfileStats* get_profile() const override;
 
     Usage get_usage() const override
@@ -135,7 +136,7 @@ static void dce2_stub_data_mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* dce2_stub_data_ctor(Module*, OptTreeNode*)
+static IpsOption* dce2_stub_data_ctor(Module*, IpsInfo&)
 {
     return new Dce2StubDataOption;
 }

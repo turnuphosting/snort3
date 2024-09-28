@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -50,8 +50,7 @@ static const Parameter s_params[] =
 class ServiceModule : public Module
 {
 public:
-    ServiceModule() : Module(s_name, s_help, s_params)
-    { snort_config = nullptr; }
+    ServiceModule() : Module(s_name, s_help, s_params) { }
 
     bool set(const char*, Value&, SnortConfig*) override;
     bool begin(const char*, int, SnortConfig*) override;
@@ -60,13 +59,11 @@ public:
     { return DETECT; }
 
 public:
-    struct SnortConfig* snort_config;
     vector<string> services;
 };
 
-bool ServiceModule::begin(const char*, int, SnortConfig* sc)
+bool ServiceModule::begin(const char*, int, SnortConfig*)
 {
-    snort_config = sc;
     services.clear();
     return true;
 }
@@ -76,13 +73,10 @@ bool ServiceModule::set(const char*, Value& v, SnortConfig*)
     assert(v.is("*"));
     std::string svc = v.get_string();
 
-    for ( const auto& p : services )
+    if (std::any_of(services.cbegin(), services.cend(), [&svc](const std::string&p){ return p == svc; }))
     {
-        if ( p == svc )
-        {
-            ParseWarning(WARN_RULES, "repeated service '%s'", svc.c_str());
-            return true;
-        }
+        ParseWarning(WARN_RULES, "repeated service '%s'", svc.c_str());
+        return true;
     }
     services.emplace_back(svc);
     return true;
@@ -102,12 +96,12 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* service_ctor(Module* p, OptTreeNode* otn)
+static IpsOption* service_ctor(Module* p, IpsInfo& info)
 {
     ServiceModule* m = (ServiceModule*)p;
 
     for ( const auto& service : m->services )
-        add_service_to_otn(m->snort_config, otn, service.c_str());
+        IpsOption::add_service(info, service.c_str());
 
     return nullptr;
 }
@@ -137,5 +131,13 @@ static const IpsApi service_api =
     nullptr
 };
 
-const BaseApi* ips_service = &service_api.base;
+#ifdef BUILDING_SO
+SO_PUBLIC const BaseApi* snort_plugins[] =
+#else
+const BaseApi* ips_service[] =
+#endif
+{
+    &service_api.base,
+    nullptr
+};
 

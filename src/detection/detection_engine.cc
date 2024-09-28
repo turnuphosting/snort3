@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,18 +24,19 @@
 
 #include "detection_engine.h"
 
+#include "events/event_queue.h"
 #include "events/sfeventq.h"
 #include "filters/sfthreshold.h"
 #include "framework/endianness.h"
+#include "framework/ips_action.h"
 #include "helpers/ring.h"
 #include "latency/packet_latency.h"
 #include "main/analyzer.h"
 #include "main/snort_config.h"
-#include "main/thread.h"
 #include "managers/inspector_manager.h"
 #include "managers/mpse_manager.h"
 #include "packet_io/active.h"
-#include "packet_tracer/packet_tracer.h"
+#include "packet_io/packet_tracer.h"
 #include "parser/parser.h"
 #include "profiler/profiler_defs.h"
 #include "protocols/packet.h"
@@ -45,8 +46,8 @@
 #include "utils/stats.h"
 
 #include "context_switcher.h"
+#include "detection_buf.h"
 #include "detection_module.h"
-#include "detection_util.h"
 #include "detect.h"
 #include "detect_trace.h"
 #include "fp_config.h"
@@ -55,9 +56,10 @@
 #include "ips_context_data.h"
 #include "regex_offload.h"
 
-static THREAD_LOCAL RegexOffload* offloader = nullptr;
-
 using namespace snort;
+
+static THREAD_LOCAL RegexOffload* offloader = nullptr;
+bool DetectionEngine::offload_enabled = false;
 
 //--------------------------------------------------------------------------
 // basic de
@@ -98,8 +100,12 @@ void DetectionEngine::thread_init()
 }
 
 void DetectionEngine::thread_term()
-{ delete offloader; }
+{
+    delete offloader;
+}
 
+// Not sure why cppcheck doesn't think context is initialized
+// cppcheck-suppress uninitMemberVar
 DetectionEngine::DetectionEngine()
 {
     context = Analyzer::get_switcher()->interrupt();
@@ -119,6 +125,9 @@ DetectionEngine::~DetectionEngine()
         finish_packet(context->packet, true);
     }
 }
+
+void DetectionEngine::enable_offload()
+{ offload_enabled = true; }
 
 void DetectionEngine::reset()
 {
@@ -176,7 +185,7 @@ Packet* DetectionEngine::set_next_packet(const Packet* parent, Flow* flow)
     {
         if ( flow )
             p->context->snapshot_flow(flow);
-        c->packet_number = get_packet_number();
+        c->packet_number = pc.analyzed_pkts;
         c->wire_packet = nullptr;
     }
 
@@ -217,7 +226,7 @@ Packet* DetectionEngine::set_next_packet(const Packet* parent, Flow* flow)
 
 void DetectionEngine::finish_inspect_with_latency(Packet* p)
 {
-    DetectionEngine::set_check_tags();
+    DetectionEngine::set_check_tags(p);
 
     // By checking tagging here, we make sure that we log the
     // tagged packet whether it generates an alert or not.
@@ -248,6 +257,9 @@ void DetectionEngine::finish_inspect(Packet* p, bool inspected)
 
     p->context->post_detection();
 
+    if ( inspected and !p->context->next() )
+        InspectorManager::clear(p);
+
     // clear closed sessions here after inspection since non-stream
     // inspectors may depend on flow information
     // this also handles block pending state
@@ -255,9 +267,6 @@ void DetectionEngine::finish_inspect(Packet* p, bool inspected)
     // while processing a PDU
     if ( !p->has_parent() )
         Stream::check_flow_closed(p);
-
-    if ( inspected and !p->context->next() )
-        InspectorManager::clear(p);
 
     clear_events(p);
 }
@@ -281,22 +290,10 @@ void DetectionEngine::finish_packet(Packet* p, bool flow_deletion)
         sw->complete();
 }
 
-uint8_t* DetectionEngine::get_buffer(unsigned& max)
-{
-    max = IpsContext::buf_size;
-    return Analyzer::get_switcher()->get_context()->buf;
-}
-
 uint8_t* DetectionEngine::get_next_buffer(unsigned& max)
 {
     max = IpsContext::buf_size;
     return Analyzer::get_switcher()->get_next()->buf;
-}
-
-DataBuffer& DetectionEngine::get_alt_buffer(Packet* p)
-{
-    assert(p);
-    return p->context->alt_data;
 }
 
 void DetectionEngine::set_file_data(const DataPointer& dp)
@@ -406,11 +403,11 @@ IpsContext::ActiveRules DetectionEngine::get_detects(Packet* p)
 void DetectionEngine::set_detects(Packet* p, IpsContext::ActiveRules ar)
 { p->context->active_rules = ar; }
 
-void DetectionEngine::set_check_tags(bool enable)
-{ Analyzer::get_switcher()->get_context()->check_tags = enable; }
+void DetectionEngine::set_check_tags(Packet* p, bool enable)
+{ p->context->check_tags = enable; }
 
-bool DetectionEngine::get_check_tags()
-{ return Analyzer::get_switcher()->get_context()->check_tags; }
+bool DetectionEngine::get_check_tags(Packet* p)
+{ return p->context->check_tags; }
 
 //--------------------------------------------------------------------------
 // offload / onload
@@ -457,6 +454,7 @@ bool DetectionEngine::offload(Packet* p)
 
     if ( p->flow ? p->flow->context_chain.front() : sw->non_flow_chain.front() )
     {
+        // cppcheck-suppress unreadVariable
         Profile profile(mpsePerfStats);
         p->context->searches.search_sync();
         sw->suspend();
@@ -476,12 +474,12 @@ void DetectionEngine::idle()
         while ( offloader->count() )
         {
             debug_logf(detection_trace, TRACE_DETECTION_ENGINE, nullptr,
-                "(wire) %" PRIu64 " de::sleep\n", get_packet_number());
+                "(wire) %" PRIu64 " de::sleep\n", pc.analyzed_pkts);
 
             onload();
         }
         debug_logf(detection_trace, TRACE_DETECTION_ENGINE, nullptr,
-            "(wire) %" PRIu64 " de::idle (r=%d)\n", get_packet_number(),
+            "(wire) %" PRIu64 " de::idle (r=%d)\n", pc.analyzed_pkts,
             offloader->count());
 
         offloader->stop();
@@ -496,7 +494,7 @@ void DetectionEngine::onload(Flow* flow)
     while ( flow->is_suspended() )
     {
         debug_logf(detection_trace, TRACE_DETECTION_ENGINE, nullptr,
-            "(wire) %" PRIu64 " de::sleep\n", get_packet_number());
+            "(wire) %" PRIu64 " de::sleep\n", pc.analyzed_pkts);
 
         resume_ready_suspends(flow->context_chain); // FIXIT-M makes onload reentrant-safe
         onload();
@@ -506,6 +504,7 @@ void DetectionEngine::onload(Flow* flow)
 
 void DetectionEngine::onload()
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(mpsePerfStats);
     Packet* p;
 
@@ -517,7 +516,7 @@ void DetectionEngine::onload()
 
         p->clear_offloaded();
 
-        IpsContextChain& chain = p->flow ? p->flow->context_chain :
+        const IpsContextChain& chain = p->flow ? p->flow->context_chain :
             Analyzer::get_switcher()->non_flow_chain;
 
         resume_ready_suspends(chain);
@@ -575,7 +574,9 @@ void DetectionEngine::wait_for_context()
         do
         {
             onload();
-        } while ( !sw->idle_count() );
+        }
+        // cppcheck-suppress knownConditionTrueFalse
+        while ( !sw->idle_count() );
     }
 }
 
@@ -626,6 +627,7 @@ bool DetectionEngine::inspect(Packet* p)
     {
         PacketLatency::Context pkt_latency_ctx { p };
 
+        InspectorManager::probe_first(p);
         if ( p->ptrs.decode_flags & DECODE_ERR_FLAGS )
         {
             if ( p->context->conf->ips_inline_mode() and
@@ -645,9 +647,9 @@ bool DetectionEngine::inspect(Packet* p)
             if ( !all_disabled(p) )
             {
                 if ( PacketTracer::is_daq_activated() )
-                    PacketTracer::pt_timer_start();
+                    PacketTracer::restart_timer();
 
-                if ( detect(p, true) )
+                if ( detect(p, offload_enabled) )
                     return false; // don't finish out offloaded packets
             }
         }
@@ -742,6 +744,7 @@ static int log_events(void* event, void* user)
 */
 int DetectionEngine::log_events(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(eventqPerfStats);
     SF_EVENTQ* pq = p->context->equeue;
     sfeventq_action(pq, ::log_events, (void*)p);

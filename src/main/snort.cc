@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -38,13 +38,15 @@
 #include "filters/sfthreshold.h"
 #include "flow/ha.h"
 #include "framework/mpse.h"
-#include "helpers/process.h"
 #include "host_tracker/host_cache.h"
+#include "host_tracker/host_cache_segmented.h"
+#include "host_tracker/host_tracker_module.h"
 #include "ips_options/ips_options.h"
 #include "log/log.h"
-#include "log/messages.h"
+#include "log/log_errors.h"
 #include "loggers/loggers.h"
 #include "main.h"
+#include "main/process.h"
 #include "main/shell.h"
 #include "managers/codec_manager.h"
 #include "managers/inspector_manager.h"
@@ -74,6 +76,7 @@
 #include "trace/trace_api.h"
 #include "trace/trace_config.h"
 #include "trace/trace_logger.h"
+#include "utils/stats.h"
 #include "utils/util.h"
 
 #ifdef SHELL
@@ -170,10 +173,11 @@ void Snort::init(int argc, char** argv)
     HighAvailabilityManager::configure(sc->ha_config);
     memory::MemoryCap::init(sc->thread_config->get_instance_max());
 
+    ModuleManager::init_stats();
     ModuleManager::reset_stats(sc);
 
     if (sc->alert_before_pass())
-        sc->rule_order = Actions::get_default_priorities(true);
+        sc->rule_order = IpsAction::get_default_priorities(true);
 
     sc->setup();
 
@@ -207,6 +211,7 @@ void Snort::init(int argc, char** argv)
 
     /* Need to do this after dynamic detection stuff is initialized, too */
     IpsManager::global_init(sc);
+    PacketManager::global_init(sc->num_layers);
 
     sc->post_setup();
     sc->update_reload_id();
@@ -216,9 +221,10 @@ void Snort::init(int argc, char** argv)
     const MpseApi* search_api = sc->fast_pattern_config->get_search_api();
     const MpseApi* offload_search_api = sc->fast_pattern_config->get_offload_search_api();
 
-    MpseManager::activate_search_engine(search_api, sc);
+    if ( search_api )
+        MpseManager::activate_search_engine(search_api, sc);
 
-    if ((offload_search_api != nullptr) and (offload_search_api != search_api))
+    if ( offload_search_api and offload_search_api != search_api )
         MpseManager::activate_search_engine(offload_search_api, sc);
 
     /* Finish up the pcap list and put in the queues */
@@ -304,7 +310,6 @@ void Snort::term()
      * double-freeing any memory.  Not guaranteed to be
      * thread-safe, but it will prevent the simple cases.
      */
-    static bool already_exiting = false;
     if ( already_exiting )
         return;
     already_exiting = true;
@@ -352,6 +357,7 @@ void Snort::term()
     HighAvailabilityManager::term();
     SideChannelManager::term();
     ModuleManager::term();
+    host_cache.term();
     PluginManager::release_plugins();
     ScriptManager::release_scripts();
     memory::MemoryCap::term();
@@ -372,6 +378,7 @@ void Snort::clean_exit(int)
 
 bool Snort::reloading = false;
 bool Snort::privileges_dropped = false;
+bool Snort::already_exiting = false;
 
 bool Snort::is_reloading()
 { return reloading; }
@@ -404,6 +411,8 @@ void Snort::setup(int argc, char* argv[])
     memory::MemoryCap::start(*sc->memory, Stream::prune_flows);
     memory::MemoryCap::print(SnortConfig::log_verbose(), true);
 
+    host_cache.init();
+    ((HostTrackerModule*)ModuleManager::get_module(HOST_TRACKER_NAME))->init_data();
     host_cache.print_config();
 
     TimeStart();
@@ -597,12 +606,3 @@ SnortConfig* Snort::get_updated_policy(
     return sc;
 }
 
-OopsHandlerSuspend::OopsHandlerSuspend()
-{
-    remove_oops_handler();
-}
-
-OopsHandlerSuspend::~OopsHandlerSuspend()
-{
-    install_oops_handler();
-}

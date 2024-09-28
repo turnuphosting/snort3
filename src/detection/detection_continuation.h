@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -23,20 +23,21 @@
 
 #include "framework/cursor.h"
 #include "framework/ips_option.h"
-#include "ips_options/extract.h"
+#include "helpers/grouped_list.h"
 #include "latency/rule_latency.h"
 #include "latency/rule_latency_state.h"
 #include "main/snort_config.h"
 #include "main/thread_config.h"
 #include "protocols/packet.h"
 #include "trace/trace_api.h"
-#include "utils/grouped_list.h"
 #include "utils/stats.h"
 
 #include "detection_options.h"
 #include "detect_trace.h"
+#include "extract.h"
 #include "ips_context.h"
 #include "rule_option_types.h"
+#include "treenodes.h"
 
 class Continuation
 {
@@ -63,27 +64,24 @@ private:
     struct State
     {
         State() : data(), root(), selector(nullptr), node(nullptr), waypoint(0),
-            original_waypoint(0), sid(0), packet_number(0), opt_parent(false)
+            original_waypoint(0), delta(0), sid(0), packet_number(0), opt_parent(false), re_eval(false)
         {
             for (uint8_t i = 0; i < NUM_IPS_OPTIONS_VARS; ++i)
                 byte_extract_vars[i] = 0;
         }
 
         State(const detection_option_tree_node_t& n, const detection_option_eval_data_t& d,
-            snort::IpsOption* s, unsigned wp, uint64_t id, bool p) : data(d),
-            root(1, nullptr, d.otn, new RuleLatencyState[snort::ThreadConfig::get_instance_max()]()),
+            snort::IpsOption* s, unsigned wp, unsigned dt, uint64_t id, bool p, bool r_e) : data(d),
+            root(1, d.otn),
             selector(s), node(const_cast<detection_option_tree_node_t*>(&n)), waypoint(wp),
-            original_waypoint(wp), sid(id), packet_number(d.p->context->packet_number),
-            opt_parent(p)
+            original_waypoint(wp), delta(dt), sid(id), packet_number(d.p->context->packet_number),
+            opt_parent(p), re_eval(r_e)
         {
             for (uint8_t i = 0; i < NUM_IPS_OPTIONS_VARS; ++i)
                 snort::GetVarValueByIndex(&byte_extract_vars[i], i);
 
             root.children = &node;
         }
-
-        ~State()
-        { delete[] root.latency_state; }
 
         inline bool eval(snort::Packet&);
 
@@ -93,10 +91,12 @@ private:
         detection_option_tree_node_t* node;
         unsigned waypoint;
         const unsigned original_waypoint;
+        unsigned delta;
         uint64_t sid;
         uint64_t packet_number;
         uint32_t byte_extract_vars[NUM_IPS_OPTIONS_VARS];
         bool opt_parent;
+        bool re_eval;
     };
 
     using LState = snort::GroupedList<State>;
@@ -181,9 +181,10 @@ void Continuation::eval(snort::Packet& p)
     while (i != &states)
     {
         auto st = i;
-        i = i->get_next();
+        bool r = (**st).eval(p);
+        i = st->get_next();
 
-        if ((**st).eval(p))
+        if (r)
         {
             assert(0 < states_cnt);
             assert(st != &states);
@@ -222,17 +223,18 @@ bool Continuation::State::eval(snort::Packet& p)
     }
 
     cursor.set_pos(waypoint);
+    cursor.set_delta(delta);
 
     if (cursor.awaiting_data(true) or cursor.size() == 0)
     {
         waypoint = cursor.get_next_pos();
-        debug_logf(detection_trace, TRACE_CONT, data.p,
+        debug_logf(detection_trace, TRACE_CONT, &p,
             "Continuation postponed, %u bytes to go\n", waypoint);
         return false;
     }
 
     assert(cursor.get_name());
-    debug_logf(detection_trace, TRACE_CONT, data.p,
+    debug_logf(detection_trace, TRACE_CONT, &p,
         "Cursor reached the position, evaluating sub-tree with "
         "current buffer '%s'\n", cursor.get_name());
 
@@ -245,16 +247,32 @@ bool Continuation::State::eval(snort::Packet& p)
     for (uint8_t i = 0; i < NUM_IPS_OPTIONS_VARS; ++i)
         snort::SetVarValueByIndex(byte_extract_vars[i], i);
 
-    const detection_option_tree_node_t* node = root.children[0];
+    const detection_option_tree_node_t* root_node = root.children[0];
 
-    if (opt_parent)
+    cursor.set_re_eval(re_eval);
+
+    if (!opt_parent)
     {
-        for (int i = 0; i < node->num_children; ++i)
-            result += detection_option_node_evaluate(node->children[i], data, cursor);
+        assert(!re_eval);
+        result = detection_option_node_evaluate(root_node, data, cursor);
+    }
+    else if (re_eval)
+    {
+        result = detection_option_node_evaluate(root_node, data, cursor);
+        root_node->state[snort::get_instance_id()].last_check.ts = {};
     }
     else
     {
-        result = detection_option_node_evaluate(node, data, cursor);
+        for (int i = 0; i < root_node->num_children; ++i)
+            result += detection_option_node_evaluate(root_node->children[i], data, cursor);
+    }
+
+    if (data.leaf_reached and !data.otn->sigInfo.file_id)
+    {
+        data.p->context->matched_buffers.emplace_back(cursor.get_name(), cursor.buffer(), cursor.size());
+        debug_logf(detection_trace, TRACE_BUFFER, data.p, "Collecting \"%s\" buffer of size %u on continuation root\n",
+            cursor.get_name(), cursor.size());
+        snort::pc.buf_dumps++;
     }
 
     clear_trace_cursor_info();
@@ -280,6 +298,7 @@ void Continuation::add(const Cursor& cursor,
     auto selector = data.buf_selector;
     auto pos = cursor.get_next_pos();
     auto sid = cursor.id();
+    auto delta = cursor.get_delta();
     auto nst = node.state + snort::get_instance_id();
     assert(nst);
 
@@ -294,7 +313,7 @@ void Continuation::add(const Cursor& cursor,
     if (states_cnt < states_cnt_max)
     {
         ++states_cnt;
-        new LState(states, (LState*&)nst->conts, node, data, selector, pos, sid, opt_parent);
+        new LState(states, (LState*&)nst->conts, node, data, selector, pos, delta, sid, opt_parent, cursor.is_re_eval());
     }
     else
     {
@@ -309,7 +328,7 @@ void Continuation::add(const Cursor& cursor,
             st->leave_group();
         delete st;
 
-        new LState(states, (LState*&)nst->conts, node, data, selector, pos, sid, opt_parent);
+        new LState(states, (LState*&)nst->conts, node, data, selector, pos, delta, sid, opt_parent, cursor.is_re_eval());
     }
 
     snort::pc.cont_creations++;

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -152,6 +152,9 @@ int TnsClientDetector::validate(AppIdDiscoveryArgs& args)
         switch (fd->state)
         {
         case TNS_STATE_MESSAGE_LEN:
+            if (fd->pos >= 2)
+                    break;
+
             fd->l.raw_len[fd->pos++] = args.data[offset];
             if (fd->pos >= offsetof(ClientTNSMsg, checksum))
             {
@@ -224,9 +227,11 @@ int TnsClientDetector::validate(AppIdDiscoveryArgs& args)
             }
             break;
         case TNS_STATE_MESSAGE_CONNECT:
+            if (fd->pos >= (CONNECT_VERSION_OFFSET + 2))
+                break;
             fd->l.raw_len[fd->pos - CONNECT_VERSION_OFFSET] = args.data[offset];
             fd->pos++;
-            if (fd->pos >= (CONNECT_VERSION_OFFSET + 2))
+            if (fd->pos == (CONNECT_VERSION_OFFSET + 2))
             {
                 {
                     switch (ntohs(fd->l.len))
@@ -260,9 +265,11 @@ int TnsClientDetector::validate(AppIdDiscoveryArgs& args)
                 fd->state = TNS_STATE_MESSAGE_CONNECT_OFFSET;
             break;
         case TNS_STATE_MESSAGE_CONNECT_OFFSET:
+            if (fd->pos >= CONNECT_DATA_OFFSET + 2)
+                break; 
             fd->l.raw_len[fd->pos - CONNECT_DATA_OFFSET] = args.data[offset];
             fd->pos++;
-            if (fd->pos >= (CONNECT_DATA_OFFSET + 2))
+            if (fd->pos == (CONNECT_DATA_OFFSET + 2))
             {
                 fd->offsetlen = ntohs(fd->l.len);
                 if (fd->offsetlen > args.size)
@@ -344,4 +351,3 @@ done:
     }
     return APPID_SUCCESS;
 }
-

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -63,6 +63,7 @@ private:
     snort::FileContext* context = nullptr;
 
     void add(const uint8_t* file_data, int64_t data_size, uint64_t offset);
+    void insert_segment(const uint8_t* file_data, int64_t data_size, uint64_t offset, bool find_left,  FileSegment** left);
     FilePosition get_file_position(uint64_t data_size, uint64_t file_size);
     int process_one(snort::Packet*, const uint8_t* file_data, int data_size, snort::FilePolicyBase*,
         FilePosition position=SNORT_FILE_POSITION_UNKNOWN);

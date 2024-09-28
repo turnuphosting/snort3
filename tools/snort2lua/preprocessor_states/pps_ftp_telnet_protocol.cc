@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -299,8 +299,8 @@ std::set<std::string> ftp_format_commands =
 
 struct FtpDefaultCmd
 {
-    std::string default_name;
-    std::set<std::string> cmd_set;
+    std::string default_name;   // cppcheck-suppress unusedStructMember
+    std::set<std::string> cmd_set;  // cppcheck-suppress unusedStructMember
 };
 
 // Use these defaults for the entries that the original config didn't provide.

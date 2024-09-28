@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -30,7 +30,9 @@ char* snort_strdup(const char* s)
 { return strdup(s); }
 
 void Module::sum_stats(bool) {}
+void Module::main_accumulate_stats() {}
 void Module::show_stats() {}
+void Module::init_stats(bool) {}
 void Module::reset_stats() {}
 PegCount Module::get_global_count(char const*) const
 { return 0; }
@@ -79,10 +81,8 @@ bool DataPurgeAC::execute(Analyzer&, void**) { return true;}
 
 void set_host_cache_mac(HostCacheMac*) { }
 
-Inspector* InspectorManager::get_inspector(const char*, bool, const SnortConfig*)
-{
-    return nullptr;
-}
+Inspector* PigPen::get_inspector(const char*, bool, const SnortConfig*)
+{ return nullptr; }
 
 void HostTracker::remove_flows() { }
 

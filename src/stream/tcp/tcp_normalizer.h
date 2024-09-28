@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,20 +24,23 @@
 
 #include "tcp_defs.h"
 
-#include "main/thread.h"
+#include <string>
+
 #include "normalize/normalize.h"
 #include "normalize/norm_stats.h"
 #include "protocols/tcp_options.h"
 
-class TcpStreamSession;
+class TcpSession;
 class TcpStreamTracker;
 class TcpSegmentDescriptor;
+class TcpNormalizer;
 
 struct TcpNormalizerState
 {
-    TcpStreamSession* session = nullptr;
+    TcpSession* session = nullptr;
     TcpStreamTracker* tracker = nullptr;
     TcpStreamTracker* peer_tracker = nullptr;
+    TcpNormalizer* prev_norm = nullptr;
 
     StreamPolicy os_policy = StreamPolicy::OS_DEFAULT;
 
@@ -61,10 +64,14 @@ class TcpNormalizer
 {
 public:
     using State = TcpNormalizerState;
+    enum NormStatus { NORM_BAD_SEQ = -1, NORM_TRIMMED = 0, NORM_OK = 1 };
 
     virtual ~TcpNormalizer() = default;
 
     virtual void init(State&) { }
+
+    virtual NormStatus apply_normalizations(
+        State&, TcpSegmentDescriptor&, uint32_t seq, bool stream_is_inorder);
     virtual void session_blocker(State&, TcpSegmentDescriptor&);
     virtual bool packet_dropper(State&, TcpSegmentDescriptor&, NormFlags);
     virtual bool trim_syn_payload(State&, TcpSegmentDescriptor&, uint32_t max = 0);
@@ -76,14 +83,21 @@ public:
     virtual void ecn_stripper(State&, TcpSegmentDescriptor&);
     virtual uint32_t get_zwp_seq(State&);
     virtual uint32_t get_stream_window(State&, TcpSegmentDescriptor&);
+    virtual uint32_t data_inside_window(State&, TcpSegmentDescriptor&);
     virtual uint32_t get_tcp_timestamp(State&, TcpSegmentDescriptor&, bool strip);
     virtual int handle_paws(State&, TcpSegmentDescriptor&);
     virtual bool validate_rst(State&, TcpSegmentDescriptor&);
     virtual int handle_repeated_syn(State&, TcpSegmentDescriptor&) = 0;
     virtual uint16_t set_urg_offset(State&, const snort::tcp::TCPHdr* tcph, uint16_t dsize);
     virtual void set_zwp_seq(State&, uint32_t seq);
+    virtual void log_drop_reason(State&, const TcpSegmentDescriptor&, bool inline_mode,
+        const char *issuer, const std::string& log);
+    virtual bool is_keep_alive_probe(State&, const TcpSegmentDescriptor&);
 
     static void reset_stats();
+
+    std::string& get_name()
+    { return my_name; }
 
 protected:
     TcpNormalizer() = default;
@@ -100,6 +114,8 @@ protected:
     virtual bool is_paws_ts_checked_required(State&, TcpSegmentDescriptor&);
     virtual int validate_paws(State&, TcpSegmentDescriptor&);
     virtual int handle_paws_no_timestamps(State&, TcpSegmentDescriptor&);
+
+    std::string my_name;
 };
 
 #endif

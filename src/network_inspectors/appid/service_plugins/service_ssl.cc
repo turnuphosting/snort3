@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -428,8 +428,6 @@ int SslServiceDetector::validate(AppIdDiscoveryArgs& args)
                     }
                     break;
                 case SSLV3RecordType::SERVER_HELLO_DONE:
-                    if (size < offsetof(ServiceSSLV3Record, version))
-                        goto success;
                     if (rec->length)
                         goto fail;
                     if (ss->tot_length != offsetof(ServiceSSLV3Record, version))
@@ -516,7 +514,7 @@ success:
     }
 
     args.asd.set_session_flags(APPID_SESSION_SSL_SESSION);
-    if (ss->client_hello.host_name || ss->server_cert.common_name || ss->server_cert.org_name)
+    if (ss->client_hello.host_name || ss->server_cert.common_name || ss->server_cert.org_unit)
     {
         if (!args.asd.tsession)
             args.asd.tsession = new TlsSession();
@@ -527,25 +525,19 @@ success:
             args.asd.tsession->set_tls_host(ss->client_hello.host_name, 0, args.change_bits);
             args.asd.scan_flags |= SCAN_SSL_HOST_FLAG;
         }
-        else if (ss->server_cert.common_name)
-        {
-            /* Use common name (from server) if we didn't get host name (from client). */
-            args.asd.tsession->set_tls_host(ss->server_cert.common_name, ss->server_cert.common_name_strlen,
-                args.change_bits);
-            args.asd.scan_flags |= SCAN_SSL_HOST_FLAG;
-        }
 
         /* TLS Common Name */
         if (ss->server_cert.common_name)
         {
             args.asd.tsession->set_tls_cname(ss->server_cert.common_name, 0, args.change_bits);
             args.asd.scan_flags |= SCAN_SSL_CERTIFICATE_FLAG;
+            args.asd.scan_flags |= SCAN_SSL_HOST_FLAG;
         }
         /* TLS Org Unit */
-        if (ss->server_cert.org_name)
-            args.asd.tsession->set_tls_org_unit(ss->server_cert.org_name, 0);
+        if (ss->server_cert.org_unit)
+            args.asd.tsession->set_tls_org_unit(ss->server_cert.org_unit, 0);
 
-        ss->client_hello.host_name = ss->server_cert.common_name = ss->server_cert.org_name = nullptr;
+        ss->client_hello.host_name = ss->server_cert.common_name = ss->server_cert.org_unit = nullptr;
         args.asd.tsession->set_tls_handshake_done();
     }
     return add_service(args.change_bits, args.asd, args.pkt, args.dir,
@@ -614,6 +606,8 @@ bool is_service_over_ssl(AppId appId)
     case APP_ID_MSFT_GC_SSL:
     case APP_ID_SF_APPLIANCE_MGMT:
     case APP_ID_SSL:
+    case APP_ID_QUIC:
+    case APP_ID_HTTP3:
         return true;
     }
 

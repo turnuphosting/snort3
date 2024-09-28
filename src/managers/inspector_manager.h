@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -78,20 +78,6 @@ public:
     static void destroy_global_inspector_policy(GlobalInspectorPolicy*, bool cloned);
     static InspectSsnFunc get_session(uint16_t proto);
 
-    SO_PUBLIC static Inspector* get_file_inspector(const SnortConfig* = nullptr);
-    SO_PUBLIC static Inspector* get_inspector(
-        const char* key, bool dflt_only = false, const SnortConfig* = nullptr);
-    SO_PUBLIC static Inspector* get_inspector(const char* key, Module::Usage, InspectorType,
-        const SnortConfig* = nullptr);
-
-    static Inspector* get_service_inspector_by_service(const char*);
-    static Inspector* get_service_inspector_by_id(const SnortProtocolId);
-
-    SO_PUBLIC static Binder* get_binder();
-
-    SO_PUBLIC static Inspector* acquire_file_inspector();
-    SO_PUBLIC static void release(Inspector*);
-
     static bool configure(SnortConfig*, bool cloned = false);
     static void prepare_inspectors(SnortConfig*);
     static void prepare_controls(SnortConfig*);
@@ -107,11 +93,29 @@ public:
 
     static void execute(Packet*);
     static void probe(Packet*);
+    static void probe_first(Packet*);
 
     static void clear(Packet*);
     static void empty_trash();
     static void reconcile_inspectors(const SnortConfig*, SnortConfig*, bool cloned = false);
     static void clear_removed_inspectors(SnortConfig*);
+
+    static Inspector* get_binder();
+
+    static Inspector* acquire_file_inspector();
+    static Inspector* get_file_inspector(const SnortConfig* = nullptr);
+
+    static Inspector* get_service_inspector(const SnortProtocolId);
+    static Inspector* get_service_inspector(const char*);
+
+    // This assumes that, in a multi-tenant scenario, this is called with the correct network and inspection
+    // policies are set correctly
+    static Inspector* get_inspector(const char* key, bool dflt_only = false, const SnortConfig* = nullptr);
+
+    // This cannot be called in or before the inspector configure phase for a new snort config during reload
+    static Inspector* get_inspector(const char* key, Module::Usage, InspectorType);
+
+    static void release(Inspector*);
 
 private:
     static void bumble(Packet*);

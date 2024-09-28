@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -46,7 +46,7 @@ static THREAD_LOCAL ProfileStats gtp_type_prof;
 class GtpTypeOption : public IpsOption
 {
 public:
-    GtpTypeOption(ByteBitSet*);
+    GtpTypeOption(const ByteBitSet*);
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -59,7 +59,7 @@ public:
     ByteBitSet types[MAX_GTP_VERSION_CODE + 1];
 };
 
-GtpTypeOption::GtpTypeOption(ByteBitSet* t) : IpsOption(s_name)
+GtpTypeOption::GtpTypeOption(const ByteBitSet* t) : IpsOption(s_name)
 {
     for ( int v = 0; v <= MAX_GTP_VERSION_CODE; ++v )
         types[v] = t[v];
@@ -96,6 +96,7 @@ bool GtpTypeOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus GtpTypeOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(gtp_type_prof);
 
     if ( !p or !p->flow )
@@ -138,7 +139,7 @@ public:
     bool set(const char*, Value&, SnortConfig*) override;
 
     bool set_types(long);
-    bool set_types(const char*);
+    bool set_types(const char*, SnortConfig*);
 
     ProfileStats* get_profile() const override
     { return &gtp_type_prof; }
@@ -169,13 +170,13 @@ bool GtpTypeModule::set_types(long t)
     return true;
 }
 
-bool GtpTypeModule::set_types(const char* name)
+bool GtpTypeModule::set_types(const char* name, SnortConfig* sc)
 {
     bool ok = false;
 
     for ( int v = 0; v <= MAX_GTP_VERSION_CODE; ++v )
     {
-        int t = get_message_type(v, name);
+        int t = get_message_type(v, name, sc);
 
         if ( t < 0 )
             continue;
@@ -186,7 +187,7 @@ bool GtpTypeModule::set_types(const char* name)
     return ok;
 }
 
-bool GtpTypeModule::set(const char*, Value& v, SnortConfig*)
+bool GtpTypeModule::set(const char*, Value& v, SnortConfig* sc)
 {
     assert(v.is("~"));
     v.set_first_token();
@@ -210,7 +211,7 @@ bool GtpTypeModule::set(const char*, Value& v, SnortConfig*)
             if ( !set_types(n) )
                 return false;
         }
-        else if ( !set_types(tok.c_str()) )
+        else if ( !set_types(tok.c_str(), sc) )
             return false;
     }
     return true;
@@ -230,7 +231,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* opt_ctor(Module* m, OptTreeNode*)
+static IpsOption* opt_ctor(Module* m, IpsInfo&)
 {
     GtpTypeModule* mod = (GtpTypeModule*)m;
     return new GtpTypeOption(mod->types);

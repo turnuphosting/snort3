@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -35,8 +35,8 @@
 #include "framework/data_bus.h"
 #include "main/snort.h"
 #include "main/snort_config.h"
-#include "network_inspectors/packet_tracer/packet_tracer.h"
 #include "packet_io/active.h"
+#include "packet_io/packet_tracer.h"
 #include "protocols/vlan.h"
 #include "pub_sub/stream_event_ids.h"
 #include "stream/base/stream_module.h"
@@ -46,7 +46,6 @@
 #include "utils/util.h"
 
 #include "tcp/tcp_session.h"
-#include "tcp/tcp_stream_session.h"
 #include "tcp/tcp_stream_tracker.h"
 
 using namespace snort;
@@ -62,7 +61,7 @@ public:
     uint32_t xtradata_func_count = 0;
     LogFunction xtradata_map[MAX_LOG_FN];
     LogExtraData extra_data_log = nullptr;
-    void* extra_data_config = nullptr;
+    void* extra_data_context = nullptr;
 };
 
 static StreamImpl stream;
@@ -82,9 +81,7 @@ void Stream::delete_flow(const FlowKey* key)
 { flow_con->release_flow(key); }
 
 void Stream::delete_flow(Flow* flow)
-{
-    flow_con->release_flow(flow, PruneReason::NONE);
-}
+{ flow_con->release_flow(flow, PruneReason::NONE); }
 
 //-------------------------------------------------------------------------
 // key foo
@@ -95,13 +92,20 @@ Flow* Stream::get_flow(
     const SfIp* srcIP, uint16_t srcPort,
     const SfIp* dstIP, uint16_t dstPort,
     uint16_t vlan, uint32_t mplsId, uint32_t addressSpaceId,
+#ifndef DISABLE_TENANT_ID
+    uint32_t tenant_id,
+#endif
+    bool significant_groups,
     int16_t ingress_group, int16_t egress_group)
 {
     FlowKey key;
     const SnortConfig* sc = SnortConfig::get_conf();
 
-    key.init(sc, type, proto, srcIP, srcPort, dstIP, dstPort, vlan, mplsId,
-        addressSpaceId, ingress_group, egress_group);
+    key.init(sc, type, proto, srcIP, srcPort, dstIP, dstPort, vlan, mplsId, addressSpaceId, 
+#ifndef DISABLE_TENANT_ID
+        tenant_id, 
+#endif
+        significant_groups, ingress_group, egress_group);
     return get_flow(&key);
 }
 
@@ -109,7 +113,8 @@ Flow* Stream::get_flow(
     PktType type, IpProtocol proto,
     const SfIp* srcIP, uint16_t srcPort,
     const SfIp* dstIP, uint16_t dstPort,
-    uint16_t vlan, uint32_t mplsId, const DAQ_PktHdr_t& pkth)
+    uint16_t vlan, uint32_t mplsId,
+    const DAQ_PktHdr_t& pkth)
 {
     FlowKey key;
     const SnortConfig* sc = SnortConfig::get_conf();
@@ -135,13 +140,6 @@ void Stream::populate_flow_key(const Packet* p, FlowKey* key)
         *p->pkth);
 }
 
-FlowKey* Stream::get_flow_key(Packet* p)
-{
-    FlowKey* key = (FlowKey*)snort_calloc(sizeof(*key));
-    populate_flow_key(p, key);
-    return key;
-}
-
 //-------------------------------------------------------------------------
 // app data foo
 //-------------------------------------------------------------------------
@@ -155,43 +153,6 @@ FlowData* Stream::get_flow_data(
     return flow->get_flow_data(flowdata_id);
 }
 
-FlowData* Stream::get_flow_data(
-    PktType type, IpProtocol proto,
-    const SfIp* srcIP, uint16_t srcPort,
-    const SfIp* dstIP, uint16_t dstPort,
-    uint16_t vlan, uint32_t mplsId,
-    uint32_t addressSpaceID, unsigned flowdata_id,
-    int16_t ingress_group, int16_t egress_group)
-{
-    Flow* flow = get_flow(
-        type, proto, srcIP, srcPort, dstIP, dstPort,
-        vlan, mplsId, addressSpaceID, ingress_group,
-        egress_group);
-
-    if (!flow)
-        return nullptr;
-
-    return flow->get_flow_data(flowdata_id);
-}
-
-FlowData* Stream::get_flow_data(
-    PktType type, IpProtocol proto,
-    const SfIp* srcIP, uint16_t srcPort,
-    const SfIp* dstIP, uint16_t dstPort,
-    uint16_t vlan, uint32_t mplsId,
-    unsigned flowdata_id, const DAQ_PktHdr_t& pkth)
-{
-    Flow* flow = get_flow(
-        type, proto, srcIP, srcPort, dstIP, dstPort,
-        vlan, mplsId, pkth);
-
-    if (!flow)
-        return nullptr;
-
-    return flow->get_flow_data(flowdata_id);
-}
-
-//-------------------------------------------------------------------------
 //-------------------------------------------------------------------------
 // session status
 //-------------------------------------------------------------------------
@@ -232,7 +193,8 @@ void Stream::check_flow_closed(Packet* p)
         if ( !(p->packet_flags & PKT_STATELESS) )
         {
             drop_traffic(p, SSN_DIR_BOTH);
-            p->active->set_drop_reason("stream");
+            if (p->active)
+                p->active->set_drop_reason("stream");
             if (PacketTracer::is_active())
                 PacketTracer::log("Stream: pending block, drop\n");
         }
@@ -252,6 +214,14 @@ int Stream::ignore_flow(
 
     return flow_con->add_expected_ignore(
         ctrlPkt, type, ip_proto, srcIP, srcPort, dstIP, dstPort, direction, fd);
+}
+
+void Stream::start_proxy(Flow* flow)
+{
+    assert(flow and flow->session and flow->pkt_type == PktType::TCP);
+
+    TcpSession* tcp_session = (TcpSession*)flow->session;
+    tcp_session->start_proxy();
 }
 
 void Stream::stop_inspection(
@@ -513,13 +483,13 @@ StreamSplitter* Stream::get_splitter(Flow* flow, bool to_server)
 //-------------------------------------------------------------------------
 
 void Stream::log_extra_data(
-    Flow* flow, uint32_t mask, uint32_t id, uint32_t sec)
+    Flow* flow, uint32_t mask, const AlertInfo& alert_info)
 {
     if ( mask && stream.extra_data_log )
     {
         stream.extra_data_log(
-            flow, stream.extra_data_config, stream.xtradata_map,
-            stream.xtradata_func_count, mask, id, sec);
+            flow, stream.extra_data_context, stream.xtradata_map,
+            stream.xtradata_func_count, mask, alert_info);
     }
 }
 
@@ -550,7 +520,7 @@ void Stream::reg_xtra_data_log(LogExtraData f, void* config)
 {
     const std::lock_guard<std::mutex> xtra_lock(stream_xtra_mutex);
     stream.extra_data_log = f;
-    stream.extra_data_config = config;
+    stream.extra_data_context = config;
 }
 
 //-------------------------------------------------------------------------
@@ -771,12 +741,6 @@ void Stream::disable_reassembly(Flow* flow)
     return flow->session->disable_reassembly(flow);
 }
 
-char Stream::get_reassembly_direction(Flow* flow)
-{
-    assert(flow && flow->session);
-    return flow->session->get_reassembly_direction();
-}
-
 bool Stream::is_stream_sequenced(Flow* flow, uint8_t dir)
 {
     assert(flow && flow->session);
@@ -799,7 +763,7 @@ uint16_t Stream::get_mss(Flow* flow, bool to_server)
 {
     assert(flow and flow->session and flow->pkt_type == PktType::TCP);
 
-    TcpStreamSession* tcp_session = (TcpStreamSession*)flow->session;
+    TcpSession* tcp_session = (TcpSession*)flow->session;
     return tcp_session->get_mss(to_server);
 }
 
@@ -807,7 +771,7 @@ uint8_t Stream::get_tcp_options_len(Flow* flow, bool to_server)
 {
     assert(flow and flow->session and flow->pkt_type == PktType::TCP);
 
-    TcpStreamSession* tcp_session = (TcpStreamSession*)flow->session;
+    TcpSession* tcp_session = (TcpSession*)flow->session;
     return tcp_session->get_tcp_options_len(to_server);
 }
 
@@ -823,7 +787,7 @@ bool Stream::can_set_no_ack_mode(Flow* flow)
 {
     assert(flow and flow->session and flow->pkt_type == PktType::TCP);
 
-    TcpStreamSession* tcp_session = (TcpStreamSession*)flow->session;
+    TcpSession* tcp_session = (TcpSession*)flow->session;
     return tcp_session->can_set_no_ack();
 }
 
@@ -831,7 +795,7 @@ bool Stream::set_no_ack_mode(Flow* flow, bool on_off)
 {
     assert(flow and flow->session and flow->pkt_type == PktType::TCP);
 
-    TcpStreamSession* tcp_session = (TcpStreamSession*)flow->session;
+    TcpSession* tcp_session = (TcpSession*)flow->session;
     return tcp_session->set_no_ack(on_off);
 }
 
@@ -840,9 +804,9 @@ void Stream::partial_flush(Flow* flow, bool to_server)
     if ( flow->pkt_type == PktType::TCP )
     {
         if ( to_server )
-            ((TcpStreamSession*)flow->session)->server.perform_partial_flush();
+            ((TcpSession*)flow->session)->server.perform_partial_flush();
         else
-            ((TcpStreamSession*)flow->session)->client.perform_partial_flush();
+            ((TcpSession*)flow->session)->client.perform_partial_flush();
     }
 }
 
@@ -851,7 +815,7 @@ bool Stream::get_held_pkt_seq(Flow* flow, uint32_t& seq)
     if (!flow or !flow->session or !(flow->pkt_type == PktType::TCP))
         return false;
 
-    TcpStreamSession* tcp_session = (TcpStreamSession*)flow->session;
+    TcpSession* tcp_session = (TcpSession*)flow->session;
 
     if (tcp_session->held_packet_dir == SSN_DIR_NONE)
         return false;
@@ -895,6 +859,7 @@ unsigned Stream::get_pub_id()
 TEST_CASE("Stream API", "[stream_api][stream]")
 {
     // initialization code here
+    TcpNormalizerFactory::initialize();
     Flow* flow = new Flow;
 
     SECTION("set/get ignore direction")
@@ -1005,6 +970,7 @@ TEST_CASE("Stream API", "[stream_api][stream]")
     }
 
     delete flow;
+    TcpNormalizerFactory::term();
 }
 
 #endif

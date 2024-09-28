@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,7 +27,7 @@
 
 #include "detection/detection_engine.h"
 #include "helpers/literal_search.h"
-#include "utils/util_utf.h"
+#include "helpers/utf.h"
 
 #include <CppUTest/CommandLineTestRunner.h>
 #include <CppUTest/TestHarness.h>
@@ -44,10 +44,9 @@ LiteralSearch::Handle* LiteralSearch::setup() { return nullptr; }
 void LiteralSearch::cleanup(LiteralSearch::Handle*) { }
 LiteralSearch* LiteralSearch::instantiate(LiteralSearch::Handle*, const uint8_t*, unsigned, bool,
     bool) { return nullptr; }
-void UtfDecodeSession::set_decode_utf_state_charset(CharsetCode) { }
+void UtfDecodeSession::set_decode_utf_state_charset(CharsetCode, CharsetSrc) { }
 bool UtfDecodeSession::decode_utf(unsigned char const*, unsigned int, unsigned char*, unsigned int,
     int*) { return true; }
-UtfDecodeSession::UtfDecodeSession() { }
 Packet* DetectionEngine::get_current_packet() { return nullptr; }
 void trace_vprintf(char const*, unsigned char, char const*, snort::Packet const*, char const*, va_list) { }
 uint8_t TraceApi::get_constraints_generation() { return 0; }

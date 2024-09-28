@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,6 +27,7 @@
 #include "side_channel/side_channel_module.h"
 
 #include "log/messages.h"
+#include "main/thread_config.h"
 #include "profiler/profiler.h"
 
 #include <CppUTest/CommandLineTestRunner.h>
@@ -56,7 +57,7 @@ void SideChannelManager::instantiate(const SCConnectors*, const PortBitSet* port
 }
 
 void show_stats(PegCount*, const PegInfo*, unsigned, const char*) { }
-void show_stats(PegCount*, const PegInfo*, const IndexVec&, const char*, FILE*) { }
+void show_stats(PegCount*, const PegInfo*, const std::vector<unsigned>&, const char*, FILE*) { }
 
 namespace snort
 {
@@ -64,6 +65,9 @@ void ParseWarning(WarningGroup, const char*, ...) { }
 
 char* snort_strdup(const char* s)
 { return strdup(s); }
+unsigned get_instance_id()
+{ return 0; }
+unsigned ThreadConfig::get_instance_max() { return 1; }
 }
 
 TEST_GROUP(side_channel_module)

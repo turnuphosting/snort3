@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -38,7 +38,7 @@ using namespace snort;
 // -----------------------------------------------------------------------------
 
 THREAD_LOCAL MemoryActiveContext mp_active_context;
-static CombinedMemoryStats s_fallthrough_stats;
+static MemoryStats s_fallthrough_stats;
 
 
 // -----------------------------------------------------------------------------
@@ -46,7 +46,7 @@ static CombinedMemoryStats s_fallthrough_stats;
 // -----------------------------------------------------------------------------
 
 // get thread local default stats
-const CombinedMemoryStats& MemoryProfiler::get_fallthrough_stats()
+const MemoryStats& MemoryProfiler::get_fallthrough_stats()
 { return s_fallthrough_stats; }
 
 // thread local call
@@ -112,7 +112,7 @@ TEST_CASE( "active context", "[profiler][active_context]" )
 
     active.get_fallback() = fallback;
 
-    CHECK( !active.is_set() );
+    CHECK( false == active.is_set() );
     CHECK( active.get() == nullptr );
     CHECK( active.get_default() == fallback );
 
@@ -121,12 +121,12 @@ TEST_CASE( "active context", "[profiler][active_context]" )
     CHECK( active.get_default() == fallback );
 
     CHECK( active.set(&a) == nullptr );
-    CHECK( active.is_set() );
+    CHECK( true == active.is_set() );
     CHECK( active.get() == &a );
     CHECK( active.get_default() == a );
 
     CHECK( active.set(&b) == &a );
-    CHECK( active.is_set() );
+    CHECK( true == active.is_set() );
     CHECK( active.get() == &b );
     CHECK( active.get_default() == b );
 }

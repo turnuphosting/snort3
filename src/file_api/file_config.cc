@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2012-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -29,11 +29,12 @@
 
 #include "file_config.h"
 
-#include "main/snort_config.h"
 #include "managers/inspector_manager.h"
+#include "main/snort_config.h"
 #include "parser/parse_utils.h"
 
 #include "file_flows.h"
+#include "file_inspect.h"
 
 using namespace snort;
 

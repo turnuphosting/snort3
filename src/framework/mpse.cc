@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,7 +26,6 @@
 #include <cassert>
 
 #include "profiler/profiler_defs.h"
-#include "search_engines/pat_stats.h"
 #include "managers/mpse_manager.h"
 #include "managers/module_manager.h"
 #include "main/snort_config.h"
@@ -43,35 +42,17 @@ namespace snort
 // base stuff
 //-------------------------------------------------------------------------
 
-Mpse::Mpse(const char* m)
-{
-    method = m;
-    verbose = 0;
-    api = nullptr;
-}
-
-int Mpse::search(
-    const unsigned char* T, int n, MpseMatch match,
-    void* context, int* current_state)
-{
-    pmqs.matched_bytes += n;
-    return _search(T, n, match, context, current_state);
-}
+Mpse::Mpse(const char* m) : method(m)
+{ }
 
 int Mpse::search_all(
     const unsigned char* T, int n, MpseMatch match,
     void* context, int* current_state)
 {
-    pmqs.matched_bytes += n;
-    return _search(T, n, match, context, current_state);
+    return search(T, n, match, context, current_state);
 }
 
 void Mpse::search(MpseBatch& batch, MpseType mpse_type)
-{
-    _search(batch, mpse_type);
-}
-
-void Mpse::_search(MpseBatch& batch, MpseType mpse_type)
 {
     int start_state;
 

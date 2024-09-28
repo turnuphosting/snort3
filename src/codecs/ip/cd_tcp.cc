@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -26,7 +26,6 @@
 
 #include "codecs/codec_module.h"
 #include "framework/codec.h"
-#include "log/log.h"
 #include "log/log_text.h"
 #include "main/snort_config.h"
 #include "parser/parse_ip.h"
@@ -178,7 +177,7 @@ bool TcpCodec::valid_checksum4(const RawData& raw, DecodeData& snort)
     ph.hdr.sip = ip4h->get_src();
     ph.hdr.dip = ip4h->get_dst();
     ph.hdr.zero = 0;
-    ph.hdr.protocol = ip4h->proto();
+    ph.hdr.protocol = IpProtocol::TCP;
     ph.hdr.len = htons((uint16_t) raw.len);
 
     return (checksum::tcp_cksum((const uint16_t*) raw.data, raw.len, ph) == 0);
@@ -573,7 +572,7 @@ void TcpCodec::log(TextLog* const text_log, const uint8_t* raw_pkt,
     const tcp::TCPHdr* const tcph = reinterpret_cast<const tcp::TCPHdr*>(raw_pkt);
 
     /* print TCP flags */
-    CreateTCPFlagString(tcph, tcpFlags);
+    tcph->stringify_flags(tcpFlags);
     TextLog_Puts(text_log, tcpFlags); /* We don't care about the null */
 
     /* print other TCP info */

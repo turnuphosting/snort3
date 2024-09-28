@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,7 +26,7 @@
 
 #include "detection/detection_engine.h"
 #include "detection/ips_context_data.h"
-#include "managers/inspector_manager.h"
+#include "framework/pig_pen.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
 
@@ -98,7 +98,7 @@ GTP_IEData* get_infos()
 class GtpInspect : public Inspector
 {
 public:
-    GtpInspect(std::vector<GtpStuff>&);
+    GtpInspect(const std::vector<GtpStuff>&);
 
     void eval(Packet*) override;
 
@@ -109,11 +109,11 @@ private:
     GTPConfig config;
 };
 
-GtpInspect::GtpInspect(std::vector<GtpStuff>& v)
+GtpInspect::GtpInspect(const std::vector<GtpStuff>& v)
 {
     for ( unsigned i = 0; i < v.size(); ++i )
     {
-        GtpStuff& gs = v[i];
+        const GtpStuff& gs = v[i];
 
         if ( gs.length < 0 )
         {
@@ -129,6 +129,7 @@ GtpInspect::GtpInspect(std::vector<GtpStuff>& v)
 
 void GtpInspect::eval(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(gtp_inspect_prof);
 
     // preconditions - what we registered for
@@ -153,9 +154,9 @@ int GtpInspect::get_message_type(int version, const char* name)
     return -1;
 }
 
-int get_message_type(int version, const char* name)
+int get_message_type(int version, const char* name, snort::SnortConfig* sc)
 {
-    GtpInspect* ins = (GtpInspect*)InspectorManager::get_inspector(GTP_NAME);
+    GtpInspect* ins = (GtpInspect*)PigPen::get_inspector(GTP_NAME, false, sc);
 
     if ( !ins )
         return -1;
@@ -175,9 +176,9 @@ int GtpInspect::get_info_type(int version, const char* name)
     return -1;
 }
 
-int get_info_type(int version, const char* name)
+int get_info_type(int version, const char* name, SnortConfig* sc)
 {
-    GtpInspect* ins = (GtpInspect*)InspectorManager::get_inspector(GTP_NAME);
+    GtpInspect* ins = (GtpInspect*)PigPen::get_inspector(GTP_NAME, false, sc);
 
     if ( !ins )
         return -1;

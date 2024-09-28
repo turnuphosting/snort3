@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -125,7 +125,7 @@ void SipPatternMatchers::finalize_patterns(OdpContext& odp_ctxt)
     {
         pattern_count++;
         num_patterns = odp_ctxt.get_http_matchers().parse_multiple_http_patterns(
-            (const char*)pattern_node->pattern.pattern, patterns, PATTERN_PART_MAX, 0);
+            (const char*)pattern_node->pattern.pattern, patterns, PATTERN_PART_MAX, 0, true);
         patterns[num_patterns].pattern = nullptr;
 
         mlmpAddPattern(sip_ua_matcher, patterns, pattern_node);
@@ -136,7 +136,7 @@ void SipPatternMatchers::finalize_patterns(OdpContext& odp_ctxt)
     {
         pattern_count++;
         num_patterns = odp_ctxt.get_http_matchers().parse_multiple_http_patterns(
-            (const char*)pattern_node->pattern.pattern, patterns, PATTERN_PART_MAX, 0);
+            (const char*)pattern_node->pattern.pattern, patterns, PATTERN_PART_MAX, 0, true);
         patterns[num_patterns].pattern = nullptr;
 
         mlmpAddPattern(sip_server_matcher, patterns, pattern_node);

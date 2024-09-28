@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2004-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -28,8 +28,8 @@
 
 #include "pp_ftp.h"
 
+#include "detection/detection_buf.h"
 #include "detection/detection_engine.h"
-#include "detection/detection_util.h"
 #include "hash/hash_key_operations.h"
 #include "file_api/file_service.h"
 #include "protocols/packet.h"
@@ -930,7 +930,7 @@ int initialize_ftp(FTP_SESSION* session, Packet* p, int iMode)
             (iMode == FTPP_SI_SERVER_MODE && session->server_conf->ignore_telnet_erase_cmds))
             ignoreTelnetErase = FTPP_IGNORE_TNC_ERASE_CMDS;
 
-        DataBuffer& buf = DetectionEngine::get_alt_buffer(p);
+        DataBuffer& buf = DetectionEngine::acquire_alt_buffer(p);
 
         iRet = normalize_telnet(nullptr, p, buf, iMode, ignoreTelnetErase, true);
 
@@ -1132,11 +1132,14 @@ static int do_stateful_checks(FTP_SESSION* session, Packet* p,
                             {
                                 /* Call into Streams to mark data channel as something
                                  * to ignore. */
-                                Stream::ignore_flow(
+                                FtpDataFlowData* fd = new FtpDataFlowData(p);
+                                int ret = Stream::ignore_flow(
                                     p, PktType::TCP, IpProtocol::TCP,
                                     &session->clientIP, session->clientPort,
                                     &session->serverIP, session->serverPort,
-                                    SSN_DIR_BOTH, (new FtpDataFlowData(p)));
+                                    SSN_DIR_BOTH, fd);
+                                if (ret)
+                                    delete fd;
                             }
                         }
                     }
@@ -1358,7 +1361,7 @@ int check_ftp(FTP_SESSION* ftpssn, Packet* p, int iMode)
 
     const unsigned char* end = p->data + p->dsize;
 
-    const DataBuffer& buf = DetectionEngine::get_alt_buffer(p);
+    const DataPointer& buf = DetectionEngine::get_alt_buffer(p);
     if ( buf.len )
         end = buf.data + buf.len;
 

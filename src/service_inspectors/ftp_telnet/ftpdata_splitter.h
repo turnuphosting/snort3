@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2017-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2017-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,7 +26,7 @@
 //---------------------------------------------------------------------------------
 // FtpDataSplitter - flush when current seg size is different from previous segment
 //---------------------------------------------------------------------------------
-class FtpDataSplitter : public snort::StreamSplitter
+class SO_PUBLIC FtpDataSplitter : public snort::StreamSplitter
 {
 public:
     FtpDataSplitter(bool b, uint16_t sz = 0) : snort::StreamSplitter(b)

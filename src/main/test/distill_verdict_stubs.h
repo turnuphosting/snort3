@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -15,11 +15,11 @@
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 //--------------------------------------------------------------------------
-// stubs.h author Ron Dempster <rdempste@cisco.com>
+// distill_verdict_stubs.h author Ron Dempster <rdempste@cisco.com>
 
 #include "detection/context_switcher.h"
+#include "detection/detection_buf.h"
 #include "detection/detection_engine.h"
-#include "detection/detection_util.h"
 #include "detection/ips_context.h"
 #include "detection/tag.h"
 #include "file_api/file_service.h"
@@ -46,13 +46,13 @@
 #include "main/swapper.h"
 #include "main/thread_config.h"
 #include "memory/memory_cap.h"
-#include "network_inspectors/packet_tracer/packet_tracer.h"
 #include "packet_io/active.h"
+#include "packet_io/packet_tracer.h"
 #include "packet_io/sfdaq.h"
 #include "packet_io/sfdaq_instance.h"
 #include "packet_io/sfdaq_module.h"
-#include "profiler/profiler.h"
-#include "profiler/profiler_defs.h"
+#include "profiler/profiler_impl.h"
+#include "profiler/time_profiler_defs.h"
 #include "protocols/packet.h"
 #include "protocols/packet_manager.h"
 #include "side_channel/side_channel.h"
@@ -65,6 +65,8 @@
 
 THREAD_LOCAL DAQStats daq_stats;
 THREAD_LOCAL bool RuleContext::enabled = false;
+THREAD_LOCAL bool snort::TimeProfilerStats::enabled;
+THREAD_LOCAL snort::PacketTracer* snort::PacketTracer::s_pkt_trace;
 
 void Profiler::start() { }
 void Profiler::stop(uint64_t) { }
@@ -97,7 +99,7 @@ void RuleLatency::tterm() { }
 void PacketLatency::tterm() { }
 void SideChannelManager::thread_init() { }
 void SideChannelManager::thread_term() { }
-void CodecManager::thread_init(const snort::SnortConfig*) { }
+void CodecManager::thread_init() { }
 void CodecManager::thread_term() { }
 void EventManager::open_outputs() { }
 void EventManager::close_outputs() { }
@@ -126,9 +128,6 @@ void select_default_policy(const _daq_flow_stats&, const snort::SnortConfig*) { 
 namespace snort
 {
 static struct timeval s_packet_time = { 0, 0 };
-THREAD_LOCAL PacketTracer* s_pkt_trace;
-THREAD_LOCAL TimeContext* ProfileContext::curr_time = nullptr;
-THREAD_LOCAL bool TimeProfilerStats::enabled = false;
 THREAD_LOCAL PacketCount pc;
 
 void packet_gettimeofday(struct timeval* tv) { *tv = s_packet_time; }
@@ -144,6 +143,7 @@ Packet::~Packet()  = default;
 IpsPolicy* get_ips_policy() { return nullptr; }
 void DataBus::publish(unsigned, unsigned, Packet*, Flow*) { }
 void DataBus::publish(unsigned, unsigned, DataEvent&, Flow*) { }
+void DataBus::publish_to_all_network_policies(unsigned int, unsigned int) { }
 SFDAQInstance::SFDAQInstance(const char*, unsigned, const SFDAQConfig*) { }
 SFDAQInstance::~SFDAQInstance() = default;
 void SFDAQInstance::reload() { }
@@ -162,7 +162,7 @@ bool SFDAQ::can_inject() { return false; }
 bool SFDAQ::can_inject_raw() { return false; }
 bool SFDAQ::can_replace() { return false; }
 int SFDAQInstance::set_packet_verdict_reason(DAQ_Msg_h, uint8_t) { return 0; }
-DetectionEngine::DetectionEngine() = default;
+DetectionEngine::DetectionEngine() { context = nullptr; }
 DetectionEngine::~DetectionEngine() = default;
 void DetectionEngine::onload() { }
 void DetectionEngine::thread_init() { }

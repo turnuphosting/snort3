@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -48,6 +48,7 @@
 #include <fstream>
 #include <string>
 
+#include "actions/actions_module.h"
 #include "framework/ips_action.h"
 #include "framework/module.h"
 #include "log/messages.h"
@@ -61,16 +62,17 @@
 #include "utils/util.h"
 #include "utils/util_cstring.h"
 
-#include "actions.h"
-
 using namespace snort;
 using namespace HttpCommon;
 using namespace Http2Enums;
 
-#define s_name "react"
-
-#define s_help \
+#define action_name "react"
+#define action_help \
     "send response to client and terminate session"
+
+#define module_name "react"
+#define module_help \
+    "manage the data and the counters for the react action"
 
 static THREAD_LOCAL ProfileStats reactPerfStats;
 
@@ -101,7 +103,7 @@ class ReactData
 {
 public:
 
-    ReactData(const std::string& page)
+    explicit ReactData(const std::string& page)
     {
         if ( page.empty())
         {
@@ -129,6 +131,18 @@ private:
     std::string resp_buf;      // response to send
 };
 
+static THREAD_LOCAL struct ReactStats
+{
+    PegCount react;
+} react_stats;
+
+const PegInfo react_pegs[] =
+{
+    { CountType::SUM, "react", "number of packets that matched an IPS react rule" },
+    { CountType::END, nullptr, nullptr }
+};
+
+
 //-------------------------------------------------------------------------
 // active action
 //-------------------------------------------------------------------------
@@ -136,7 +150,7 @@ private:
 class ReactActiveAction : public ActiveAction
 {
 public:
-    ReactActiveAction(ReactData* c)
+    explicit ReactActiveAction(ReactData* c)
         : ActiveAction( ActionPriority::AP_PROXY ), config(c)
     { }
 
@@ -149,6 +163,7 @@ private:
 
 void ReactActiveAction::delayed_exec(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(reactPerfStats);
 
     if ( p->active->is_reset_candidate(p) )
@@ -191,13 +206,13 @@ class ReactAction : public IpsAction
 {
 public:
     ReactAction(ReactData* c)
-        : IpsAction(s_name, &react_act_action), config(c), react_act_action(c)
+        : IpsAction(action_name, &react_act_action), config(c), react_act_action(c)
     { }
 
     ~ReactAction() override
     { delete config; }
 
-    void exec(Packet*, const OptTreeNode* otn) override;
+    void exec(Packet*, const ActInfo&) override;
     bool drops_traffic() override { return true; }
 
 private:
@@ -205,19 +220,20 @@ private:
     ReactActiveAction react_act_action;
 };
 
-void ReactAction::exec(Packet* p, const OptTreeNode* otn)
+void ReactAction::exec(Packet* p, const ActInfo& ai)
 {
     p->active->drop_packet(p);
     p->active->set_drop_reason("ips");
 
-    Actions::alert(p, otn);
+    alert(p, ai);
+    ++react_stats.react;
 }
 
 //-------------------------------------------------------------------------
 // module
 //-------------------------------------------------------------------------
 
-static const Parameter s_params[] =
+static const Parameter module_params[] =
 {
     { "page", Parameter::PT_STRING, nullptr, nullptr,
       "file containing HTTP response body" },
@@ -228,8 +244,8 @@ static const Parameter s_params[] =
 class ReactModule : public Module
 {
 public:
-    ReactModule() : Module(s_name, s_help, s_params)
-    { }
+    ReactModule() : Module(module_name, module_help, module_params)
+    { ActionsModule::add_action(module_name, react_pegs); }
 
     bool begin(const char*, int, SnortConfig*) override;
     bool set(const char*, Value&, SnortConfig*) override;
@@ -254,6 +270,18 @@ public:
     }
 
     std::string get_data();
+
+    bool stats_are_aggregated() const override
+    { return true; }
+
+    void show_stats() override
+    { /* These stats are shown by ActionsModule. */ }
+
+    const PegInfo* get_pegs() const override
+    { return react_pegs; }
+
+    PegCount* get_counts() const override
+    { return (PegCount*)&react_stats; }
 
 private:
     std::string page;
@@ -326,8 +354,8 @@ static const ActionApi react_api =
         0,
         API_RESERVED,
         API_OPTIONS,
-        s_name,
-        s_help,
+        action_name,
+        action_help,
         mod_ctor,
         mod_dtor
     },

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -57,12 +57,12 @@ private:
 
     // URI related params. These affect the sub_id while parsed.
     // These values are saved to alert on conflicts, only used by ::end
-    bool scheme;
-    bool host;
-    bool port;
-    bool path;
-    bool query;
-    bool fragment;
+    bool scheme = false;
+    bool host = false;
+    bool port = false;
+    bool path = false;
+    bool query = false;
+    bool fragment = false;
 };
 
 class HttpBufferIpsOption : public HttpIpsOption
@@ -73,7 +73,7 @@ public:
         key(cm->key), fp_buffer_info(cm->rule_opt_index) {}
     EvalStatus eval(Cursor&, snort::Packet*) override;
 
-    static IpsOption* opt_ctor(snort::Module* m, OptTreeNode*)
+    static IpsOption* opt_ctor(snort::Module* m, IpsInfo&)
     { return new HttpBufferIpsOption((HttpBufferRuleOptModule*)m); }
 
     static void opt_dtor(snort::IpsOption* p) { delete p; }

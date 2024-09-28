@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 // Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 //
@@ -29,6 +29,7 @@
 #include "framework/module.h"
 #include "log/messages.h"
 #include "main/snort_config.h"
+#include "main/thread.h"
 #include "packet_io/sfdaq.h"
 #include "packet_io/sfdaq_config.h"
 #include "protocols/packet.h"
@@ -50,7 +51,6 @@ using namespace std;
 
 struct LtdConfig
 {
-    string file;
     size_t limit;
 };
 

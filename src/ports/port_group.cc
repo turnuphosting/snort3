@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -36,7 +36,7 @@ void RuleGroup::add_rule()
 RuleGroup::~RuleGroup()
 {
     for ( int sect = snort::PS_NONE; sect <= snort::PS_MAX; sect++)
-        for ( auto* it : pm_list[sect] )
+        for ( const auto* it : pm_list[sect] )
             delete it;
 
     delete_nfp_rules();

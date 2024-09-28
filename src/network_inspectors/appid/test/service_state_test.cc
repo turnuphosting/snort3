@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,18 +28,35 @@
 
 #include <vector>
 
+THREAD_LOCAL bool TimeProfilerStats::enabled = false;
+
 namespace snort
 {
+Packet::Packet(bool)
+{
+    memset((char*) this , 0, sizeof(*this));
+    ip_proto_next = IpProtocol::PROTO_NOT_SET;
+    packet_flags = PKT_FROM_CLIENT;
+}
+Packet::~Packet() = default;
+Packet* DetectionEngine::get_current_packet() { return nullptr; }
+
 // Stubs for logs
 char test_log[256];
+void LogMessage(const char* format, va_list& args)
+{
+    vsprintf(test_log, format, args);
+}
 void LogMessage(const char* format,...)
 {
     va_list args;
     va_start(args, format);
-    vsprintf(test_log, format, args);
+    LogMessage(format, args);
     va_end(args);
 }
-void ErrorMessage(const char*,...) {}
+void WarningMessage(const char*,...)
+{ }
+
 void LogLabel(const char*, FILE*) {}
 void LogText(const char* s, FILE*) { LogMessage("%s\n", s); }
 
@@ -70,7 +87,8 @@ AppInfoTableEntry* AppInfoManager::get_app_info_entry(AppId)
 
 // Stubs for appid classes
 class AppIdInspector{};
-FlowData::FlowData(unsigned, Inspector*) {}
+FlowData::FlowData(unsigned, Inspector*) : next(nullptr), prev(nullptr), handler(nullptr), id(0)
+{ }
 FlowData::~FlowData() = default;
 
 // Stubs for AppIdDebug
@@ -90,7 +108,11 @@ AppIdConfig stub_config;
 AppIdContext stub_ctxt(stub_config);
 OdpContext stub_odp_ctxt(stub_config, nullptr);
 AppIdSession::AppIdSession(IpProtocol, const SfIp* ip, uint16_t, AppIdInspector&,
-    OdpContext&, uint32_t) : FlowData(0), config(stub_config),
+    OdpContext&, uint32_t
+#ifndef DISABLE_TENANT_ID
+    ,uint32_t
+#endif
+    ) : FlowData(0), config(stub_config),
     api(*(new AppIdSessionApi(this, *ip))), odp_ctxt(stub_odp_ctxt) { }
 AppIdSession::~AppIdSession() = default;
 AppIdDiscovery::~AppIdDiscovery() = default;
@@ -129,8 +151,15 @@ SipPatternMatchers::~SipPatternMatchers() = default;
 SslPatternMatchers::~SslPatternMatchers() = default;
 AlpnPatternMatchers::~AlpnPatternMatchers() = default;
 CipPatternMatchers::~CipPatternMatchers() = default;
-snort::SearchTool::SearchTool(bool) { }
+snort::SearchTool::SearchTool(bool, const char*) { }
 snort::SearchTool::~SearchTool() = default;
+void appid_log(const snort::Packet*, unsigned char, char const* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    LogMessage(fmt, args);
+    va_end(args);
+}
 
 TEST_GROUP(service_state_tests)
 {
@@ -150,15 +179,14 @@ TEST(service_state_tests, select_detector_by_brute_force)
 {
     ServiceDiscovery sd;
     ServiceDiscoveryState sds;
-
     // Testing end of brute-force walk for supported and unsupported protocols
     test_log[0] = '\0';
     sds.select_detector_by_brute_force(IpProtocol::TCP, sd);
-    STRCMP_EQUAL(test_log, "AppIdDbg  Brute-force state failed - no more TCP detectors\n");
+    STRCMP_EQUAL(test_log, "Brute-force state failed - no more TCP detectors\n");
 
     test_log[0] = '\0';
     sds.select_detector_by_brute_force(IpProtocol::UDP, sd);
-    STRCMP_EQUAL(test_log, "AppIdDbg  Brute-force state failed - no more UDP detectors\n");
+    STRCMP_EQUAL(test_log, "Brute-force state failed - no more UDP detectors\n");
 
     test_log[0] = '\0';
     sds.select_detector_by_brute_force(IpProtocol::IP, sd);
@@ -171,7 +199,11 @@ TEST(service_state_tests, set_service_id_failed)
     AppIdInspector inspector;
     SfIp client_ip;
     client_ip.set("1.2.3.4");
-    AppIdSession asd(IpProtocol::PROTO_NOT_SET, &client_ip, 0, inspector, stub_odp_ctxt);
+    AppIdSession asd(IpProtocol::PROTO_NOT_SET, &client_ip, 0, inspector, stub_odp_ctxt, 0
+#ifndef DISABLE_TENANT_ID
+    ,0
+#endif
+    );
 
     // Testing 3+ failures to exceed STATE_ID_NEEDED_DUPE_DETRACT_COUNT with valid_count = 0
     sds.set_state(ServiceState::VALID);
@@ -191,7 +223,11 @@ TEST(service_state_tests, set_service_id_failed_with_valid)
     AppIdInspector inspector;
     SfIp client_ip;
     client_ip.set("1.2.3.4");
-    AppIdSession asd(IpProtocol::PROTO_NOT_SET, &client_ip, 0, inspector, stub_odp_ctxt);
+    AppIdSession asd(IpProtocol::PROTO_NOT_SET, &client_ip, 0, inspector, stub_odp_ctxt, 0
+#ifndef DISABLE_TENANT_ID
+    ,0
+#endif
+    );
 
     // Testing 3+ failures to exceed STATE_ID_NEEDED_DUPE_DETRACT_COUNT with valid_count > 1
     sds.set_state(ServiceState::VALID);

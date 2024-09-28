@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -40,7 +40,6 @@ bool Tag::convert(std::istringstream& data_stream)
 {
     std::string args;
     std::string value;
-    std::string type;
 
     args = util::get_rule_option_args(data_stream);
     std::istringstream arg_stream(args);
@@ -112,6 +111,7 @@ bool Tag::convert(std::istringstream& data_stream)
             cnt = !cnt;
         }
 
+        std::string type;
         if (is_host)
         {
             if (value == "src")

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,7 +28,7 @@
 #include "host_tracker/host_cache.h"
 #include "network_inspectors/appid/appid_discovery.cc"
 #include "network_inspectors/appid/appid_peg_counts.h"
-#include "network_inspectors/packet_tracer/packet_tracer.h"
+#include "packet_io/packet_tracer.h"
 #include "pub_sub/appid_event_ids.h"
 #include "search_engines/search_tool.h"
 #include "utils/sflsq.cc"
@@ -43,6 +43,7 @@
 #include <CppUTestExt/MockSupport.h>
 
 uint32_t ThirdPartyAppIdContext::next_version = 0;
+THREAD_LOCAL bool TimeProfilerStats::enabled = false;
 
 namespace snort
 {
@@ -51,9 +52,9 @@ AppIdApi appid_api;
 const char* AppIdApi::get_application_name(AppId, OdpContext&) { return NULL; }
 
 // Stubs for packet tracer
-THREAD_LOCAL PacketTracer* s_pkt_trace = nullptr;
-THREAD_LOCAL Stopwatch<SnortClock>* pt_timer = nullptr;
 void PacketTracer::daq_log(const char*, ...) { }
+uint64_t PacketTracer::get_time() { return 0; }
+THREAD_LOCAL PacketTracer* PacketTracer::s_pkt_trace = nullptr;
 
 // Stubs for packet
 Packet::Packet(bool) {}
@@ -75,15 +76,17 @@ Module::Module(char const*, char const*) {}
 void Module::sum_stats(bool) {}
 void Module::show_interval_stats(std::vector<unsigned>&, FILE*) {}
 void Module::show_stats() {}
+void Module::init_stats(bool) {}
 void Module::reset_stats() {}
+void Module::main_accumulate_stats() {}
 PegCount Module::get_global_count(char const*) const { return 0; }
 
 // Stubs for logs
-void LogMessage(const char*,...) {}
-void ErrorMessage(const char*,...) {}
 void LogLabel(const char*, FILE*) {}
 void LogText(const char*, FILE*) {}
 
+void FatalError(const char* fmt, ...) { (void)fmt; exit(1); }
+void WarningMessage(const char*,...) { }
 
 // Stubs for utils
 char* snort_strdup(const char* str)
@@ -101,7 +104,7 @@ char* snort_strndup(const char* src, size_t)
 time_t packet_time() { return std::time(nullptr); }
 
 // Stubs for search_tool
-SearchTool::SearchTool(bool) {}
+SearchTool::SearchTool(bool, const char*) {}
 SearchTool::~SearchTool() = default;
 void SearchTool::add(const char*, unsigned, int, bool, bool) {}
 void SearchTool::add(const char*, unsigned, void*, bool, bool) {}
@@ -171,18 +174,20 @@ bool AppIdModule::set(char const*, Value&, SnortConfig*) { return true; }
 const Command* AppIdModule::get_commands() const { return nullptr; }
 const PegInfo* AppIdModule::get_pegs() const { return nullptr; }
 PegCount* AppIdModule::get_counts() const { return nullptr; }
-ProfileStats* AppIdModule::get_profile() const { return nullptr; }
+ProfileStats* AppIdModule::get_profile(unsigned, const char*&, const char*&) const { return nullptr; }
 void AppIdModule::set_trace(const Trace*) const { }
 const TraceOption* AppIdModule::get_trace_options() const { return nullptr; }
 THREAD_LOCAL bool ThirdPartyAppIdContext::tp_reload_in_progress = false;
 
 // Stubs for config
 static AppIdConfig app_config;
-static AppIdContext app_ctxt(app_config);
 AppId OdpContext::get_port_service_id(IpProtocol, uint16_t)
 {
     return APP_ID_NONE;
 }
+
+bool OdpContext::is_appid_cpu_profiler_enabled() { return false; }
+bool OdpContext::is_appid_cpu_profiler_running() { return false; }
 
 AppId OdpContext::get_protocol_service_id(IpProtocol)
 {
@@ -190,7 +195,8 @@ AppId OdpContext::get_protocol_service_id(IpProtocol)
 }
 
 // Stubs for AppIdInspector
-AppIdInspector::AppIdInspector(AppIdModule&) { ctxt = &stub_ctxt; }
+AppIdInspector::AppIdInspector(AppIdModule&) : config(&app_config), ctxt(app_config)
+{ }
 AppIdInspector::~AppIdInspector() = default;
 void AppIdInspector::eval(Packet*) { }
 bool AppIdInspector::configure(SnortConfig*) { return true; }
@@ -198,11 +204,6 @@ void AppIdInspector::show(const SnortConfig*) const { }
 void AppIdInspector::tinit() { }
 void AppIdInspector::tterm() { }
 void AppIdInspector::tear_down(SnortConfig*) { }
-AppIdContext& AppIdInspector::get_ctxt() const
-{
-    assert(ctxt);
-    return *ctxt;
-}
 bool DiscoveryFilter::is_app_monitored(const snort::Packet*, uint8_t*){return true;}
 
 // Stubs for AppInfoManager
@@ -261,7 +262,8 @@ static AppIdModule* s_app_module = nullptr;
 static AppIdInspector* s_ins = nullptr;
 static ServiceDiscovery* s_discovery_manager = nullptr;
 
-HostCacheIp host_cache(50);
+HostCacheIp default_host_cache(LRU_CACHE_INITIAL_SIZE);
+HostCacheSegmentedIp host_cache(1,50);
 AppId HostTracker::get_appid(Port, IpProtocol, bool, bool)
 {
     return APP_ID_NONE;
@@ -302,6 +304,8 @@ TPLibHandler* TPLibHandler::self = nullptr;
 THREAD_LOCAL AppIdStats appid_stats;
 THREAD_LOCAL AppIdDebug* appidDebug = nullptr;
 void AppIdDebug::activate(const Flow*, const AppIdSession*, bool) { active = false; }
+
+void appid_log(const snort::Packet*, unsigned char, char const*, ...) { }
 
 bool AppIdReloadTuner::tinit() { return false; }
 
@@ -391,7 +395,12 @@ TEST(appid_discovery_tests, event_published_when_ignoring_flow)
     p.ptrs.ip_api.set(ip, ip);
     AppIdModule app_module;
     AppIdInspector ins(app_module);
-    AppIdSession* asd = new AppIdSession(IpProtocol::TCP, &ip, 21, ins, app_ctxt.get_odp_ctxt());
+    AppIdContext& app_ctxt = ins.get_ctxt();
+    AppIdSession* asd = new AppIdSession(IpProtocol::TCP, &ip, 21, ins, app_ctxt.get_odp_ctxt(), 0
+#ifndef DISABLE_TENANT_ID
+    ,0
+#endif
+    );
     asd->flags |= APPID_SESSION_SPECIAL_MONITORED | APPID_SESSION_DISCOVER_USER |
         APPID_SESSION_DISCOVER_APP;
     Flow* flow = new Flow;
@@ -426,7 +435,12 @@ TEST(appid_discovery_tests, event_published_when_processing_flow)
     p.ptrs.tcph = nullptr;
     AppIdModule app_module;
     AppIdInspector ins(app_module);
-    AppIdSession* asd = new AppIdSession(IpProtocol::TCP, &ip, 21, ins, app_ctxt.get_odp_ctxt());
+    AppIdContext& app_ctxt = ins.get_ctxt();
+    AppIdSession* asd = new AppIdSession(IpProtocol::TCP, &ip, 21, ins, app_ctxt.get_odp_ctxt(), 0
+#ifndef DISABLE_TENANT_ID
+    ,0
+#endif
+    );
     asd->flags |= APPID_SESSION_SPECIAL_MONITORED | APPID_SESSION_DISCOVER_USER |
         APPID_SESSION_DISCOVER_APP;
     Flow* flow = new Flow;
@@ -451,7 +465,12 @@ TEST(appid_discovery_tests, change_bits_for_client_version)
     AppIdModule app_module;
     AppIdInspector ins(app_module);
     SfIp ip;
-    AppIdSession* asd = new AppIdSession(IpProtocol::TCP, &ip, 21, ins, app_ctxt.get_odp_ctxt());
+    AppIdContext app_ctxt(app_config);
+    AppIdSession* asd = new AppIdSession(IpProtocol::TCP, &ip, 21, ins, app_ctxt.get_odp_ctxt(), 0
+#ifndef DISABLE_TENANT_ID
+    ,0
+#endif
+    );
     const char* version = "3.0";
     asd->set_client_version(version, change_bits);
 
@@ -486,7 +505,12 @@ TEST(appid_discovery_tests, change_bits_for_non_http_appid)
     p.ptrs.ip_api.set(ip, ip);
     AppIdModule app_module;
     AppIdInspector ins(app_module);
-    AppIdSession* asd = new AppIdSession(IpProtocol::TCP, &ip, 21, ins, app_ctxt.get_odp_ctxt());
+    AppIdContext& app_ctxt = ins.get_ctxt();
+    AppIdSession* asd = new AppIdSession(IpProtocol::TCP, &ip, 21, ins, app_ctxt.get_odp_ctxt(), 0
+#ifndef DISABLE_TENANT_ID
+    ,0
+#endif
+    );
     asd->flags |= APPID_SESSION_SPECIAL_MONITORED | APPID_SESSION_DISCOVER_USER |
         APPID_SESSION_DISCOVER_APP;
     Flow* flow = new Flow;
@@ -545,5 +569,6 @@ TEST(appid_discovery_tests, change_bits_to_string)
 int main(int argc, char** argv)
 {
     int rc = CommandLineTestRunner::RunAllTests(argc, argv);
+    host_cache.term();
     return rc;
 }

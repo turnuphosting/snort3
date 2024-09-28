@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -196,7 +196,7 @@ public:
     { inspector_id = snort::FlowData::create_flow_data_id(); }
 
     static unsigned inspector_id;
-    DCE2_UdpSsnData dce2_udp_session;
+    DCE2_UdpSsnData dce2_udp_session = {};
 };
 
 DCE2_UdpSsnData* get_dce2_udp_session_data(snort::Flow*);

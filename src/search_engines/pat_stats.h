@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -22,7 +22,6 @@
 
 #include "framework/counts.h"
 #include "main/snort_types.h"
-#include "main/thread.h"
 
 // pattern matcher queue statistics
 
@@ -35,12 +34,11 @@ struct PatMatQStat
     PegCount tot_inq_uinserts;
     PegCount non_qualified_events;
     PegCount qualified_events;
-    PegCount matched_bytes;
 };
 
 namespace snort
 {
-SO_PUBLIC extern THREAD_LOCAL PatMatQStat pmqs;
+extern THREAD_LOCAL PatMatQStat pmqs;
 }
 #endif
 

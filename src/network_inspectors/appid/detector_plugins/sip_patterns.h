@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -53,7 +53,7 @@ public:
 
 private:
     static const int PATTERN_PART_MAX = 10;
-    tMlmpPattern patterns[PATTERN_PART_MAX] = { { nullptr, 0, 0 } };
+    tMlmpPattern patterns[PATTERN_PART_MAX] = { { nullptr, 0, 0, true } };
     tMlmpTree* sip_ua_matcher = nullptr;
     DetectorAppSipPattern* sip_ua_list = nullptr;
     tMlmpTree* sip_server_matcher = nullptr;

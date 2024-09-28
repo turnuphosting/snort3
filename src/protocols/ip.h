@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -31,19 +31,14 @@ namespace snort
 {
 struct Packet;
 
-// FIXIT-L can I assume api is always valid?
-// i.e. if not ip4, then ipv6?
-// or if not ip4, also make sure its not ip6
-
 namespace ip
 {
-// keeping this as a class to avoid confusion.
 class SO_PUBLIC IpApi
 {
 public:
     enum Type { IAT_NONE, IAT_4, IAT_6, IAT_DATA };
 
-    // constructor and destructor MUST remain a trivial. Adding
+    // constructor and destructor MUST remain trivial. Adding
     // any non-trivial code will cause a compilation failure.
     IpApi() = default;
 
@@ -70,10 +65,6 @@ public:
     uint16_t pay_len() const;
     // return the ip_len field in host byte order
     uint16_t actual_ip_len() const;
-    // true if the current source address ia the loopback address
-    bool is_src_loopback() const;
-    // true if the current source address ia the loopback address
-    bool is_dst_loopback() const;
 
     // overloaded == operators.
     friend bool operator==(const IpApi& lhs, const IpApi& rhs);
@@ -126,10 +117,10 @@ public:
     uint8_t ver() const;
 
 private:
-    SfIp src;
-    SfIp dst;
-    const void* iph;
-    Type type;
+    SfIp src = {};
+    SfIp dst = {};
+    const void* iph = nullptr;
+    Type type = IAT_NONE;
 };
 
 } // namespace ip

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2004-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -39,7 +39,8 @@
 #define FTPP_UI_CONFIG_H
 
 #include "sfip/sf_ip.h"
-#include "utils/kmap.h"
+
+#include "kmap.h"
 
 /*
  * Defines

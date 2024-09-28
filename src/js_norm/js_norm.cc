@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -61,9 +61,9 @@ const char* jsn::ret2str(int r)
     return jsret_codes[ret];
 }
 
-JSNorm::JSNorm(JSNormConfig* jsn_config, bool ext_script_type) :
-    alive(true), pdu_cnt(0), src_ptr(nullptr), src_end(nullptr),
-    idn_ctx(nullptr), jsn_ctx(nullptr), ext_script_type(ext_script_type)
+JSNorm::JSNorm(JSNormConfig* jsn_config, bool ext_script_type, uint32_t generation_id) :
+    alive(true), pdu_cnt(0), src_ptr(nullptr), src_end(nullptr), idn_ctx(nullptr),
+    jsn_ctx(nullptr), ext_script_type(ext_script_type), generation_id(generation_id)
 {
     config = jsn_config;
     alive = (bool)config;
@@ -130,7 +130,7 @@ void JSNorm::normalize(const void* in_data, size_t in_len, const void*& data, si
         JSNormModule::increment_peg_counts(PEG_BYTES, next - src_ptr);
         src_ptr = next;
 
-        alive = post_proc(ret);
+        alive = alive and post_proc(ret);
     }
 
     if (jsn_ctx != nullptr)

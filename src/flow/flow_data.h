@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -20,6 +20,9 @@
 #ifndef FLOW_DATA_H
 #define FLOW_DATA_H
 
+// FlowData is how inspectors maintain flow state
+// use Flow::set/get_flow_data() to attach to a flow
+
 #include "main/snort_types.h"
 
 namespace snort
@@ -30,7 +33,6 @@ struct Packet;
 class SO_PUBLIC FlowData
 {
 public:
-    FlowData(unsigned u, Inspector* = nullptr);
     virtual ~FlowData();
 
     unsigned get_id()
@@ -41,12 +43,12 @@ public:
 
     Inspector* get_handler() { return handler; }
 
-    // deprecated - do not implement
-    virtual size_t size_of() { return 0; }
-
     virtual void handle_expected(Packet*) { }
     virtual void handle_retransmit(Packet*) { }
     virtual void handle_eof(Packet*) { }
+
+protected:
+    FlowData(unsigned u, Inspector* = nullptr);
 
 public:  // FIXIT-L privatize
     FlowData* next;

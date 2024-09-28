@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -27,7 +27,6 @@
 #include <sstream>
 #include <string>
 
-#include "detection/detect.h"
 #include "detection/detection_engine.h"
 #include "log/messages.h"
 #include "main/analyzer.h"

@@ -52,6 +52,9 @@ Optional:
 * iconv from https://ftp.gnu.org/pub/gnu/libiconv/ for converting
   UTF16-LE filenames to UTF8 (usually included in glibc)
 
+* libml from https://github.com/snort3/libml to enable Snort ML, Neural
+  Network-based Exploit Detector
+
 * libunwind from https://www.nongnu.org/libunwind/ to attempt to dump a
   somewhat readable backtrace when a fatal signal is received
 
@@ -324,7 +327,6 @@ The following parameters can't be changed during reload, and require a restart:
 * attribute_table.max_hosts
 * attribute_table.max_services_per_host
 * daq.snaplen
-* detection.asn1
 * file_id.max_files_cached
 * process.chroot
 * process.daemon

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -84,32 +84,35 @@ enum class PktType : std::uint8_t
 #define PROTO_BIT__ANY_SSN  (PROTO_BIT__ANY_IP | PROTO_BIT__PDU | PROTO_BIT__FILE | PROTO_BIT__USER)
 #define PROTO_BIT__ANY_TYPE (PROTO_BIT__ANY_SSN | PROTO_BIT__ARP)
 
-enum DecodeFlags : std::uint16_t
+enum DecodeFlags : std::uint32_t
 {
-    DECODE_ERR_CKSUM_IP =   0x0001,  // error flags
-    DECODE_ERR_CKSUM_TCP =  0x0002,
-    DECODE_ERR_CKSUM_UDP =  0x0004,
-    DECODE_ERR_CKSUM_ICMP = 0x0008,
-    DECODE_ERR_BAD_TTL =    0x0010,
+    DECODE_ERR_CKSUM_IP =   0x00000001,  // error flags
+    DECODE_ERR_CKSUM_TCP =  0x00000002,
+    DECODE_ERR_CKSUM_UDP =  0x00000004,
+    DECODE_ERR_CKSUM_ICMP = 0x00000008,
+    DECODE_ERR_BAD_TTL =    0x00000010,
 
     DECODE_ERR_CKSUM_ALL = ( DECODE_ERR_CKSUM_IP | DECODE_ERR_CKSUM_TCP |
         DECODE_ERR_CKSUM_UDP | DECODE_ERR_CKSUM_ICMP ),
-    DECODE_ERR_FLAGS = ( DECODE_ERR_CKSUM_ALL | DECODE_ERR_BAD_TTL ),
 
-    DECODE_PKT_TRUST =      0x0020,  // trust this packet
-    DECODE_FRAG =           0x0040,  // ip - fragmented packet
-    DECODE_MF =             0x0080,  // ip - more fragments
-    DECODE_DF =             0x0100,  // ip - don't fragment
+    DECODE_PKT_TRUST =      0x00000020,  // trust this packet
+    DECODE_FRAG =           0x00000040,  // ip - fragmented packet
+    DECODE_MF =             0x00000080,  // ip - more fragments
+    DECODE_DF =             0x00000100,  // ip - don't fragment
 
     // using decode flags in lieu of creating user layer for now
-    DECODE_C2S =            0x0200,  // user - client to server
-    DECODE_SOF =            0x0400,  // user - start of flow
-    DECODE_EOF =            0x0800,  // user - end of flow
-    DECODE_GTP =            0x1000,
+    DECODE_C2S =            0x00000200,  // user - client to server
+    DECODE_SOF =            0x00000400,  // user - start of flow
+    DECODE_EOF =            0x00000800,  // user - end of flow
+    DECODE_GTP =            0x00001000,
 
-    DECODE_TCP_MSS =        0x2000,
-    DECODE_TCP_TS =         0x4000,
-    DECODE_TCP_WS =         0x8000,
+    DECODE_TCP_MSS =        0x00002000,
+    DECODE_TCP_TS =         0x00004000,
+    DECODE_TCP_WS =         0x00008000,
+
+    DECODE_ERR_LEN =        0X00010000,  // received incorrect len from DAQ
+
+    DECODE_ERR_FLAGS = ( DECODE_ERR_CKSUM_ALL | DECODE_ERR_BAD_TTL | DECODE_ERR_LEN ),
 };
 
 struct DecodeData
@@ -118,25 +121,30 @@ struct DecodeData
      * these three pointers are each referenced literally
      * dozens if not hundreds of times.  NOTHING else should be added!!
      */
-    const snort::tcp::TCPHdr* tcph;
-    const snort::udp::UDPHdr* udph;
-    const snort::icmp::ICMPHdr* icmph;
+    const snort::tcp::TCPHdr* tcph = nullptr;
+    const snort::udp::UDPHdr* udph = nullptr;
+    const snort::icmp::ICMPHdr* icmph = nullptr;
 
-    uint16_t sp;            /* source port (TCP/UDP) */
-    uint16_t dp;            /* dest port (TCP/UDP) */
+    uint16_t sp = 0;    /* source port (TCP/UDP) */
+    uint16_t dp = 0;    /* dest port (TCP/UDP) */
 
-    uint16_t decode_flags;
-    PktType type;
+    uint32_t decode_flags = 0;
+    PktType type = PktType::NONE;
 
     snort::ip::IpApi ip_api;
-    snort::mpls::MplsHdr mplsHdr;  // FIXIT-L need to zero this?
+    snort::mpls::MplsHdr mplsHdr = {};
 
     inline void reset()
     {
-        memset(this, 0, offsetof(DecodeData, ip_api));
-        ip_api.reset();
+        tcph = nullptr;
+        udph = nullptr;
+        icmph = nullptr;
         sp = 0;
         dp = 0;
+        decode_flags = 0;
+        type = PktType::NONE;
+        ip_api.reset();
+        mplsHdr = {};
     }
 
     inline void set_pkt_type(PktType pkt_type)

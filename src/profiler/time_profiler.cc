@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -42,7 +42,17 @@ using namespace snort;
 // enabled is not in SnortConfig to avoid that ugly dependency
 // enabled is not in TimeContext because declaring it SO_PUBLIC made TimeContext visible
 // putting enabled in TimeProfilerStats seems to be the best solution
+#ifndef _WIN64
 THREAD_LOCAL bool TimeProfilerStats::enabled = false;
+#else
+static THREAD_LOCAL bool enabled;
+
+void TimeProfilerStats::set_enabled(bool b)
+{ enabled = b; }
+
+bool TimeProfilerStats::is_enabled()
+{ return enabled; }
+#endif
 
 namespace time_stats
 {
@@ -52,9 +62,9 @@ static const StatsTable::Field fields[] =
     { "#", 5, ' ', 0, std::ios_base::left },
     { "module", 24, ' ', 0, std::ios_base::fmtflags() },
     { "layer", 6, ' ', 0, std::ios_base::fmtflags() },
-    { "checks", 10, ' ', 0, std::ios_base::fmtflags() },
-    { "time(us)", 11, ' ', 0, std::ios_base::fmtflags() },
-    { "avg/check", 11, ' ', 1, std::ios_base::fmtflags() },
+    { "checks", 21, ' ', 0, std::ios_base::fmtflags() },
+    { "time(us)", 21, ' ', 0, std::ios_base::fmtflags() },
+    { "avg/check", 21, ' ', 1, std::ios_base::fmtflags() },
     { "%/caller", 10, ' ', 2, std::ios_base::fmtflags() },
     { "%/total", 9, ' ', 2, std::ios_base::fmtflags() },
     { nullptr, 0, '\0', 0, std::ios_base::fmtflags() }
@@ -495,7 +505,7 @@ TEST_CASE( "time profiler time context disabled", "[profiler][time_profiler]" )
     {
         {
             TimeContext ctx(stats);
-            CHECK( ctx.active() );
+            CHECK( true == ctx.active() );
             CHECK( stats.ref_count == 0 );
         }
 
@@ -506,10 +516,10 @@ TEST_CASE( "time profiler time context disabled", "[profiler][time_profiler]" )
     {
         {
             TimeContext ctx(stats);
-            CHECK( ctx.active() );
+            CHECK( true == ctx.active() );
             CHECK( stats.ref_count == 0 );
             ctx.stop();
-            CHECK( ctx.active() );
+            CHECK( true == ctx.active() );
             CHECK( stats.ref_count == 0 );
         }
 
@@ -556,7 +566,7 @@ TEST_CASE( "time profiler time context", "[profiler][time_profiler]" )
     {
         {
             TimeContext ctx(stats);
-            CHECK( ctx.active() );
+            CHECK( true == ctx.active() );
             CHECK( stats.ref_count == 1 );
         }
 
@@ -567,10 +577,10 @@ TEST_CASE( "time profiler time context", "[profiler][time_profiler]" )
     {
         {
             TimeContext ctx(stats);
-            CHECK( ctx.active() );
+            CHECK( true == ctx.active() );
             CHECK( stats.ref_count == 1 );
             ctx.stop();
-            CHECK_FALSE( ctx.active() );
+            CHECK( false == ctx.active() );
             CHECK( stats.ref_count == 0 );
         }
 

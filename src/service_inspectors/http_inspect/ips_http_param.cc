@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -80,7 +80,11 @@ uint32_t HttpParamIpsOption::hash() const
 bool HttpParamRuleOptModule::end(const char*, int, SnortConfig*)
 {
     if (param.length() == 0)
+    {
         ParseError("Specify parameter name");
+        return false;
+    }
+
     return true;
 }
 
@@ -92,7 +96,7 @@ bool HttpParamIpsOption::operator==(const IpsOption& ips) const
            http_param == hio.http_param;
 }
 
-bool HttpParamIpsOption::retry(Cursor& current_cursor, const Cursor&)
+bool HttpParamIpsOption::retry(Cursor& current_cursor)
 {
     HttpCursorData* cd = (HttpCursorData*)current_cursor.get_data(HttpCursorData::id);
 
@@ -104,6 +108,7 @@ bool HttpParamIpsOption::retry(Cursor& current_cursor, const Cursor&)
 
 IpsOption::EvalStatus HttpParamIpsOption::eval(Cursor& c, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(HttpParamRuleOptModule::http_param_ps);
 
     const HttpInspect* const hi = eval_helper(p);

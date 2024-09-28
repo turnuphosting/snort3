@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -22,6 +22,9 @@
 #include "config.h"
 #endif
 
+#include "host_tracker.h"
+#include "host_tracker_stats.h"
+
 #include <algorithm>
 
 #include "flow/flow.h"
@@ -30,7 +33,7 @@
 
 #include "cache_allocator.cc"
 #include "host_cache.h"
-#include "host_tracker.h"
+#include "host_cache_segmented.h"
 
 using namespace snort;
 using namespace std;
@@ -43,11 +46,10 @@ THREAD_LOCAL struct HostTrackerStats host_tracker_stats;
 const uint8_t snort::zero_mac[MAC_SIZE] = {0, 0, 0, 0, 0, 0};
 
 
-HostTracker::HostTracker() : hops(-1)
+HostTracker::HostTracker()
 {
     last_seen = nat_count_start = (uint32_t) packet_time();
-    last_event = -1;
-    visibility = host_cache.get_valid_id();
+    visibility = host_cache.get_valid_id(0);
 }
 
 void HostTracker::update_last_seen()
@@ -291,7 +293,7 @@ bool HostTracker::reset_hops_if_primary()
 {
     lock_guard<mutex> lck(host_tracker_lock);
 
-    for ( auto& hm : macs )
+    for ( const auto& hm : macs )
         if ( hm.primary and hm.visibility )
         {
             if ( !hops )
@@ -341,28 +343,29 @@ bool HostTracker::add_service(Port port, IpProtocol proto, AppId appid, bool inf
     host_tracker_stats.service_adds++;
     lock_guard<mutex> lck(host_tracker_lock);
 
-    for ( auto& s : services )
+    auto it = std::find_if(services.begin(), services.end(),
+        [port, proto](const HostApplication& s)
+        { return s.port == port and s.proto == proto; });
+    if (it != services.end())
     {
-        if ( s.port == port and s.proto == proto )
+        HostApplication& s = *it;
+        if ( s.appid != appid and appid != APP_ID_NONE )
         {
-            if ( s.appid != appid and appid != APP_ID_NONE )
-            {
-                s.appid = appid;
-                s.inferred_appid = inferred_appid;
-                if ( added )
-                    *added = true;
-            }
-
-            if ( s.visibility == false )
-            {
-                if ( added )
-                    *added = true;
-                s.visibility = true;
-                num_visible_services++;
-            }
-
-            return true;
+            s.appid = appid;
+            s.inferred_appid = inferred_appid;
+            if ( added )
+                *added = true;
         }
+
+        if ( !s.visibility )
+        {
+            if ( added )
+                *added = true;
+            s.visibility = true;
+            num_visible_services++;
+        }
+
+        return true;
     }
 
     services.emplace_back(port, proto, appid, inferred_appid);
@@ -392,45 +395,48 @@ bool HostTracker::add_client_payload(HostClient& hc, AppId payload, size_t max_p
     Payload_t* invisible_swap_candidate = nullptr;
     std::lock_guard<std::mutex> lck(host_tracker_lock);
 
-    for ( auto& client : clients )
-        if ( client.id == hc.id and client.service == hc.service )
+    auto it = std::find_if(clients.begin(), clients.end(),
+        [&hc](const HostClient& c)
+        { return c.id == hc.id and c.service == hc.service; });
+    if (it != clients.end())
+    {
+        HostClient& client = *it;
+        for ( auto& pld : client.payloads )
         {
-            for ( auto& pld : client.payloads )
+            if ( pld.first == payload )
             {
-                if ( pld.first == payload )
-                {
-                    if ( pld.second )
-                        return false;
+                if ( pld.second )
+                    return false;
 
-                    pld.second = true;
-                    client.num_visible_payloads++;
-                    hc.payloads = client.payloads;
-                    strncpy(hc.version, client.version, INFO_SIZE);
-                    return true;
-                }
-                if ( !invisible_swap_candidate and !pld.second )
-                    invisible_swap_candidate = &pld;
-            }
-
-            if ( invisible_swap_candidate )
-            {
-                invisible_swap_candidate->second = true;
-                invisible_swap_candidate->first = payload;
+                pld.second = true;
                 client.num_visible_payloads++;
                 hc.payloads = client.payloads;
                 strncpy(hc.version, client.version, INFO_SIZE);
                 return true;
             }
+            if ( !invisible_swap_candidate and !pld.second )
+                invisible_swap_candidate = &pld;
+        }
 
-            if ( client.payloads.size() >= max_payloads )
-                return false;
-
-            client.payloads.emplace_back(payload, true);
+        if ( invisible_swap_candidate )
+        {
+            invisible_swap_candidate->second = true;
+            invisible_swap_candidate->first = payload;
+            client.num_visible_payloads++;
             hc.payloads = client.payloads;
             strncpy(hc.version, client.version, INFO_SIZE);
-            client.num_visible_payloads++;
             return true;
         }
+
+        if ( client.payloads.size() >= max_payloads )
+            return false;
+
+        client.payloads.emplace_back(payload, true);
+        hc.payloads = client.payloads;
+        strncpy(hc.version, client.version, INFO_SIZE);
+        client.num_visible_payloads++;
+        return true;
+    }
 
     return false;
 }
@@ -440,28 +446,29 @@ bool HostTracker::add_service(const HostApplication& app, bool* added)
     host_tracker_stats.service_adds++;
     lock_guard<mutex> lck(host_tracker_lock);
 
-    for ( auto& s : services )
+    auto it = std::find_if(services.begin(), services.end(),
+        [&app](const HostApplication& s)
+        { return s.port == app.port and s.proto == app.proto; });
+    if (it != services.end())
     {
-        if ( s.port == app.port and s.proto == app.proto )
+        HostApplication& s = *it;
+        if ( s.appid != app.appid and app.appid != APP_ID_NONE )
         {
-            if ( s.appid != app.appid and app.appid != APP_ID_NONE )
-            {
-                s.appid = app.appid;
-                s.inferred_appid = app.inferred_appid;
-                if ( added )
-                    *added = true;
-            }
-
-            if ( s.visibility == false )
-            {
-                if ( added )
-                    *added = true;
-                s.visibility = true;
-                num_visible_services++;
-            }
-
-            return true;
+            s.appid = app.appid;
+            s.inferred_appid = app.inferred_appid;
+            if ( added )
+                *added = true;
         }
+
+        if ( !s.visibility )
+        {
+            if ( added )
+                *added = true;
+            s.visibility = true;
+            num_visible_services++;
+        }
+
+        return true;
     }
 
     services.emplace_back(app.port, app.proto, app.appid, app.inferred_appid);
@@ -497,15 +504,17 @@ size_t HostTracker::get_service_count()
 
 HostApplication* HostTracker::find_service_no_lock(Port port, IpProtocol proto, AppId appid)
 {
-    for ( auto& s : services )
+    auto it = std::find_if(services.begin(), services.end(),
+        [port, proto, appid](const HostApplication& s)
+        { return s.port == port and s.proto == proto
+            and (s.visibility or (appid != APP_ID_NONE and s.appid == appid)); });
+    if (it != services.end())
     {
-        if ( s.port == port and s.proto == proto )
-        {
-            if ( s.visibility == false )
-                return nullptr;
-            if ( appid != APP_ID_NONE and s.appid == appid )
-                return &s;
-        }
+        HostApplication& s = *it;
+        if ( s.visibility == false )
+            return nullptr;
+        if ( appid != APP_ID_NONE and s.appid == appid )
+            return &s;
     }
 
     return nullptr;
@@ -608,14 +617,13 @@ void HostTracker::update_service(const HostApplication& ha)
     host_tracker_stats.service_finds++;
     lock_guard<mutex> lck(host_tracker_lock);
 
-    for ( auto& s : services )
+    auto it = std::find_if(services.begin(), services.end(),
+        [&ha](const HostApplication& s){ return s.port == ha.port and s.proto == ha.proto; });
+    if (it != services.end())
     {
-        if ( s.port == ha.port and s.proto == ha.proto )
-        {
-            s.hits = ha.hits;
-            s.last_seen = ha.last_seen;
-            return;
-        }
+        HostApplication& s = *it;
+        s.hits = ha.hits;
+        s.last_seen = ha.last_seen;
     }
 }
 
@@ -655,7 +663,7 @@ bool HostTracker::update_service_info(HostApplication& ha, const char* vendor,
     {
         if ( s.port == ha.port and s.proto == ha.proto )
         {
-            if ( s.visibility == false )
+            if ( !s.visibility )
                 return false;
 
             if ( !version and !vendor )
@@ -667,7 +675,7 @@ bool HostTracker::update_service_info(HostApplication& ha, const char* vendor,
                 if ( (version and !strncmp(version, i.version, INFO_SIZE-1)) and
                     (vendor and !strncmp(vendor, i.vendor, INFO_SIZE-1)) )
                 {
-                    if ( i.visibility == false )
+                    if ( !i.visibility )
                     {
                         i.visibility = true;  // rediscover it
                         update_ha_no_lock(ha, s);
@@ -735,7 +743,7 @@ bool HostTracker::update_service_user(Port port, IpProtocol proto, const char* u
     // Appid notifies user events before service events, so use find or add service function.
     HostApplication* ha = find_and_add_service_no_lock(port, proto, lseen, is_new, 0,
         max_services);
-    if ( !ha or ha->visibility == false )
+    if ( !(ha and ha->visibility) )
         return false;
 
     if ( user and strncmp(user, ha->user, INFO_SIZE-1) )
@@ -816,10 +824,8 @@ bool HostTracker::add_cpe_os_hash(uint32_t hash)
 
 bool HostTracker::set_visibility(bool v)
 {
-    // get_valid_id may use its own lock, so get this outside our lock
-    size_t container_id = host_cache.get_valid_id();
-
     std::lock_guard<std::mutex> lck(host_tracker_lock);
+    size_t container_id = host_cache.get_valid_id(cache_idx);
     size_t old_visibility = visibility;
 
     visibility = v ? container_id : HostCacheIp::invalid_id;
@@ -869,20 +875,20 @@ bool HostTracker::set_visibility(bool v)
 bool HostTracker::is_visible() const
 {
     std::lock_guard<std::mutex> lck(host_tracker_lock);
-    return visibility == host_cache.get_valid_id();
+    return visibility == host_cache.get_valid_id(cache_idx);
 }
 
 
 bool HostTracker::set_network_proto_visibility(uint16_t proto, bool v)
 {
     std::lock_guard<std::mutex> lck(host_tracker_lock);
-    for ( auto& pp : network_protos )
+    auto it = std::find_if(network_protos.begin(), network_protos.end(),
+        [proto](const HostTracker::NetProto_t&pp)
+        { return pp.first == proto; });
+    if (it != network_protos.end())
     {
-        if ( pp.first == proto )
-        {
-            pp.second = v;
-            return true;
-        }
+        (*it).second = v;
+        return true;
     }
     return false;
 }
@@ -890,59 +896,61 @@ bool HostTracker::set_network_proto_visibility(uint16_t proto, bool v)
 bool HostTracker::set_xproto_visibility(uint8_t proto, bool v)
 {
     std::lock_guard<std::mutex> lck(host_tracker_lock);
-    for ( auto& pp : xport_protos )
+    auto it = std::find_if(xport_protos.begin(), xport_protos.end(),
+        [proto](const HostTracker::XProto_t& pp)
+        { return pp.first == proto; });
+    if (it != xport_protos.end())
     {
-        if ( pp.first == proto )
-        {
-            pp.second = v;
-            return true;
-        }
+        (*it).second = v;
+        return true;
     }
     return false;
 }
 
 void HostTracker::set_payload_visibility_no_lock(PayloadVector& pv, bool v, size_t& num_vis)
 {
-    for ( auto& p : pv )
-    {
-        if ( p.second != v )
+    std::for_each(pv.begin(), pv.end(),
+        [v, &num_vis](Payload_t& p)
         {
-            p.second = v;
-            if ( v )
-                num_vis++;
-            else
-                num_vis--;
-        }
-    }
+            if ( p.second != v )
+            {
+                p.second = v;
+                if ( v )
+                    num_vis++;
+                else
+                    num_vis--;
+            }
+        });
 }
 
 bool HostTracker::set_service_visibility(Port port, IpProtocol proto, bool v)
 {
     std::lock_guard<std::mutex> lck(host_tracker_lock);
-    for ( auto& s : services )
+    auto it = std::find_if(services.begin(), services.end(),
+        [port, proto](const HostApplication& s)
+        { return s.port == port and s.proto == proto; });
+    if (it != services.end())
     {
-        if ( s.port == port and s.proto == proto )
+        HostApplication& s = *it;
+        if ( s.visibility and !v )
         {
-            if ( s.visibility == true and v == false )
-            {
-                assert(num_visible_services > 0);
-                num_visible_services--;
-            }
-            else if ( s.visibility == false and v == true )
-                num_visible_services++;
-
-            s.visibility = v;
-            if ( s.visibility == false )
-            {
-                for ( auto& info : s.info )
-                    info.visibility = false;
-                s.user[0] = '\0';
-                s.banner_updated = false;
-            }
-
-            set_payload_visibility_no_lock(s.payloads, v, s.num_visible_payloads);
-            return true;
+            assert(num_visible_services > 0);
+            num_visible_services--;
         }
+        else if ( !s.visibility and v )
+            num_visible_services++;
+
+        s.visibility = v;
+        if ( !s.visibility )
+        {
+            for ( auto& info : s.info )
+                info.visibility = false;
+            s.user[0] = '\0';
+            s.banner_updated = false;
+        }
+
+        set_payload_visibility_no_lock(s.payloads, v, s.num_visible_payloads);
+        return true;
     }
     return false;
 }
@@ -955,12 +963,12 @@ bool HostTracker::set_client_visibility(const HostClient& hc, bool v)
     {
         if ( c == hc )
         {
-            if ( c.visibility == true and v == false )
+            if ( c.visibility and !v )
             {
                 assert(num_visible_clients > 0 );
                 num_visible_clients--;
             }
-            else if ( c.visibility == false and v == true )
+            else if ( !c.visibility and v )
                 num_visible_clients++;
 
             c.visibility = v;
@@ -1030,7 +1038,7 @@ HostClient HostTracker::find_or_add_client(AppId id, const char* version, AppId 
             and ((c.version[0] == '\0' and !version) or
             (version and strncmp(c.version, version, INFO_SIZE-1) == 0)) )
         {
-            if ( c.visibility == false )
+            if ( !c.visibility )
             {
                 is_new = true;
                 c.visibility = true;
@@ -1108,6 +1116,28 @@ void HostTracker::remove_flows()
     flows.clear();
 }
 
+void HostTracker::update_cache_interface(uint8_t idx)
+{
+
+    if (idx == cache_idx and cache_interface == host_cache.seg_list[idx])
+        return;
+
+    std::lock_guard<std::mutex> lock(host_tracker_lock);
+    cache_idx = idx;
+    cache_interface = host_cache.seg_list[idx];
+
+    update_allocator(macs, cache_interface);
+    update_allocator(network_protos, cache_interface);
+    update_allocator(xport_protos, cache_interface);
+    update_allocator(services, cache_interface);
+    update_allocator(clients, cache_interface);
+    update_allocator(ua_fps, cache_interface);
+    update_set_allocator(tcp_fpids, cache_interface);
+    update_set_allocator(udp_fpids, cache_interface);
+    update_set_allocator(smb_fpids, cache_interface);
+    update_set_allocator(cpe_fpids, cache_interface);
+}
+
 HostApplicationInfo::HostApplicationInfo(const char *ver, const char *ven)
 {
     if ( ver )
@@ -1174,7 +1204,7 @@ void HostTracker::stringify(string& str)
 
         for ( const auto& s : services )
         {
-            if ( s.visibility == false )
+            if ( !s.visibility )
                 continue;
 
             str += "\n    port: " + to_string(s.port)
@@ -1189,7 +1219,7 @@ void HostTracker::stringify(string& str)
             if ( !s.info.empty() )
                 for ( const auto& i : s.info )
                 {
-                    if ( i.visibility == false )
+                    if ( !i.visibility )
                         continue;
 
                     if ( i.vendor[0] != '\0' )
@@ -1219,7 +1249,7 @@ void HostTracker::stringify(string& str)
         str += "\nclients size: " + to_string(num_visible_clients);
         for ( const auto& c : clients )
         {
-            if ( c.visibility == false )
+            if ( !c.visibility )
                 continue;
 
             str += "\n    id: " + to_string(c.id)

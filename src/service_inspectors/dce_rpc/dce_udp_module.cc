@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -77,7 +77,7 @@ static const PegInfo dce2_udp_pegs[] =
     { CountType::SUM, "other_requests", "total connection-less other requests" },
     { CountType::SUM, "other_responses", "total connection-less other responses" },
     { CountType::SUM, "fragments", "total connection-less fragments" },
-    { CountType::SUM, "max_fragment_size", "connection-less maximum fragment size" },
+    { CountType::MAX, "max_fragment_size", "connection-less maximum fragment size" },
     { CountType::SUM, "frags_reassembled", "total connection-less fragments reassembled" },
     { CountType::SUM, "max_seqnum", "max connection-less seqnum" },
     { CountType::NOW, "concurrent_sessions", "total concurrent sessions" },
@@ -85,7 +85,7 @@ static const PegInfo dce2_udp_pegs[] =
     { CountType::END, nullptr, nullptr }
 };
 
-Dce2UdpModule::Dce2UdpModule() : Module(DCE2_UDP_NAME, DCE2_UDP_HELP, s_params)
+Dce2UdpModule::Dce2UdpModule() : Module(DCE2_UDP_NAME, DCE2_UDP_HELP, s_params), config {}
 { }
 
 void Dce2UdpModule::set_trace(const Trace* trace) const

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -114,15 +114,16 @@ TEST(deferred_trust_test, finalize)
     deferred_trust.set_deferred_trust(1, false);
     CHECK_TEXT(!deferred_trust.is_active(), "Deferred trust should not be active");
     // State should be do trust
+    // Enable with state do trust goes to deferring
+    deferred_trust.set_deferred_trust(2, true);
+    CHECK_TEXT(deferred_trust.is_active(), "Deferred trust should be active");
+    CHECK_TEXT(deferred_trust.is_deferred(), "Deferred trust should be deferring");
+    deferred_trust.set_deferred_trust(2, false);
+    CHECK_TEXT(!deferred_trust.is_active(), "Deferred trust should not be active");
+    // State should be do trust
     deferred_trust.finalize(active);
     CHECK_TEXT(active.session_was_trusted(), "Session was not trusted from do trust");
 
-    // Enable with state do trust goes to deferring
-    deferred_trust.set_deferred_trust(1, true);
-    CHECK_TEXT(deferred_trust.is_active(), "Deferred trust should be active");
-    CHECK_TEXT(deferred_trust.is_deferred(), "Deferred trust should be deferring");
-
-    deferred_trust.clear();
     // Enable
     deferred_trust.set_deferred_trust(1, true);
     CHECK_TEXT(deferred_trust.is_active(), "Deferred trust should be active");

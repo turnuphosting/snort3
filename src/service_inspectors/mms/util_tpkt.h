@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,9 +28,9 @@
 #include "flow/flow.h"
 #include "framework/counts.h"
 #include "framework/cursor.h"
+#include "helpers/ber.h"
 #include "protocols/packet.h"
 #include "service_inspectors/mms/mms.h"
-#include "utils/util_ber.h"
 
 namespace snort
 {
@@ -159,11 +159,6 @@ public:
     void reset_packet_data(TpktPacketDataDirectionType direction)
     {
         ssn_data.packet_data_reset(direction);
-    }
-
-    size_t size_of() override
-    {
-        return sizeof(*this);
     }
 
 public:

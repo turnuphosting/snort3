@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,9 +26,8 @@
 
 #include "detection/detection_engine.h"
 #include "main/snort_config.h"
-#include "managers/inspector_manager.h"
 #include "packet_io/active.h"
-#include "packet_tracer/packet_tracer.h"
+#include "packet_io/packet_tracer.h"
 #include "protocols/icmp4.h"
 #include "protocols/tcp.h"
 #include "protocols/udp.h"
@@ -66,6 +65,9 @@ PegCount FlowControl::get_total_prunes() const
 
 PegCount FlowControl::get_prunes(PruneReason reason) const
 { return cache->get_prunes(reason); }
+
+PegCount FlowControl::get_proto_prune_count(PruneReason reason, PktType type) const
+{ return cache->get_proto_prune_count(reason,type); }
 
 PegCount FlowControl::get_total_deletes() const
 { return cache->get_total_deletes(); }
@@ -130,6 +132,9 @@ bool FlowControl::prune_one(PruneReason reason, bool do_cleanup)
 unsigned FlowControl::prune_multiple(PruneReason reason, bool do_cleanup)
 { return cache->prune_multiple(reason, do_cleanup); }
 
+bool FlowControl::dump_flows(std::fstream& stream, unsigned count, const FilterFlowCriteria& ffc, bool first, uint8_t code) const
+{ return cache->dump_flows(stream, count, ffc, first, code); }
+
 void FlowControl::timeout_flows(unsigned max, time_t cur_time)
 {
     cache->timeout(max, cur_time);
@@ -159,13 +164,14 @@ Flow* FlowControl::stale_flow_cleanup(FlowCache* cache, Flow* flow, Packet* p)
 // packet foo
 //-------------------------------------------------------------------------
 
-void FlowControl::set_key(FlowKey* key, Packet* p)
+bool FlowControl::set_key(FlowKey* key, Packet* p)
 {
     const ip::IpApi& ip_api = p->ptrs.ip_api;
     uint32_t mplsId;
     uint16_t vlanId;
     PktType type = p->type();
     IpProtocol ip_proto = p->get_ip_proto_next();
+    bool reversed;
 
     if ( p->proto_bits & PROTO_BIT__VLAN )
         vlanId = layer::get_vlan_layer(p)->vid();
@@ -179,19 +185,20 @@ void FlowControl::set_key(FlowKey* key, Packet* p)
 
     if ( (p->ptrs.decode_flags & DECODE_FRAG) )
     {
-        key->init(p->context->conf, type, ip_proto, ip_api.get_src(),
+        reversed = key->init(p->context->conf, type, ip_proto, ip_api.get_src(),
             ip_api.get_dst(), ip_api.id(), vlanId, mplsId, *p->pkth);
     }
     else if ( type == PktType::ICMP )
     {
-        key->init(p->context->conf, type, ip_proto, ip_api.get_src(), p->ptrs.icmph->type,
+        reversed = key->init(p->context->conf, type, ip_proto, ip_api.get_src(), p->ptrs.icmph->type,
             ip_api.get_dst(), 0, vlanId, mplsId, *p->pkth);
     }
     else
     {
-        key->init(p->context->conf, type, ip_proto, ip_api.get_src(), p->ptrs.sp,
+        reversed = key->init(p->context->conf, type, ip_proto, ip_api.get_src(), p->ptrs.sp,
             ip_api.get_dst(), p->ptrs.dp, vlanId, mplsId, *p->pkth);
     }
+    return reversed;
 }
 
 static bool is_bidirectional(const Flow* flow)
@@ -325,8 +332,6 @@ static void init_roles(Packet* p, Flow* flow)
         flow->server_group = p->pkth->egress_group;
     }
 
-    flow->tenant = p->pkth->tenant_id;
-
     flow->flags.app_direction_swapped = false;
     if ( flow->ssn_state.direction == FROM_CLIENT )
         p->packet_flags |= PKT_FROM_CLIENT;
@@ -387,17 +392,20 @@ bool FlowControl::process(PktType type, Packet* p, bool* new_flow)
         return false;
 
     FlowKey key;
-    set_key(&key, p);
+    bool reversed = set_key(&key, p);
     Flow* flow = cache->find(&key);
 
     if (flow)
         flow = stale_flow_cleanup(cache, flow, p);
 
+    bool new_ha_flow = false;
     if ( !flow )
     {
         flow = HighAvailabilityManager::import(*p, key);
 
-        if ( !flow )
+        if ( flow )
+            new_ha_flow = true;
+        else
         {
             if ( !want_flow(type, p) )
                 return true;
@@ -406,6 +414,11 @@ bool FlowControl::process(PktType type, Packet* p, bool* new_flow)
 
             if ( !flow )
                 return true;
+
+            if ( p->is_tcp() and p->ptrs.tcph->is_syn_ack() )
+                flow->flags.key_is_reversed = !reversed;
+            else
+                flow->flags.key_is_reversed = reversed;
 
             if ( new_flow )
                 *new_flow = true;
@@ -418,7 +431,7 @@ bool FlowControl::process(PktType type, Packet* p, bool* new_flow)
         flow->session = get_proto_session[to_utype(type)](flow);
     }
 
-    num_flows += process(flow, p);
+    num_flows += process(flow, p, new_ha_flow);
 
     // FIXIT-M refactor to unlink_uni immediately after session
     // is processed by inspector manager (all flows)
@@ -428,7 +441,15 @@ bool FlowControl::process(PktType type, Packet* p, bool* new_flow)
     return true;
 }
 
-unsigned FlowControl::process(Flow* flow, Packet* p)
+static inline void restart_inspection(Flow* flow, Packet* p)
+{
+    p->disable_inspect = false;
+    flow->flags.disable_inspect = false;
+    flow->flow_state = Flow::FlowState::SETUP;
+    flow->last_verdict = MAX_DAQ_VERDICT;
+}
+
+unsigned FlowControl::process(Flow* flow, Packet* p, bool new_ha_flow)
 {
     unsigned news = 0;
 
@@ -436,6 +457,10 @@ unsigned FlowControl::process(Flow* flow, Packet* p)
 
     p->flow = flow;
     p->disable_inspect = flow->is_inspection_disabled();
+
+    if ( p->disable_inspect and p->type() == PktType::ICMP
+         and flow->reload_id and SnortConfig::get_thread_reload_id() != flow->reload_id )
+        restart_inspection(flow, p);
 
     last_pkt_type = p->type();
 
@@ -452,8 +477,10 @@ unsigned FlowControl::process(Flow* flow, Packet* p)
 
     if ( flow->flow_state != Flow::FlowState::SETUP )
     {
+        if ( new_ha_flow )
+            DataBus::publish(intrinsic_pub_id, IntrinsicEventIds::FLOW_STATE_SETUP, p);
         unsigned reload_id = SnortConfig::get_thread_reload_id();
-        if (flow->reload_id != reload_id)
+        if ( flow->reload_id != reload_id )
             flow->network_policy_id = get_network_policy()->policy_id;
         else
         {
@@ -462,7 +489,7 @@ unsigned FlowControl::process(Flow* flow, Packet* p)
         }
         p->filtering_state = flow->filtering_state;
         update_stats(flow, p);
-        if (p->is_retry())
+        if ( p->is_retry() )
         {
             RetryPacketEvent retry_event(p);
             DataBus::publish(intrinsic_pub_id, IntrinsicEventIds::RETRY_PACKET, retry_event);
@@ -479,7 +506,7 @@ unsigned FlowControl::process(Flow* flow, Packet* p)
     else
     {
         flow->network_policy_id = get_network_policy()->policy_id;
-        if (PacketTracer::is_active())
+        if ( PacketTracer::is_active() )
             PacketTracer::log("Session: new snort session\n");
 
         init_roles(p, flow);
@@ -586,7 +613,7 @@ void FlowControl::check_expected_flow(Flow* flow, Packet* p)
 
     if ( ignore )
     {
-        flow->ssn_state.ignore_direction = ignore;
+        flow->ssn_state.ignore_direction = SSN_DIR_BOTH;
         DetectionEngine::disable_all(p);
     }
 }
@@ -606,10 +633,5 @@ int FlowControl::add_expected( const Packet* ctrlPkt, PktType type, IpProtocol i
 {
     return exp_cache->add_flow( ctrlPkt, type, ip_proto, srcIP, srcPort, dstIP, dstPort,
         SSN_DIR_BOTH, fd, snort_protocol_id, swap_app_direction, expect_multi, bidirectional, expect_persist);
-}
-
-bool FlowControl::is_expected(Packet* p)
-{
-    return exp_cache->is_expected(p);
 }
 

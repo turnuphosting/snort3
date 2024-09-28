@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -104,7 +104,7 @@ struct View
     { return !(*this == rhs); }
 
     View(const ProfilerNode& node, View* parent = nullptr) :
-        name(node.name), stats(new MemoryStats(node.get_stats().memory.stats.runtime))
+        name(node.name), stats(new MemoryStats(node.get_stats().memory.stats))
     {
         if ( parent )
         {
@@ -135,7 +135,7 @@ static const ProfilerSorter<View> sorters[] =
 };
 
 static bool include_fn(const ProfilerNode& node)
-{ return node.get_stats().memory.stats.runtime; }
+{ return node.get_stats().memory.stats; }
 
 static void print_fn(StatsTable& t, const View& v)
 {
@@ -277,7 +277,7 @@ TEST_CASE( "memory profiler view", "[profiler][memory_profiler]" )
     ProfileStats the_stats;
     ProfilerNode node("foo");
 
-    the_stats.memory.stats.runtime = { 1, 2, 100, 4 };
+    the_stats.memory.stats = { 1, 2, 100, 4 };
     node.set_stats(the_stats);
 
     SECTION( "no parent" )
@@ -286,7 +286,7 @@ TEST_CASE( "memory profiler view", "[profiler][memory_profiler]" )
 
         SECTION( "ctor sets members" )
         {
-            CHECK( *view.stats == the_stats.memory.stats.runtime );
+            CHECK( *view.stats == the_stats.memory.stats );
             CHECK( view.caller_stats == nullptr );
         }
 

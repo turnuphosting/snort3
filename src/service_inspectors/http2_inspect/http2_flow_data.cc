@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,6 +25,7 @@
 
 #include "main/snort_types.h"
 #include "service_inspectors/http_inspect/http_inspect.h"
+#include "service_inspectors/http_inspect/http_msg_section.h"
 #include "service_inspectors/http_inspect/http_test_manager.h"
 
 #include "http2_enum.h"
@@ -118,13 +119,9 @@ void Http2FlowData::set_hi_flow_data(HttpFlowData* flow)
 
 Http2Stream* Http2FlowData::find_stream(const uint32_t key)
 {
-    for (Http2Stream& stream : streams)
-    {
-        if (stream.get_stream_id() == key)
-            return &stream;
-    }
-
-    return nullptr;
+    auto it = std::find_if(streams.begin(), streams.end(),
+        [key](const Http2Stream &stream){ return stream.get_stream_id() == key; });
+    return (it != streams.end()) ? &(*it) : nullptr;
 }
 
 Http2Stream* Http2FlowData::get_processing_stream(const SourceId source_id, uint32_t concurrent_streams_limit)
@@ -288,4 +285,23 @@ AppId Http2FlowStreamIntf::get_appid_from_stream(const Flow* flow)
 #endif
 
     return APP_ID_HTTP2;
+}
+
+void* Http2FlowStreamIntf::get_hi_msg_section(const Flow* flow)
+{
+    const Http2FlowData* const h2i_flow_data =
+        (Http2FlowData*)flow->get_flow_data(Http2FlowData::inspector_id);
+    HttpMsgSection* current_section = nullptr;
+    if (h2i_flow_data)
+        current_section = h2i_flow_data->get_hi_msg_section();
+    return current_section;
+}
+
+void Http2FlowStreamIntf::set_hi_msg_section(Flow* flow, void* section)
+{
+    Http2FlowData* h2i_flow_data =
+        (Http2FlowData*)flow->get_flow_data(Http2FlowData::inspector_id);
+    if (h2i_flow_data)
+        h2i_flow_data->set_hi_msg_section((HttpMsgSection*)section);
+
 }

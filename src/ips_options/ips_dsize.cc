@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -37,9 +37,8 @@ static THREAD_LOCAL ProfileStats dsizePerfStats;
 class DsizeOption : public IpsOption
 {
 public:
-    DsizeOption(const RangeCheck& c) :
-        IpsOption(s_name)
-    { config = c; }
+    DsizeOption(const RangeCheck& c) : IpsOption(s_name), config(c)
+    { }
 
 
     uint32_t hash() const override;
@@ -78,6 +77,7 @@ bool DsizeOption::operator==(const IpsOption& ips) const
 // Test the packet's payload size against the rule payload size value
 IpsOption::EvalStatus DsizeOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(dsizePerfStats);
 
     /* fake packet dsizes are always wrong
@@ -152,7 +152,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* dsize_ctor(Module* p, OptTreeNode*)
+static IpsOption* dsize_ctor(Module* p, IpsInfo&)
 {
     DsizeModule* m = (DsizeModule*)p;
     return new DsizeOption(m->data);

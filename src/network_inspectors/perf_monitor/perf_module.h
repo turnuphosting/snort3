@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -61,7 +61,7 @@ struct ModuleConfig
     // state optimized for run time using indices
     // can't be determined until all modules have loaded (PerfMonitor::configure)
     snort::Module* ptr;
-    IndexVec pegs;
+    std::vector<unsigned> pegs;
 
     void set_name(const std::string& name);
     void set_peg_names(snort::Value& peg_names);
@@ -78,10 +78,11 @@ struct PerfConstraints
     bool flow_ip_enabled = false;
     unsigned sample_interval = 0;
     uint32_t pkt_cnt = 0;
+    bool flow_ip_all = false;
 
     PerfConstraints() = default;
-    PerfConstraints(bool en, unsigned interval, uint32_t cnt) :
-        flow_ip_enabled(en), sample_interval(interval), pkt_cnt(cnt) { }
+    PerfConstraints(bool en, unsigned interval, uint32_t cnt, bool lat) :
+        flow_ip_enabled(en), sample_interval(interval), pkt_cnt(cnt), flow_ip_all(lat) { }
 };
 
 struct PerfConfig
@@ -92,6 +93,7 @@ struct PerfConfig
     uint64_t max_file_size = 0;
     int flow_max_port_to_track = 0;
     size_t flowip_memcap = 0;
+    bool flow_ip_all = false;
     PerfFormat format = PerfFormat::CSV;
     PerfOutput output = PerfOutput::TO_FILE;
     std::vector<ModuleConfig> modules;

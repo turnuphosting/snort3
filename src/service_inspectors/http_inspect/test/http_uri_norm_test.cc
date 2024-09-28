@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,6 +26,7 @@
 #include "helpers/literal_search.h"
 #include "log/messages.h"
 
+#include "main/thread_config.h"
 #include "service_inspectors/http_inspect/http_js_norm.h"
 #include "service_inspectors/http_inspect/http_uri_norm.h"
 
@@ -54,6 +55,9 @@ void DecodeConfig::set_decompress_swf(bool) {}
 void DecodeConfig::set_decompress_zip(bool) {}
 void DecodeConfig::set_decompress_vba(bool) {}
 SearchTool::~SearchTool() {}
+unsigned get_instance_id()
+{ return 0; }
+unsigned ThreadConfig::get_instance_max() { return 1; }
 }
 
 snort::SearchTool* js_create_mpse_open_tag() { return nullptr; }
@@ -61,7 +65,7 @@ snort::SearchTool* js_create_mpse_tag_type() { return nullptr; }
 snort::SearchTool* js_create_mpse_tag_attr() { return nullptr; }
 
 void show_stats(PegCount*, const PegInfo*, unsigned, const char*) { }
-void show_stats(PegCount*, const PegInfo*, const IndexVec&, const char*, FILE*) { }
+void show_stats(PegCount*, const PegInfo*, const std::vector<unsigned>&, const char*, FILE*) { }
 
 int64_t Parameter::get_int(char const*) { return 0; }
 
@@ -91,11 +95,11 @@ TEST_GROUP(http_double_decode_test)
 
     void setup() override
     {
-        uri_param.percent_u = true;
-        uri_param.iis_unicode = true;
-        uri_param.utf8_bare_byte = true;
-        uri_param.iis_double_decode = true;
-        uri_param.backslash_to_slash = true;
+        uri_param.percent_u = true; // cppcheck-suppress unreadVariable
+        uri_param.iis_unicode = true;   // cppcheck-suppress unreadVariable
+        uri_param.utf8_bare_byte = true;    // cppcheck-suppress unreadVariable
+        uri_param.iis_double_decode = true; // cppcheck-suppress unreadVariable
+        uri_param.backslash_to_slash = true;    // cppcheck-suppress unreadVariable
     }
 };
 

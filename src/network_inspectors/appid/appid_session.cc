@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -28,7 +28,6 @@
 #include <cstring>
 
 #include "flow/flow_stash.h"
-#include "log/messages.h"
 #include "main/snort_config.h"
 #include "managers/inspector_manager.h"
 #include "profiler/profiler.h"
@@ -38,6 +37,7 @@
 #include "stream/stream.h"
 #include "target_based/snort_protocols.h"
 #include "time/packet_time.h"
+#include "trace/trace.h"
 
 #include "app_info_table.h"
 #include "appid_config.h"
@@ -116,7 +116,11 @@ AppIdSession* AppIdSession::allocate_session(const Packet* p, IpProtocol proto,
         port = (direction == APP_ID_FROM_INITIATOR) ? p->ptrs.sp : p->ptrs.dp;
 
     AppIdSession* asd = new AppIdSession(proto, ip, port, inspector, odp_context,
-        p->pkth->address_space_id);
+        p->pkth->address_space_id
+#ifndef DISABLE_TENANT_ID
+        ,p->pkth->tenant_id
+#endif
+        );
     is_session_monitored(asd->flags, p, inspector);
     asd->flow = p->flow;
     asd->stats.first_packet_second = p->pkth->ts.tv_sec;
@@ -126,9 +130,17 @@ AppIdSession* AppIdSession::allocate_session(const Packet* p, IpProtocol proto,
 }
 
 AppIdSession::AppIdSession(IpProtocol proto, const SfIp* ip, uint16_t port,
-    AppIdInspector& inspector, OdpContext& odp_ctxt, uint32_t asid)
+    AppIdInspector& inspector, OdpContext& odp_ctxt, uint32_t asid
+#ifndef DISABLE_TENANT_ID
+    ,uint32_t tenant_id
+#endif
+    )
     : FlowData(inspector_id, &inspector), config(inspector.get_ctxt().config),
-        initiator_port(port), asid(asid), protocol(proto),
+        initiator_port(port),
+#ifndef DISABLE_TENANT_ID
+        tenant_id(tenant_id),
+#endif
+        asid(asid), protocol(proto),
         api(*(new AppIdSessionApi(this, *ip))), odp_ctxt(odp_ctxt),
         odp_ctxt_version(odp_ctxt.get_version()),
         tp_appid_ctxt(pkt_thread_tp_appid_ctxt)
@@ -138,6 +150,12 @@ AppIdSession::AppIdSession(IpProtocol proto, const SfIp* ip, uint16_t port,
 
 AppIdSession::~AppIdSession()
 {
+     // Skip sessions using old odp context after reload detectors for appid cpu profiling
+    if ((pkt_thread_odp_ctxt->get_version() == api.asd->get_odp_ctxt_version()) and api.asd->get_odp_ctxt().is_appid_cpu_profiler_running())
+    {
+        api.asd->get_odp_ctxt().get_appid_cpu_profiler_mgr().check_appid_cpu_profiler_table_entry(api.asd, api.get_service_app_id(), api.get_client_app_id(), api.get_payload_app_id(), api.get_misc_app_id());
+    }
+
     if (!in_expected_cache)
     {
         if (config.log_stats)
@@ -214,50 +232,45 @@ AppIdSession* AppIdSession::create_future_session(const Packet* ctrlPkt, const S
 
     if (type == PktType::NONE)
     {
-        if (appidDebug->is_active())
-            LogMessage("AppIdDbg %s Failed to create a related flow - invalid protocol %u\n",
-                appidDebug->get_debug_session(), (unsigned)proto);
+        appid_log(ctrlPkt, TRACE_DEBUG_LEVEL, "Failed to create a related flow - invalid protocol %u\n",
+            (unsigned)proto);
         return nullptr;
     }
 
     char src_ip[INET6_ADDRSTRLEN];
     char dst_ip[INET6_ADDRSTRLEN];
 
-    AppIdInspector* inspector = (AppIdInspector*)ctrlPkt->flow->flow_data->get_handler();
+    AppIdInspector* inspector = (AppIdInspector*)ctrlPkt->flow->current_flow_data->get_handler();
     if ((inspector == nullptr) or strcmp(inspector->get_name(), MOD_NAME))
         inspector = (AppIdInspector*)InspectorManager::get_inspector(MOD_NAME, true);
 
     // FIXIT-RC - port parameter passed in as 0 since we may not know client port, verify
 
     AppIdSession* asd = new AppIdSession(proto, cliIp, 0, *inspector, odp_ctxt,
-        ctrlPkt->pkth->address_space_id);
+        ctrlPkt->pkth->address_space_id
+#ifndef DISABLE_TENANT_ID
+        ,ctrlPkt->pkth->tenant_id
+#endif
+        );
     is_session_monitored(asd->flags, ctrlPkt, *inspector);
 
     if (Stream::set_snort_protocol_id_expected(ctrlPkt, type, proto, cliIp,
         cliPort, srvIp, srvPort, snort_protocol_id, asd, swap_app_direction, false,
         bidirectional, expect_persist))
     {
-        if (appidDebug->is_active())
-        {
-            sfip_ntop(cliIp, src_ip, sizeof(src_ip));
-            sfip_ntop(srvIp, dst_ip, sizeof(dst_ip));
-            LogMessage("AppIdDbg %s Failed to create a related flow for %s-%u -> %s-%u %u\n",
-                appidDebug->get_debug_session(), src_ip, (unsigned)cliPort, dst_ip,
-                (unsigned)srvPort, (unsigned)proto);
-        }
+        sfip_ntop(cliIp, src_ip, sizeof(src_ip));
+        sfip_ntop(srvIp, dst_ip, sizeof(dst_ip));
+        appid_log(ctrlPkt, TRACE_DEBUG_LEVEL, "Failed to create a related flow for %s-%u -> %s-%u %u\n",
+            src_ip, (unsigned)cliPort, dst_ip, (unsigned)srvPort, (unsigned)proto);
         delete asd;
         asd = nullptr;
     }
     else
     {
-        if (appidDebug->is_active())
-        {
-            sfip_ntop(cliIp, src_ip, sizeof(src_ip));
-            sfip_ntop(srvIp, dst_ip, sizeof(dst_ip));
-            LogMessage("AppIdDbg %s Related flow created for %s-%u -> %s-%u %u\n",
-                appidDebug->get_debug_session(),
-                src_ip, (unsigned)cliPort, dst_ip, (unsigned)srvPort, (unsigned)proto);
-        }
+        sfip_ntop(cliIp, src_ip, sizeof(src_ip));
+        sfip_ntop(srvIp, dst_ip, sizeof(dst_ip));
+        appid_log(ctrlPkt, TRACE_DEBUG_LEVEL, "Related flow created for %s-%u -> %s-%u %u\n",
+            src_ip, (unsigned)cliPort, dst_ip, (unsigned)srvPort, (unsigned)proto);
         asd->in_expected_cache = true;
     }
 
@@ -393,10 +406,15 @@ void AppIdSession::check_ssl_detection_restart(AppidChangeBits& change_bits,
         encrypted.misc_id = pick_ss_misc_app_id();
         encrypted.referred_id = pick_ss_referred_payload_app_id();
 
+        if (odp_ctxt.is_appid_cpu_profiler_running())
+        {
+            odp_ctxt.get_appid_cpu_profiler_mgr().check_appid_cpu_profiler_table_entry(api.asd, encrypted.service_id, encrypted.client_id, encrypted.payload_id, encrypted.misc_id);
+            this->stats.processing_time = 0;
+            this->stats.cpu_profiler_pkt_count = 0;
+        }
+
         reinit_session_data(change_bits, curr_tp_appid_ctxt);
-        if (appidDebug->is_active())
-            LogMessage("AppIdDbg %s SSL decryption is available, restarting app detection\n",
-                appidDebug->get_debug_session());
+        appid_log(CURRENT_PACKET, TRACE_DEBUG_LEVEL, "SSL decryption is available, restarting app detection\n");
 
         // APPID_SESSION_ENCRYPTED is set upon receiving a command which upgrades the session to
         // SSL. Next packet after the command will have encrypted traffic.  In the case of a
@@ -416,9 +434,14 @@ void AppIdSession::check_tunnel_detection_restart()
     if (!hsession or !hsession->get_tunnel())
         return;
 
-    if (appidDebug->is_active())
-        LogMessage("AppIdDbg %s Found HTTP Tunnel, restarting app Detection\n",
-            appidDebug->get_debug_session());
+    appid_log(CURRENT_PACKET, TRACE_DEBUG_LEVEL, "Found HTTP Tunnel, restarting app Detection\n");
+
+    if (odp_ctxt.is_appid_cpu_profiler_running())
+    {
+        odp_ctxt.get_appid_cpu_profiler_mgr().check_appid_cpu_profiler_table_entry(api.asd, api.get_service_app_id(), api.get_client_app_id(), api.get_payload_app_id(), api.get_misc_app_id());
+        this->stats.processing_time = 0;
+        this->stats.cpu_profiler_pkt_count = 0;
+    }
 
     // service
     if (api.service.get_id() == api.service.get_port_service_id())
@@ -509,12 +532,23 @@ void AppIdSession::examine_ssl_metadata(AppidChangeBits& change_bits)
 {
     AppId client_id = 0;
     AppId payload_id = 0;
-    const char* tls_str = tsession->get_tls_host();
+    const char* tls_str = tsession->get_tls_org_unit();
 
     if (scan_flags & SCAN_CERTVIZ_ENABLED_FLAG)
         return;
 
-    if ((scan_flags & SCAN_SSL_HOST_FLAG) and tls_str)
+    if (tls_str)
+    {
+        size_t size = strlen(tls_str);
+        if (odp_ctxt.get_ssl_matchers().scan_cname((const uint8_t*)tls_str, size,
+            client_id, payload_id))
+        {
+            set_client_appid_data(client_id, change_bits);
+            set_payload_appid_data(payload_id);
+        }
+        tsession->set_tls_org_unit(nullptr, 0);
+    }
+    if ((scan_flags & SCAN_SSL_HOST_FLAG) and (tls_str = tsession->get_tls_host()))
     {
         size_t size = strlen(tls_str);
         if (odp_ctxt.get_ssl_matchers().scan_hostname((const uint8_t*)tls_str, size,
@@ -538,23 +572,11 @@ void AppIdSession::examine_ssl_metadata(AppidChangeBits& change_bits)
         }
         scan_flags &= ~SCAN_SSL_CERTIFICATE_FLAG;
     }
-    if ((tls_str = tsession->get_tls_org_unit()))
-    {
-        size_t size = strlen(tls_str);
-        if (odp_ctxt.get_ssl_matchers().scan_cname((const uint8_t*)tls_str, size,
-            client_id, payload_id))
-        {
-            set_client_appid_data(client_id, change_bits);
-            set_payload_appid_data(payload_id);
-        }
-        tsession->set_tls_org_unit(nullptr, 0);
-    }
     if (tsession->get_tls_handshake_done() and
         api.payload.get_id() == APP_ID_NONE)
     {
-        if (appidDebug->is_active())
-            LogMessage("AppIdDbg %s End of SSL/TLS handshake detected with no payloadAppId, "
-                "so setting to unknown\n", appidDebug->get_debug_session());
+        appid_log(CURRENT_PACKET, TRACE_DEBUG_LEVEL, "End of SSL/TLS handshake detected with no payloadAppId, "
+            "so setting to unknown\n");
         api.payload.set_id(APP_ID_UNKNOWN);
     }
 }
@@ -858,11 +880,17 @@ AppId AppIdSession::pick_ss_misc_app_id() const
 
 AppId AppIdSession::pick_ss_client_app_id() const
 {
-    if (api.service.get_id() == APP_ID_HTTP2 or
-        (api.service.get_id() == APP_ID_HTTP3 and !api.hsessions.empty()))
+    bool prefer_eve_client = use_eve_client_app_id();
+    if (api.service.get_id() == APP_ID_HTTP2 and !prefer_eve_client)
+    {
+        api.client.set_eve_client_app_detect_type(CLIENT_APP_DETECT_APPID);
+        return APP_ID_NONE;
+    }
+
+    if (api.service.get_id() == APP_ID_HTTP3 and !api.hsessions.empty())
         return APP_ID_NONE;
 
-    if (use_eve_client_app_id())
+    if (prefer_eve_client)
     {
         api.client.set_eve_client_app_detect_type(CLIENT_APP_DETECT_TLS_FP);
         return api.client.get_eve_client_app_id();
@@ -1048,16 +1076,17 @@ void AppIdSession::clear_http_data()
 AppIdHttpSession* AppIdSession::get_http_session(uint32_t stream_index) const
 {
     if (stream_index < api.hsessions.size())
-        return api.hsessions[stream_index];
+        return api.hsessions[stream_index].get();
     else
         return nullptr;
 }
 
 AppIdHttpSession* AppIdSession::create_http_session(int64_t stream_id)
 {
-    AppIdHttpSession* hsession = new AppIdHttpSession(*this, stream_id);
-    api.hsessions.push_back(hsession);
-    return hsession;
+    auto hsession = std::make_unique<AppIdHttpSession>(*this, stream_id);
+    auto tmp_hsession = hsession.get();
+    api.hsessions.push_back(std::move(hsession));
+    return tmp_hsession;
 }
 
 AppIdHttpSession* AppIdSession::get_matching_http_session(int64_t stream_id) const
@@ -1065,7 +1094,7 @@ AppIdHttpSession* AppIdSession::get_matching_http_session(int64_t stream_id) con
     for (uint32_t stream_index=0; stream_index < api.hsessions.size(); stream_index++)
     {
         if(stream_id == api.hsessions[stream_index]->get_httpx_stream_id())
-            return api.hsessions[stream_index];
+            return api.hsessions[stream_index].get();
     }
     return nullptr;
 }
@@ -1215,16 +1244,11 @@ void AppIdSession::publish_appid_event(AppidChangeBits& change_bits, const Packe
 
     AppidEvent app_event(change_bits, is_httpx, httpx_stream_index, api, p);
     DataBus::publish(AppIdInspector::get_pub_id(), AppIdEventIds::ANY_CHANGE, app_event, p.flow);
-    if (appidDebug->is_active())
-    {
-        std::string str;
-        change_bits_to_string(change_bits, str);
-        if (is_httpx)
-            LogMessage("AppIdDbg %s Published event for changes: %s for HTTPX stream index %u\n",
-                appidDebug->get_debug_session(), str.c_str(), httpx_stream_index);
-        else
-            LogMessage("AppIdDbg %s Published event for changes: %s\n",
-                appidDebug->get_debug_session(), str.c_str());
-    }
+    std::string str;
+    change_bits_to_string(change_bits, str);
+    if (is_httpx)
+        appid_log(&p, TRACE_DEBUG_LEVEL, "Published event for changes: %s for HTTPX stream index %u\n",
+            str.c_str(), httpx_stream_index);
+    else
+        appid_log(&p, TRACE_DEBUG_LEVEL, "Published event for changes: %s\n",  str.c_str());
 }
-

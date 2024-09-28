@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -31,7 +31,7 @@
 #define STREAM_TCP_DATA_ON_SYN                     2
 #define STREAM_TCP_DATA_ON_CLOSED                  3
 #define STREAM_TCP_BAD_TIMESTAMP                   4
-#define STREAM_TCP_BAD_SEGMENT                     5
+//#define STREAM_TCP_BAD_SEGMENT                   5   deleted
 #define STREAM_TCP_WINDOW_TOO_LARGE                6
 #define STREAM_TCP_EXCESSIVE_TCP_OVERLAPS          7
 #define STREAM_TCP_DATA_AFTER_RESET                8
@@ -47,6 +47,8 @@
 #define STREAM_TCP_DATA_AFTER_RST_RCVD            18
 #define STREAM_TCP_WINDOW_SLAM                    19
 #define STREAM_TCP_NO_3WHS                        20
+#define STREAM_TCP_MAX_QUEUED_BYTES_EXCEEDED      21
+#define STREAM_TCP_MAX_QUEUED_SEGS_EXCEEDED       22
 #define STREAM_TCP_MAX_EVENTS                     32
 
 extern const PegInfo tcp_pegs[];
@@ -114,9 +116,15 @@ struct TcpStats
     PegCount max_bytes;
     PegCount zero_len_tcp_opt;
     PegCount zero_win_probes;
+    PegCount keep_alive_probes;
+    PegCount proxy_mode_flows;
+    PegCount full_retransmits;
+    PegCount flush_on_asymmetric_flow;
+    PegCount asymmetric_flows;
 };
 
 extern THREAD_LOCAL struct TcpStats tcpStats;
+extern THREAD_LOCAL bool stream_tcp_trace_enabled;
 
 //-------------------------------------------------------------------------
 // stream_tcp module

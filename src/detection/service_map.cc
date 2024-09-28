@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -228,7 +228,7 @@ sopg_table_t::sopg_table_t(unsigned n)
 
 RuleGroup* sopg_table_t::get_port_group(bool c2s, SnortProtocolId snort_protocol_id)
 {
-    RuleGroupVector& v = c2s ? to_srv : to_cli;
+    const RuleGroupVector& v = c2s ? to_srv : to_cli;
 
     if ( snort_protocol_id >= v.size() )
         return nullptr;

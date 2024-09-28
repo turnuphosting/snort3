@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,6 +26,7 @@
 
 #include <sys/time.h>
 
+#include <algorithm>
 #include <cassert>
 
 #include "framework/counts.h"
@@ -57,24 +58,14 @@ static THREAD_LOCAL SCMaps* tls_maps;
 SideChannel* SideChannelManager::get_side_channel(SCPort port)
 {
     if ( tls_maps )
-        for ( auto& scm : * tls_maps )
-        {
-            if ( ( port <= scm->ports.size() ) && ( scm->ports.test(port) ) )
-            {
-                return scm->sc;
-            }
-        }
-
+    {
+        auto it = std::find_if(tls_maps->begin(), tls_maps->end(),
+            [port](const SideChannelMapping* scm)
+            { return port <= scm->ports.size() && scm->ports.test(port); });
+        if (it != tls_maps->end())
+            return (*it)->sc;
+    }
     return nullptr;
-}
-
-SideChannel::SideChannel()
-{
-    sequence = 0;
-    default_port = 0;
-    connector_receive = nullptr;
-    connector_transmit = nullptr;
-    receive_handler = nullptr;
 }
 
 void SideChannel::set_message_port(SCMessage* msg, SCPort port)

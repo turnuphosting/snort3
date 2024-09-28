@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -30,6 +30,8 @@ public:
         p(p), process_name(process), process_confidence(process_conf) { }
 
     EveProcessEvent(const snort::Packet& p, const char* server) : p(p), server_name(server) { }
+
+    EveProcessEvent(const snort::Packet& p) : p(p) { }
 
     const snort::Packet* get_packet() const override { return &p; }
 
@@ -70,7 +72,7 @@ public:
         return alpn;
     }
 
-    void set_alpn(std::vector<std::string>& alpn_vec)
+    void set_alpn(const std::vector<std::string>& alpn_vec)
     {
         if(alpn_vec.size())
             alpn = alpn_vec;

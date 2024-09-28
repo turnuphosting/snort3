@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -37,7 +37,7 @@ class DceExpSsnManager
 {
 public:
     DceExpSsnManager(IpProtocol p, PktType t) :
-        proto(p), type(t) {}
+        proto(p), type(t) { }
 
     virtual ~DceExpSsnManager() = default;
 
@@ -70,9 +70,9 @@ class DceTcpExpSsnManager : public DceExpSsnManager
 {
 public:
     DceTcpExpSsnManager() = delete;
-    DceTcpExpSsnManager(const dce2TcpProtoConf&);
+    explicit DceTcpExpSsnManager(const dce2TcpProtoConf&);
     DceTcpExpSsnManager(const DceTcpExpSsnManager&) = delete;
-    DceTcpExpSsnManager& operator=(const DceTcpExpSsnManager&) =delete;
+    DceTcpExpSsnManager& operator=(const DceTcpExpSsnManager&) = delete;
 
 private:
     int create_expected_session_impl(snort::Packet*,
@@ -84,3 +84,4 @@ private:
 };
 
 #endif // DCE_EXPECTED_SESSION_H
+

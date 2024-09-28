@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -59,13 +59,13 @@ struct IpsActionsConfig
 };
 
 using ACList = vector<ActionClass>;
-using ACTypeList = unordered_map<string, Actions::Type>;
+using ACTypeList = unordered_map<string, IpsAction::Type>;
 using ACPriorityList = map<IpsAction::IpsActionPriority, string, std::greater<int>>;
 
 static ACList s_actors;
 static ACTypeList s_act_types;
 static ACPriorityList s_act_priorities;
-static Actions::Type s_act_index = 0;
+static IpsAction::Type s_act_index = 0;
 
 static THREAD_LOCAL ACList* s_tl_actors = nullptr;
 
@@ -81,21 +81,20 @@ void ActionManager::add_plugin(const ActionApi* api)
     s_act_priorities.emplace(api->priority, api->base.name);
 }
 
-std::string ActionManager::get_action_string(Actions::Type action)
+std::string ActionManager::get_action_string(IpsAction::Type action)
 {
     if ( action < s_act_index )
     {
-        for ( const auto& type : s_act_types )
-        {
-            if ( type.second == action )
-                return type.first;
-        }
+        auto it = std::find_if(s_act_types.cbegin(), s_act_types.cend(),
+            [action](const std::pair<const std::string, IpsAction::Type>& type){ return type.second == action; });
+        if ( it != s_act_types.cend())
+            return (*it).first;
     }
 
     return "ERROR";
 }
 
-Actions::Type ActionManager::get_action_type(const char* s)
+IpsAction::Type ActionManager::get_action_type(const char* s)
 {
     auto type = s_act_types.find(s);
 
@@ -105,7 +104,7 @@ Actions::Type ActionManager::get_action_type(const char* s)
     return get_max_action_types();
 }
 
-Actions::Type ActionManager::get_max_action_types()
+IpsAction::Type ActionManager::get_max_action_types()
 {
     return s_act_index;
 }
@@ -144,7 +143,7 @@ void ActionManager::dump_plugins()
 {
     Dumper d("IPS Actions");
 
-    for ( auto& p : s_actors )
+    for ( const auto& p : s_actors )
         d.dump(p.api->base.name, p.api->base.version);
 }
 
@@ -160,24 +159,23 @@ void ActionManager::release_plugins()
 
 static ActionClass* get_action_class(const ActionApi* api, IpsActionsConfig* iac)
 {
-    for ( auto& ai : iac->clist )
-    {
-        if ( ai.cls.api == api )
-            return &ai.cls;
-    }
+    auto it = std::find_if(iac->clist.cbegin(), iac->clist.cend(),
+        [api](const ActionInst &ai){ return ai.cls.api == api; });
+    if ( it != iac->clist.cend() )
+        return &(*it).cls;
 
-    for ( auto& ac : s_actors )
+    auto it2 = std::find_if(s_actors.begin(), s_actors.end(),
+        [api](const ActionClass& ac){ return ac.api == api; });
+    if ( it2 != s_actors.end() )
     {
-        if ( ac.api == api )
+        ActionClass& ac = *it2;
+        if ( !ac.initialized )
         {
-            if ( !ac.initialized )
-            {
-                if ( ac.api->pinit )
-                    ac.api->pinit();
-                ac.initialized = true;
-            }
-            return &ac;
+            if ( ac.api->pinit )
+                ac.api->pinit();
+            ac.initialized = true;
         }
+        return &ac;
     }
 
     return nullptr;
@@ -220,7 +218,7 @@ void ActionManager::instantiate(const ActionApi* api, Module* mod, SnortConfig* 
         if ( !ips )
             ips = get_ips_policy();
 
-        Actions::Type idx = rln->mode;
+        IpsAction::Type idx = rln->mode;
         if (ips->action[idx] == nullptr)
         {
             ips->action[idx] = act;
@@ -253,11 +251,10 @@ void ActionManager::initialize_policies(SnortConfig* sc)
 //-------------------------------------------------------------------------
 static ActionClass& get_thread_local_action_class(const ActionApi* api)
 {
-    for ( ActionClass& p : *s_tl_actors )
-    {
-        if ( p.api == api )
-            return p;
-    }
+    auto it = std::find_if(s_tl_actors->begin(), s_tl_actors->end(),
+        [api](const ActionClass& p){ return p.api == api; });
+    if ( it != s_tl_actors->end() )
+        return *it;
     s_tl_actors->emplace_back(api);
     return s_tl_actors->back();
 }
@@ -266,7 +263,7 @@ void ActionManager::thread_init(const SnortConfig* sc)
 {
     // Initial build out of this thread's configured plugin registry
     s_tl_actors = new ACList;
-    for ( auto& p : sc->ips_actions_config->clist )
+    for ( const auto& p : sc->ips_actions_config->clist )
     {
         ActionClass& tlac = get_thread_local_action_class(p.cls.api);
         if ( tlac.api->tinit )
@@ -278,7 +275,7 @@ void ActionManager::thread_init(const SnortConfig* sc)
 void ActionManager::thread_reinit(const SnortConfig* sc)
 {
     // Update this thread's configured plugin registry with any newly configured inspectors
-    for ( auto& p : sc->ips_actions_config->clist )
+    for ( const auto& p : sc->ips_actions_config->clist )
     {
         ActionClass& tlac = get_thread_local_action_class(p.cls.api);
         if (!tlac.initialized)

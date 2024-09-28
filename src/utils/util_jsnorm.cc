@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 1998-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -24,13 +24,12 @@
 
 #include "util_jsnorm.h"
 
+#include <ctype.h>
+
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
-#include "main/thread.h"
-
-namespace snort
-{
 #define INVALID_HEX_VAL (-1)
 #define MAX_BUF 8
 #define NON_ASCII_CHAR 0xff
@@ -50,6 +49,8 @@ namespace snort
 
 #define ANY '\0'
 
+namespace
+{
 enum ActionPNorm
 {
     PNORM_ACT_DQUOTES,
@@ -100,6 +101,70 @@ enum ActionJSNorm
     ACT_SPACE,
     ACT_UNESCAPE
 };
+
+struct JSNorm
+{
+    uint8_t state;  // cppcheck-suppress unusedStructMember
+    uint8_t event;
+    uint8_t match;
+    uint8_t other;
+    uint8_t action;
+};
+
+struct Dbuf
+{
+    char* data;
+    uint16_t size;
+    uint16_t len;
+};
+
+struct PNormState
+{
+    uint8_t fsm;
+    uint8_t fsm_other;
+    uint8_t prev_event;
+    uint8_t d_quotes;
+    uint8_t s_quotes;
+    uint16_t num_spaces;
+    char* overwrite;
+    Dbuf output;
+};
+
+struct SFCCState
+{
+    uint8_t fsm;
+    uint8_t buf[MAX_BUF];
+    uint8_t buflen;
+    uint16_t cur_flags;
+    uint16_t alert_flags;
+    Dbuf output;
+};
+
+struct JSNormState
+{
+    uint8_t fsm;
+    uint8_t prev_event;
+    uint16_t num_spaces;
+    uint8_t* unicode_map;
+    char* overwrite;
+    Dbuf dest;
+};
+
+struct UnescapeState
+{
+    uint8_t fsm;
+    uint8_t multiple_levels;
+    uint8_t prev_event;
+    uint16_t alert_flags;
+    uint16_t num_spaces;
+    int iNorm;
+    int paren_count;
+    uint8_t* unicode_map;
+    char* overwrite;
+    ActionUnsc prev_action;
+    Dbuf output;
+};
+}  // anonymous
 
 static const int hex_lookup[256] =
 {
@@ -167,69 +232,6 @@ static const int valid_chars[256] =
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
-
-struct JSNorm
-{
-    uint8_t state;
-    uint8_t event;
-    uint8_t match;
-    uint8_t other;
-    uint8_t action;
-};
-
-struct Dbuf
-{
-    char* data;
-    uint16_t size;
-    uint16_t len;
-};
-
-struct PNormState
-{
-    uint8_t fsm;
-    uint8_t fsm_other;
-    uint8_t prev_event;
-    uint8_t d_quotes;
-    uint8_t s_quotes;
-    uint16_t num_spaces;
-    char* overwrite;
-    Dbuf output;
-};
-
-struct SFCCState
-{
-    uint8_t fsm;
-    uint8_t buf[MAX_BUF];
-    uint8_t buflen;
-    uint16_t cur_flags;
-    uint16_t alert_flags;
-    Dbuf output;
-};
-
-struct JSNormState
-{
-    uint8_t fsm;
-    uint8_t prev_event;
-    uint16_t num_spaces;
-    uint8_t* unicode_map;
-    char* overwrite;
-    Dbuf dest;
-};
-
-struct UnescapeState
-{
-    uint8_t fsm;
-    uint8_t multiple_levels;
-    uint8_t prev_event;
-    uint16_t alert_flags;
-    uint16_t num_spaces;
-    int iNorm;
-    int paren_count;
-    uint8_t* unicode_map;
-    char* overwrite;
-    ActionUnsc prev_action;
-    Dbuf output;
 };
 
 // STATES for SFCC
@@ -439,6 +441,8 @@ static const JSNorm javascript_norm[] =
 
     { Z6+ 0, ANY, Z0+ 0, Z0+ 0, ACT_NOP }
 };
+
+using snort::JSState;
 
 static void UnescapeDecode(const char* src, uint16_t srclen, const char** ptr, char** dst, size_t dst_len,
     uint16_t* bytes_copied, JSState* js, uint8_t* iis_unicode_map);
@@ -968,7 +972,7 @@ static int Unescape_exec(UnescapeState* s, ActionUnsc a, int c, JSState* js)
             if (s->unicode_map && (s->iNorm <= 0xffff))
             {
                 s->iNorm = s->unicode_map[s->iNorm];
-                if (s->iNorm == -1)
+                if (s->iNorm == -1) // cppcheck-suppress knownConditionTrueFalse
                     s->iNorm = NON_ASCII_CHAR;
             }
             else
@@ -994,7 +998,7 @@ static int Unescape_exec(UnescapeState* s, ActionUnsc a, int c, JSState* js)
             if (s->unicode_map && (s->iNorm <= 0xffff))
             {
                 s->iNorm = s->unicode_map[s->iNorm];
-                if (s->iNorm == -1)
+                if (s->iNorm == -1) // cppcheck-suppress knownConditionTrueFalse
                     s->iNorm = NON_ASCII_CHAR;
             }
             else
@@ -1151,49 +1155,48 @@ static int JSNorm_exec(JSNormState* s, ActionJSNorm a, int c, const char* src, u
     char* cur_ptr;
     int iRet = RET_OK;
     uint16_t bcopied = 0;
-    // FIXIT-M this is large for stack. Move elsewhere.
-    char decoded_out[65535];
-    char* dest = decoded_out;
+    std::vector<char> decoded_out_vec(65535);
+    char* dest = decoded_out_vec.data();
 
-    cur_ptr = s->dest.data+ s->dest.len;
+    cur_ptr = s->dest.data + s->dest.len;
     switch (a)
     {
-    case ACT_NOP:
-        WriteJSNormChar(s, c, js);
-        break;
-    case ACT_SAVE:
-        s->overwrite = cur_ptr;
-        WriteJSNormChar(s, c, js);
-        break;
-    case ACT_SPACE:
-        if ( s->prev_event != ' ')
-        {
+        case ACT_NOP:
             WriteJSNormChar(s, c, js);
-        }
-        s->num_spaces++;
-        break;
-    case ACT_UNESCAPE:
-        if (s->overwrite && (s->overwrite < cur_ptr))
-        {
-            s->dest.len = s->overwrite - s->dest.data;
-        }
-        UnescapeDecode(src, srclen, ptr, &dest, sizeof(decoded_out), &bcopied, js, s->unicode_map);
-        WriteJSNorm(s, dest, bcopied, js);
-        break;
-    case ACT_SFCC:
-        if ( s->overwrite && (s->overwrite < cur_ptr))
-        {
-            s->dest.len = s->overwrite - s->dest.data;
-        }
-        StringFromCharCodeDecode(src, srclen, ptr, &dest, sizeof(decoded_out), &bcopied, js, s->unicode_map);
-        WriteJSNorm(s, dest, bcopied, js);
-        break;
-    case ACT_QUIT:
-        iRet = RET_QUIT;
-        WriteJSNormChar(s, c, js);
-        break;
-    default:
-        break;
+            break;
+        case ACT_SAVE:
+            s->overwrite = cur_ptr;
+            WriteJSNormChar(s, c, js);
+            break;
+        case ACT_SPACE:
+            if ( s->prev_event != ' ' )
+            {
+                WriteJSNormChar(s, c, js);
+            }
+            s->num_spaces++;
+            break;
+        case ACT_UNESCAPE:
+            if ( s->overwrite && (s->overwrite < cur_ptr) )
+            {
+                s->dest.len = s->overwrite - s->dest.data;
+            }
+            UnescapeDecode(src, srclen, ptr, &dest, decoded_out_vec.size(), &bcopied, js, s->unicode_map);
+            WriteJSNorm(s, dest, bcopied, js);
+            break;
+        case ACT_SFCC:
+            if ( s->overwrite && (s->overwrite < cur_ptr) )
+            {
+                s->dest.len = s->overwrite - s->dest.data;
+            }
+            StringFromCharCodeDecode(src, srclen, ptr, &dest, decoded_out_vec.size(), &bcopied, js, s->unicode_map);
+            WriteJSNorm(s, dest, bcopied, js);
+            break;
+        case ACT_QUIT:
+            iRet = RET_QUIT;
+            WriteJSNormChar(s, c, js);
+            break;
+        default:
+            break;
     }
 
     s->prev_event = c;
@@ -1228,6 +1231,8 @@ static int JSNorm_scan_fsm(JSNormState* s, int c, const char* src, uint16_t srcl
     return(JSNorm_exec(s, (ActionJSNorm)m->action, c, src, srclen, ptr, js));
 }
 
+namespace snort
+{
 int JSNormalizeDecode(const char* src, uint16_t srclen, char* dst, uint16_t destlen, const char** ptr,
     int* bytes_copied, JSState* js, uint8_t* iis_unicode_map)
 {
@@ -1272,5 +1277,4 @@ int JSNormalizeDecode(const char* src, uint16_t srclen, char* dst, uint16_t dest
     return RET_OK;
 }
 }
-
 

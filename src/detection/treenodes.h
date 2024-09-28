@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2008-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -24,9 +24,9 @@
 
 #include <string>
 
-#include "actions/actions.h"
 #include "detection/signature.h"
 #include "detection/rule_option_types.h"
+#include "framework/ips_action.h"
 #include "framework/pdu_section.h"
 #include "main/policy.h"
 #include "main/snort_types.h"
@@ -136,7 +136,7 @@ struct RuleTreeNode
     // Multiple OTNs can reference this RTN with the same policy.
     unsigned int otnRefCount = 0; // FIXIT-L shared_ptr?
 
-    Actions::Type action = 0;
+    snort::IpsAction::Type action = 0;
 
     uint8_t flags = 0;
 
@@ -186,6 +186,7 @@ struct OptTreeNode
     OptFpList* opt_func = nullptr;
     OutputSet* outputFuncs = nullptr; /* per sid enabled output functions */
     snort::IpsOption* agent = nullptr;
+    const char** buffer_setters = nullptr;
 
     OptFpList* normal_fp_only = nullptr;
     OptFpList* offload_fp_only = nullptr;
@@ -203,7 +204,7 @@ struct OptTreeNode
     SnortProtocolId snort_protocol_id = 0;    // Added for integrity checks during rule parsing.
     unsigned short proto_node_num = 0;
     uint16_t longestPatternLen = 0;
-    IpsPolicy::Enable enable;
+    IpsPolicy::Enable enable = IpsPolicy::Enable::DISABLED;
     Flag flags = 0;
 
     enum SectionDir { SECT_TO_SRV = 0, SECT_TO_CLIENT, SECT_DIR__MAX };

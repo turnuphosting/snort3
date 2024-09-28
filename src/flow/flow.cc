@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -36,6 +36,7 @@
 #include "protocols/tcp.h"
 #include "pub_sub/intrinsic_event_ids.h"
 #include "sfip/sf_ip.h"
+#include "time/clock_defs.h"
 #include "utils/stats.h"
 #include "utils/util.h"
 
@@ -106,6 +107,9 @@ inline void Flow::clean()
     delete bitop;
     bitop = nullptr;
     filtering_state.clear();
+
+    inspected_packet_count = 0;
+    inspection_duration = 0;
 }
 
 void Flow::flush(bool do_cleanup)
@@ -199,71 +203,66 @@ void Flow::trust()
     disable_inspection();
 }
 
+uint64_t Flow::fetch_add_inspection_duration()
+{
+    if (inspected_packet_count != 0)
+        return get_inspection_duration();
+
+    auto c = DetectionEngine::get_context();
+
+    if (c and c->packet and c->packet->inspection_started_timestamp)
+    {
+        auto packet = c->packet;
+        const auto timestamp = TO_USECS_FROM_EPOCH(SnortClock::now());
+
+        add_inspection_duration(timestamp - packet->inspection_started_timestamp);
+        packet->inspection_started_timestamp = timestamp;
+    }
+
+    return get_inspection_duration();
+}
+
 int Flow::set_flow_data(FlowData* fd)
 {
-    FlowData* old = get_flow_data(fd->get_id());
-    assert(old != fd);
+    if ( !fd ) return -1;
 
-    if (old)
-        free_flow_data(old);
-
-    fd->prev = nullptr;
-    fd->next = flow_data;
-
-    if ( flow_data )
-        flow_data->prev = fd;
-
-    flow_data = fd;
+    current_flow_data = fd;
+    uint32_t id = fd->get_id();
+    // operator[] will create a new entry if it does not exist
+    // or replace the existing one if it does
+    // when replacing, the old entry is deleted
+    flow_data[id] = std::unique_ptr<FlowData>(fd);
     return 0;
 }
 
+
 FlowData* Flow::get_flow_data(unsigned id) const
 {
-    FlowData* fd = flow_data;
-
-    while (fd)
-    {
-        if (fd->get_id() == id)
-            return fd;
-
-        fd = fd->next;
-    }
+    auto it = flow_data.find(id);
+    if ( it != flow_data.end() )
+        return it->second.get();
     return nullptr;
 }
 
-// FIXIT-L: implement doubly linked list with STL to cut down on code we maintain
 void Flow::free_flow_data(FlowData* fd)
 {
-    if ( fd == flow_data )
-    {
-        flow_data = fd->next;
-        if ( flow_data )
-            flow_data->prev = nullptr;
-    }
-    else if ( !fd->next )
-    {
-        fd->prev->next = nullptr;
-    }
-    else
-    {
-        fd->prev->next = fd->next;
-        fd->next->prev = fd->prev;
-    }
-    delete fd;
+    if ( fd )
+        flow_data.erase(fd->get_id());
 }
 
 void Flow::free_flow_data(uint32_t proto)
 {
-    FlowData* fd = get_flow_data(proto);
-
-    if ( fd )
-        free_flow_data(fd);
+    flow_data.erase(proto);
 }
 
 void Flow::free_flow_data()
 {
-    if (!flow_data)
+    if ( flow_data.empty() )
+    {
+        if (stash)
+            stash->reset();
         return;
+    }
     const SnortConfig* sc = SnortConfig::get_conf();
     PolicySelector* ps = sc->policy_map->get_policy_selector();
     NetworkPolicy* np = nullptr;
@@ -286,17 +285,18 @@ void Flow::free_flow_data()
         {
             _daq_pkt_hdr pkthdr = {};
             pkthdr.address_space_id = key->addressSpaceId;
-            pkthdr.tenant_id = tenant;
+#ifndef DISABLE_TENANT_ID
+            pkthdr.tenant_id = key->tenant_id;
+#else
+            pkthdr.tenant_id = 0;
+#endif
             select_default_policy(pkthdr, sc);
         }
     }
 
-    while (flow_data)
-    {
-        FlowData* tmp = flow_data;
-        flow_data = flow_data->next;
-        delete tmp;
-    }
+    flow_data.clear();
+    if (stash)
+        stash->reset();
 
     if (ps)
     {
@@ -308,16 +308,13 @@ void Flow::free_flow_data()
 
 void Flow::call_handlers(Packet* p, bool eof)
 {
-    FlowData* fd = flow_data;
-
-    while (fd)
+    for (auto& fd_pair : flow_data)
     {
+        FlowData* fd = fd_pair.second.get();
         if ( eof )
             fd->handle_eof(p);
         else
             fd->handle_retransmit(p);
-
-        fd = fd->next;
     }
 }
 
@@ -423,7 +420,7 @@ void Flow::set_expire(const Packet* p, uint64_t timeout)
     expire_time = (uint64_t)p->pkth->ts.tv_sec + timeout;
 }
 
-bool Flow::expired(const Packet* p)
+bool Flow::expired(const Packet* p) const
 {
     if ( !expire_time )
         return false;
@@ -505,7 +502,7 @@ Layer Flow::get_mpls_layer_per_dir(bool client)
         return mpls_server;
 }
 
-bool Flow::is_pdu_inorder(uint8_t dir)
+bool Flow::is_pdu_inorder(uint8_t dir) const
 {
     return ( (session != nullptr) && session->is_sequenced(dir)
             && (session->missing_in_reassembled(dir) == SSN_MISSING_NONE)

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -151,7 +151,9 @@ static int ProcessIcmpUnreach(Packet* p)
     skey.padding = skey.flags.padding_bits = 0;
     skey.flags.group_used = p->is_inter_group_flow();
     skey.init_groups(p->pkth->ingress_group, p->pkth->egress_group, reversed);
-
+#ifndef DISABLE_TENANT_ID
+    skey.tenant_id = p->pkth->tenant_id;
+#endif
     switch (p->type())
     {
     case PktType::TCP:

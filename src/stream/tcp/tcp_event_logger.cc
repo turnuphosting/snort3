@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -29,7 +29,7 @@
 #include "detection/rules.h"
 #include "filters/sfrf.h"
 #include "main/snort_config.h"
-#include "packet_tracer/packet_tracer.h"
+#include "packet_io/packet_tracer.h"
 
 #include "tcp_module.h"
 
@@ -64,11 +64,10 @@ struct tcp_event_sid tcp_event_sids[] =
     { EVENT_DATA_AFTER_RST_RCVD, STREAM_TCP_DATA_AFTER_RST_RCVD, "DATA_AFTER_RST_RCVD" },
     { EVENT_WINDOW_SLAM, STREAM_TCP_WINDOW_SLAM, "WINDOW_SLAM" },
     { EVENT_NO_3WHS, STREAM_TCP_NO_3WHS, "NO_3WHS" },
-    { EVENT_BAD_SEGMENT, STREAM_TCP_BAD_SEGMENT, "BAD_SEGMENT" },
     { EVENT_EXCESSIVE_OVERLAP, STREAM_TCP_EXCESSIVE_TCP_OVERLAPS, "EXCESSIVE_OVERLAP" },
     { EVENT_MAX_SMALL_SEGS_EXCEEDED, STREAM_TCP_SMALL_SEGMENT, "MAX_SMALL_SEGS_EXCEEDED" },
-    { 0, 0, nullptr }, { 0, 0, nullptr }, { 0, 0, nullptr }, { 0, 0, nullptr },
-    { 0, 0, nullptr }, { 0, 0, nullptr }, { 0, 0, nullptr }, { 0, 0, nullptr },
+    { EVENT_MAX_QUEUED_BYTES_EXCEEDED, STREAM_TCP_MAX_QUEUED_BYTES_EXCEEDED, "MAX_QUEUED_BYTES_EXCEEDED" },
+    { EVENT_MAX_QUEUED_SEGS_EXCEEDED, STREAM_TCP_MAX_QUEUED_SEGS_EXCEEDED, "MAX_QUEUED_SEGS_EXCEEDED" },
     { 0, 0, nullptr }, { 0, 0, nullptr }, { 0, 0, nullptr }, { 0, 0, nullptr }
 };
 

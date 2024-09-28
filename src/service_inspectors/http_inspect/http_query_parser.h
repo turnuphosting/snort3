@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -94,7 +94,7 @@ private:
     const uint8_t* norm_buffer;
     unsigned norm_buffer_len;
 
-    unsigned index;
+    unsigned index = 0;
 
     static const unsigned MAX_REPEAT_PARAMS = 100;
 

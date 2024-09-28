@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,7 +27,7 @@
 
 #include "tcp_module.h"
 #include "tcp_segment_descriptor.h"
-#include "tcp_stream_session.h"
+#include "tcp_session.h"
 #include "tcp_stream_tracker.h"
 
 using namespace snort;
@@ -35,7 +35,9 @@ using namespace snort;
 class TcpNormalizerFirst : public TcpNormalizer
 {
 public:
-    TcpNormalizerFirst() = default;
+    TcpNormalizerFirst()
+    { my_name = "OS_First"; }
+
 
     int handle_repeated_syn(TcpNormalizerState&, TcpSegmentDescriptor&) override;
 };
@@ -43,7 +45,9 @@ public:
 class TcpNormalizerLast : public TcpNormalizer
 {
 public:
-    TcpNormalizerLast() = default;
+    TcpNormalizerLast()
+    { my_name = "OS_Last"; }
+
 
     int handle_repeated_syn(TcpNormalizerState&, TcpSegmentDescriptor&) override;
 };
@@ -51,7 +55,9 @@ public:
 class TcpNormalizerLinux : public TcpNormalizer
 {
 public:
-    TcpNormalizerLinux() = default;
+    TcpNormalizerLinux()
+    { my_name = "OS_Linux"; }
+
 
     void init(TcpNormalizerState& tns) override
     {
@@ -67,7 +73,9 @@ public:
 class TcpNormalizerOldLinux : public TcpNormalizer
 {
 public:
-    TcpNormalizerOldLinux() = default;
+    TcpNormalizerOldLinux()
+    { my_name = "OS_OldLinux"; }
+
 
     void init(TcpNormalizerState& tns) override
     { tns.paws_drop_zero_ts = false; }
@@ -80,7 +88,9 @@ public:
 class TcpNormalizerBSD : public TcpNormalizer
 {
 public:
-    TcpNormalizerBSD() = default;
+    TcpNormalizerBSD()
+    { my_name = "OS_BSD"; }
+
 
     bool validate_rst(TcpNormalizerState&, TcpSegmentDescriptor&) override;
     int handle_repeated_syn(TcpNormalizerState&, TcpSegmentDescriptor&) override;
@@ -89,7 +99,9 @@ public:
 class TcpNormalizerMacOS : public TcpNormalizer
 {
 public:
-    TcpNormalizerMacOS() = default;
+    TcpNormalizerMacOS()
+    { my_name = "OS_MacOS"; }
+
 
     int handle_repeated_syn(TcpNormalizerState&, TcpSegmentDescriptor&) override;
 };
@@ -97,7 +109,9 @@ public:
 class TcpNormalizerSolaris : public TcpNormalizer
 {
 public:
-    TcpNormalizerSolaris() = default;
+    TcpNormalizerSolaris()
+    { my_name = "OS_Solaris"; }
+
 
     void init(TcpNormalizerState& tns) override
     { tns.paws_drop_zero_ts = false; }
@@ -109,7 +123,9 @@ public:
 class TcpNormalizerIrix : public TcpNormalizer
 {
 public:
-    TcpNormalizerIrix() = default;
+    TcpNormalizerIrix()
+    { my_name = "OS_Irix"; }
+
 
     int handle_repeated_syn(TcpNormalizerState&, TcpSegmentDescriptor&) override;
 };
@@ -117,7 +133,9 @@ public:
 class TcpNormalizerHpux11 : public TcpNormalizer
 {
 public:
-    TcpNormalizerHpux11() = default;
+    TcpNormalizerHpux11()
+    { my_name = "OS_Hpux11"; }
+
 
     bool validate_rst(TcpNormalizerState&, TcpSegmentDescriptor&) override;
     bool is_paws_ts_checked_required(TcpNormalizerState&, TcpSegmentDescriptor&) override;
@@ -127,7 +145,9 @@ public:
 class TcpNormalizerHpux10 : public TcpNormalizer
 {
 public:
-    TcpNormalizerHpux10() = default;
+    TcpNormalizerHpux10()
+    { my_name = "OS_Hpux10"; }
+
 
     int handle_repeated_syn(TcpNormalizerState&, TcpSegmentDescriptor&) override;
 };
@@ -135,7 +155,9 @@ public:
 class TcpNormalizerWindows : public TcpNormalizer
 {
 public:
-    TcpNormalizerWindows() = default;
+    TcpNormalizerWindows()
+    { my_name = "OS_Windows"; }
+
 
     void init(TcpNormalizerState& tns) override
     { tns.paws_drop_zero_ts = false; }
@@ -147,7 +169,9 @@ public:
 class TcpNormalizerWindows2K3 : public TcpNormalizer
 {
 public:
-    TcpNormalizerWindows2K3() = default;
+    TcpNormalizerWindows2K3()
+    { my_name = "OS_Windows2K3"; }
+
 
     void init(TcpNormalizerState& tns) override
     { tns.paws_drop_zero_ts = false; }
@@ -159,7 +183,9 @@ public:
 class TcpNormalizerVista : public TcpNormalizer
 {
 public:
-    TcpNormalizerVista() = default;
+    TcpNormalizerVista()
+    { my_name = "OS_Vista"; }
+
 
     void init(TcpNormalizerState& tns) override
     { tns.paws_drop_zero_ts = false; }
@@ -171,17 +197,33 @@ public:
 class TcpNormalizerProxy : public TcpNormalizer
 {
 public:
-    TcpNormalizerProxy() = default;
+    TcpNormalizerProxy()
+    { my_name = "OS_Proxy"; }
 
+    TcpNormalizer::NormStatus apply_normalizations(
+        TcpNormalizerState&, TcpSegmentDescriptor&, uint32_t seq, bool stream_is_inorder) override;
     bool validate_rst(TcpNormalizerState&, TcpSegmentDescriptor&) override;
     int handle_paws(TcpNormalizerState&, TcpSegmentDescriptor&) override;
     int handle_repeated_syn(TcpNormalizerState&, TcpSegmentDescriptor&) override;
 };
 
+// Normalizations applied or excluded for midstream and one-way asymmetric flows are common
+class TcpNormalizerMissed3whs : public TcpNormalizer
+{
+public:
+    TcpNormalizerMissed3whs()
+    { my_name = "Missed3whs"; }
+
+    TcpNormalizer::NormStatus apply_normalizations(
+        TcpNormalizerState&, TcpSegmentDescriptor&, uint32_t seq, bool stream_is_inorder) override;
+    bool validate_rst(TcpNormalizerState&, TcpSegmentDescriptor&) override;
+    int handle_paws(TcpNormalizerState&, TcpSegmentDescriptor&) override;
+    int handle_repeated_syn(TcpNormalizerState&, TcpSegmentDescriptor&) override;
+};
 
 static inline int handle_repeated_syn_mswin(
     TcpStreamTracker* talker, TcpStreamTracker* listener,
-    const TcpSegmentDescriptor& tsd, TcpStreamSession* session)
+    const TcpSegmentDescriptor& tsd, TcpSession* session)
 {
     /* Windows has some strange behavior here.  If the sequence of the reset is the
      * next expected sequence, it Resets.  Otherwise it ignores the 2nd SYN.
@@ -197,7 +239,7 @@ static inline int handle_repeated_syn_mswin(
 }
 
 static inline int handle_repeated_syn_bsd(
-    TcpStreamTracker* talker, const TcpSegmentDescriptor& tsd, TcpStreamSession* session)
+    TcpStreamTracker* talker, const TcpSegmentDescriptor& tsd, TcpSession* session)
 {
     /* If its not a retransmission of the actual SYN... RESET */
     if ( !SEQ_EQ(tsd.get_seq(), talker->get_iss()) )
@@ -362,8 +404,8 @@ bool TcpNormalizerHpux11::is_paws_ts_checked_required(
     TcpNormalizerState& tns, TcpSegmentDescriptor& tsd)
 {
     /* HPUX 11 ignores timestamps for out of order segments */
-    if ( (tns.tracker->get_tf_flags() & TF_MISSING_PKT) || !SEQ_EQ(tns.tracker->rcv_nxt,
-        tsd.get_seq()) )
+    if ( (tns.tracker->get_tf_flags() & TF_MISSING_PKT)
+        || !SEQ_EQ(tns.tracker->rcv_nxt, tsd.get_seq()) )
         return false;
     else
         return true;
@@ -417,27 +459,57 @@ int TcpNormalizerVista::handle_repeated_syn(
     return handle_repeated_syn_mswin(tns.peer_tracker, tns.tracker, tsd, tns.session);
 }
 
-bool TcpNormalizerProxy::validate_rst(
-    TcpNormalizerState&, TcpSegmentDescriptor&)
-
+TcpNormalizer::NormStatus TcpNormalizerProxy::apply_normalizations(
+    TcpNormalizerState&, TcpSegmentDescriptor&, uint32_t, bool)
 {
-    return false;
+    // when Proxy policy is active packet normalizations are skipped
+    return NORM_OK;
 }
 
-int TcpNormalizerProxy::handle_paws(
-    TcpNormalizerState&, TcpSegmentDescriptor&)
+bool TcpNormalizerProxy::validate_rst(TcpNormalizerState&, TcpSegmentDescriptor&)
+{ return true; }
+
+int TcpNormalizerProxy::handle_paws(TcpNormalizerState&, TcpSegmentDescriptor&)
+{ return ACTION_NOTHING; }
+
+int TcpNormalizerProxy::handle_repeated_syn(TcpNormalizerState&, TcpSegmentDescriptor&)
+{ return ACTION_NOTHING; }
+
+TcpNormalizer::NormStatus TcpNormalizerMissed3whs::apply_normalizations(
+    TcpNormalizerState&, TcpSegmentDescriptor&, uint32_t, bool)
 {
-    return ACTION_NOTHING;
+    // when a flow is Midstream/Asymmetric, not all packet normalizations are possible
+    return NORM_OK;
 }
 
-int TcpNormalizerProxy::handle_repeated_syn(
-    TcpNormalizerState&, TcpSegmentDescriptor&)
+bool TcpNormalizerMissed3whs::validate_rst(
+    TcpNormalizerState& tns, TcpSegmentDescriptor& tsd)
 {
-    return ACTION_NOTHING;
+    if ( tns.session->flow->two_way_traffic() )
+        return tns.prev_norm->validate_rst(tns, tsd);
+
+    if ( !tns.prev_norm->get_name().compare("OS_Hpux11") )
+        return validate_rst_seq_geq(tns, tsd);
+
+    return true;
 }
 
-void TcpNormalizerPolicy::init(StreamPolicy os, TcpStreamSession* ssn, TcpStreamTracker* trk, TcpStreamTracker* peer)
+int TcpNormalizerMissed3whs::handle_paws(TcpNormalizerState&, TcpSegmentDescriptor&)
+{ return ACTION_NOTHING; }
+
+int TcpNormalizerMissed3whs::handle_repeated_syn(
+		TcpNormalizerState& tns, TcpSegmentDescriptor& tsd)
 {
+    return tns.prev_norm->handle_repeated_syn(tns, tsd);
+}
+
+void TcpNormalizerPolicy::init(StreamPolicy os, TcpSession* ssn, TcpStreamTracker* trk, TcpStreamTracker* peer)
+{
+    if ( os == StreamPolicy::MISSED_3WHS and os == tns.os_policy)
+        tns.prev_norm = TcpNormalizerFactory::get_instance(StreamPolicy::OS_DEFAULT);
+    else
+        tns.prev_norm = TcpNormalizerFactory::get_instance(tns.os_policy);
+
     tns.os_policy = os;
     tns.session = ssn;
     tns.tracker = trk;
@@ -478,17 +550,18 @@ void TcpNormalizerFactory::initialize()
     normalizers[StreamPolicy::OS_WINDOWS2K3] = new TcpNormalizerWindows2K3;
     normalizers[StreamPolicy::OS_VISTA] = new TcpNormalizerVista;
     normalizers[StreamPolicy::OS_PROXY] = new TcpNormalizerProxy;
+    normalizers[StreamPolicy::MISSED_3WHS] = new TcpNormalizerMissed3whs;
 }
 
 void TcpNormalizerFactory::term()
 {
-    for ( auto sp = StreamPolicy::OS_FIRST; sp <= StreamPolicy::OS_PROXY; sp++ )
+    for ( auto sp = StreamPolicy::OS_FIRST; sp < StreamPolicy::OS_END_OF_LIST; sp++ )
         delete normalizers[sp];
 }
 
 TcpNormalizer* TcpNormalizerFactory::get_instance(StreamPolicy sp)
 {
-    assert( sp <= StreamPolicy::OS_PROXY );
+    assert( sp < StreamPolicy::OS_END_OF_LIST );
     return normalizers[sp];
 }
 

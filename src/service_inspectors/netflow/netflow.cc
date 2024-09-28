@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -34,6 +34,7 @@
 #include "log/messages.h"
 #include "managers/module_manager.h"
 #include "main/reload_tuner.h"
+#include "main/snort_config.h"
 #include "pub_sub/netflow_event.h"
 #include "src/utils/endian.h"
 #include "time/packet_time.h"
@@ -58,11 +59,9 @@ static std::vector<const NetFlowRule*> filter_record(const NetFlowRules* rules, 
 
     for( auto const & address : addr )
     {
-        for( auto const& rule : rules->exclude )
-        {
-            if ( rule.filter_match(address, zone) )
-                return match_vec;
-        }
+        if (std::any_of(rules->exclude.cbegin(), rules->exclude.cend(),
+            [address, zone](const NetFlowRule& rule){ return rule.filter_match(address, zone); }))
+            return match_vec;
     }
 
     for( auto const & address : addr )
@@ -125,8 +124,8 @@ static void publish_netflow_event(const Packet* p, const NetFlowRule* match, Net
     // LAST_PKT_SECOND - if these aren't set, assume the current wire pkt time
     if (!record.first_pkt_second or !record.last_pkt_second)
     {
-        record.first_pkt_second = packet_time();
-        record.last_pkt_second = packet_time();
+        record.first_pkt_second = static_cast<uint32_t>(packet_time());
+        record.last_pkt_second = static_cast<uint32_t>(packet_time());
     }
 
     NetFlowEvent event(p, &record, match->create_host, match->create_service, swapped, serviceID);
@@ -776,6 +775,9 @@ public:
     bool is_control_channel() const override
     { return true; }
 
+    bool supports_no_ips() const override
+    { return true; }
+
 private:
     const NetFlowConfig *config;
 
@@ -887,14 +889,13 @@ void NetFlowInspector::stringify(std::ofstream& file_stream)
 {
     std::sort(dump_cache->begin(), dump_cache->end(), IpCompare());
 
-    std::string str;
     SfIpString ip_str;
     uint32_t i = 0;
 
     for (auto& elem : *dump_cache)
     {
         NetFlowSessionRecord& record = elem.second;
-        str = "NetFlow Record #";
+        std::string str = "NetFlow Record #";
         str += std::to_string(++i);
         str += "\n";
 

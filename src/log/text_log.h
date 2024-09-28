@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2003-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -49,7 +49,7 @@ struct TextLog;
 namespace snort
 {
 SO_PUBLIC TextLog* TextLog_Init(
-    const char* name, unsigned int maxBuf = 0, size_t maxFile = 0);
+    const char* name, unsigned int maxBuf = 0, size_t maxFile = 0, bool is_critical=true);
 SO_PUBLIC void TextLog_Term(TextLog*);
 
 SO_PUBLIC bool TextLog_Putc(TextLog* const, char);

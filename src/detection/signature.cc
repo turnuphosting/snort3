@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -28,8 +28,9 @@
 
 #include "signature.h"
 
-#include "actions/actions.h"
 #include "framework/decode_data.h"
+#include "filters/sfthd.h"
+#include "framework/ips_action.h"
 #include "hash/hash_defs.h"
 #include "hash/ghash.h"
 #include "helpers/json_stream.h"
@@ -81,10 +82,10 @@ static const ReferenceSystem* reference_system_lookup(SnortConfig* sc, const std
 void add_reference(
     SnortConfig* sc, OptTreeNode* otn, const std::string& system, const std::string& id)
 {
+    assert(sc and otn and !system.empty() and !id.empty());
+
     if ( !sc->alert_refs() )
         return;
-
-    assert(sc and otn and !system.empty() and !id.empty());
 
     const ReferenceSystem* sys = reference_system_lookup(sc, system);
 
@@ -162,9 +163,10 @@ OptTreeNode::~OptTreeNode()
         snort_free(proto_nodes);
 
     if (detection_filter)
-        snort_free(detection_filter);
+        sfthd_node_free(detection_filter);
 
     delete sigInfo.body;
+    delete[] buffer_setters;
     delete[] state;
 }
 
@@ -331,7 +333,7 @@ static void dump_services(JsonStream& json, const SigInfo& si)
     json.close_array();
 }
 
-static void dump_bits(JsonStream& json, const char* key, std::vector<std::string>& bits)
+static void dump_bits(JsonStream& json, const char* key, const std::vector<std::string>& bits)
 {
     if ( bits.empty() )
         return;
@@ -460,7 +462,7 @@ void dump_rule_state(const SnortConfig* sc)
             auto pid = snort::get_ips_policy(sc, i)->user_policy_id;
             json.put("policy", pid);
 
-            std::string action = Actions::get_string(rtn->action);
+            std::string action = IpsAction::get_string(rtn->action);
             json.put("action", action.c_str());
 
             const char* s = rtn->enabled() ? "yes" : "no";

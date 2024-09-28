@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,6 +25,9 @@
 // like a text rule except that it can call function hooks. It can also
 // define its own rule options and any other plugins it may need.
 
+// the SOAPI_VERSION will change if anything in this file changes.
+// see also framework/base_api.h.
+
 #include "framework/base_api.h"
 #include "framework/ips_option.h"
 #include "main/snort_types.h"
@@ -35,7 +38,7 @@ struct Packet;
 }
 
 // this is the current version of the api
-#define SOAPI_VERSION ((BASE_API_VERSION << 16) | 0)
+#define SOAPI_VERSION ((BASE_API_VERSION << 16) | 1)
 
 //-------------------------------------------------------------------------
 // rule format is:  header ( [<stub opts>;] soid:<tag>; [<remaining opts>;] )
@@ -45,6 +48,7 @@ struct Packet;
 
 typedef snort::IpsOption::EvalStatus (* SoEvalFunc)(void*, class Cursor&, snort::Packet*);
 typedef SoEvalFunc (* SoNewFunc)(const char* key, void**);
+
 typedef void (* SoDelFunc)(void*);
 typedef void (* SoAuxFunc)();
 

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -23,7 +23,6 @@
 #define CLIENT_DISCOVERY_H
 
 #include "flow/flow.h"
-#include "log/messages.h"
 
 #include "appid_discovery.h"
 #include "appid_types.h"

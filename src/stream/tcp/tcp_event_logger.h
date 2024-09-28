@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -42,9 +42,10 @@
 #define EVENT_DATA_AFTER_RST_RCVD       0x00004000
 #define EVENT_WINDOW_SLAM               0x00008000
 #define EVENT_NO_3WHS                   0x00010000
-#define EVENT_BAD_SEGMENT               0x00020000
-#define EVENT_EXCESSIVE_OVERLAP         0x00040000
-#define EVENT_MAX_SMALL_SEGS_EXCEEDED   0x00080000
+#define EVENT_EXCESSIVE_OVERLAP         0x00020000
+#define EVENT_MAX_SMALL_SEGS_EXCEEDED   0x00040000
+#define EVENT_MAX_QUEUED_BYTES_EXCEEDED 0x00080000
+#define EVENT_MAX_QUEUED_SEGS_EXCEEDED  0x00100000
 
 class TcpEventLogger
 {

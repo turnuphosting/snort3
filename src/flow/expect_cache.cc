@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -22,11 +22,12 @@
 #endif
 
 #include "expect_cache.h"
+#include "expect_flow.h"
 
 #include "detection/ips_context.h"
 #include "hash/zhash.h"
+#include "packet_io/packet_tracer.h"
 #include "packet_io/sfdaq_instance.h"
-#include "packet_tracer/packet_tracer.h"
 #include "protocols/packet.h"
 #include "protocols/vlan.h"
 #include "pub_sub/expect_events.h"
@@ -159,8 +160,8 @@ ExpectNode* ExpectCache::find_node_by_packet(Packet* p, FlowKey &key)
     PktType type = p->type();
     IpProtocol ip_proto = p->get_ip_proto_next();
 
-    bool reversed_key = key.init(p->context->conf, type, ip_proto, dstIP, p->ptrs.dp,
-        srcIP, p->ptrs.sp, vlanId, mplsId, *p->pkth);
+    bool reversed_key = key.init(p->context->conf, type, ip_proto, srcIP, p->ptrs.sp, dstIP, p->ptrs.dp,
+        vlanId, mplsId, *p->pkth);
 
     /*
         Lookup order:
@@ -183,15 +184,15 @@ ExpectNode* ExpectCache::find_node_by_packet(Packet* p, FlowKey &key)
 
         if (reversed_key)
         {
-            port1 = key.port_l;
-            port2 = 0;
-            key.port_l = 0;
-        }
-        else
-        {
             port1 = 0;
             port2 = key.port_h;
             key.port_h = 0;
+        }
+        else
+        {
+            port1 = key.port_l;
+            port2 = 0;
+            key.port_l = 0;
         }
         node = static_cast<ExpectNode*> ( hash_table->get_user_data(&key) );
         if (!node)
@@ -335,9 +336,15 @@ int ExpectCache::add_flow(const Packet *ctrlPkt, PktType type, IpProtocol ip_pro
     uint32_t mplsId = (ctrlPkt->proto_bits & PROTO_BIT__MPLS) ? ctrlPkt->ptrs.mplsHdr.label : 0;
     FlowKey key;
 
+    // This code assumes that the expected session is in the opposite direction of the control session
+    // when groups are significant
     bool reversed_key = key.init(ctrlPkt->context->conf, type, ip_proto, cliIP, cliPort,
-        srvIP, srvPort, vlanId, mplsId, *ctrlPkt->pkth);
-
+        srvIP, srvPort, vlanId, mplsId, ctrlPkt->pkth->address_space_id, 
+#ifndef DISABLE_TENANT_ID
+        ctrlPkt->pkth->tenant_id,
+#endif
+        0 != (ctrlPkt->pkth->flags & DAQ_PKT_FLAG_SIGNIFICANT_GROUPS),
+        ctrlPkt->pkth->egress_group, ctrlPkt->pkth->ingress_group);
     bool new_node = false;
     ExpectNode* node = static_cast<ExpectNode*> ( hash_table->get_user_data(&key) );
     if ( !node )
@@ -451,12 +458,6 @@ int ExpectCache::add_flow(const Packet *ctrlPkt, PktType type, IpProtocol ip_pro
         DataBus::publish(intrinsic_pub_id, IntrinsicEventIds::EXPECT_EARLY_SESSION, event, ctrlPkt->flow);
     }
     return 0;
-}
-
-bool ExpectCache::is_expected(Packet* p)
-{
-    FlowKey key;
-    return (find_node_by_packet(p, key) != nullptr);
 }
 
 bool ExpectCache::check(Packet* p, Flow* lws)

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,6 +28,9 @@
 #define TP_SUPPORTED 1
 
 #include "tp_lib_handler.h"
+
+#include "profiler/profiler.h"
+
 #include "appid_config.h"
 #include "log_message_mock.h"
 
@@ -35,6 +38,7 @@
 #include <CppUTest/TestHarness.h>
 
 using namespace std;
+using namespace snort;
 
 static TPLibHandler* tph = nullptr;
 static AppIdConfig config;
@@ -43,7 +47,8 @@ static OdpContext stub_odp_ctxt(config, nullptr);
 OdpContext* AppIdContext::odp_ctxt = &stub_odp_ctxt;
 ThirdPartyAppIdContext* AppIdContext::tp_appid_ctxt = nullptr;
 
-snort::SearchTool::SearchTool(bool) { }
+snort::SearchTool::SearchTool(bool multi, const char*) : mpsegrp(nullptr), max_len(0), multi_match(multi)
+{ }
 snort::SearchTool::~SearchTool() = default;
 
 AppIdDiscovery::~AppIdDiscovery() = default;
@@ -68,6 +73,10 @@ void ServiceDiscovery::initialize(AppIdInspector&) { }
 void ServiceDiscovery::reload() { }
 int ServiceDiscovery::add_service_port(AppIdDetector*, const ServiceDetectorPort&)
 { return 0; }
+void appid_log(const snort::Packet*, unsigned char, char const*, ...) { }
+
+THREAD_LOCAL ProfileStats tp_appid_perf_stats;
+THREAD_LOCAL bool TimeProfilerStats::enabled = false;
 
 TEST_GROUP(tp_lib_handler)
 {

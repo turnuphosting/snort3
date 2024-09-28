@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -39,6 +39,9 @@ BaseTracker::BaseTracker(PerfConfig* perf) : PerfTracker(perf, PERF_NAME "_base"
 {
     for ( ModuleConfig& mod : modules )
     {
+        if (mod.ptr->stats_are_aggregated())
+            continue;
+
         formatter->register_section(mod.ptr->get_name());
 
         for ( auto const& idx : mod.pegs )
@@ -58,8 +61,18 @@ void BaseTracker::process(bool summary)
     {
         for ( const ModuleConfig& mod : modules )
         {
-            lock_guard<mutex> lock(ModuleManager::stats_mutex);
-            mod.ptr->sum_stats(false);
+            if (mod.ptr->is_aggregator())
+                continue;
+
+            if (strstr(ModuleManager::dynamic_stats_modules, mod.ptr->get_name()) || mod.ptr->global_stats())
+            {
+                lock_guard<mutex> lock(ModuleManager::stats_mutex);
+                mod.ptr->sum_stats(false);
+            }
+            else
+            {
+                mod.ptr->sum_stats(false);
+            }
         }
     }
 }
@@ -71,19 +84,21 @@ class MockModule : public Module
 public:
     MockModule() : Module("mockery", "mockery")
     {
-        counts = (PegCount*)snort_alloc(5 * sizeof(PegCount));
+        mock_counts = (PegCount*)snort_alloc(5 * sizeof(PegCount));
 
         for( unsigned i = 0; i < 5; i++ )
-            counts[i] = i;
+            mock_counts[i] = i;
     }
 
-    ~MockModule() override { snort_free(counts); }
+    ~MockModule() override { snort_free(mock_counts); }
 
     const PegInfo* get_pegs() const override { return pegs; }
 
-    PegCount* get_counts() const override { return counts; }
+    PegCount* get_counts() const override { return mock_counts; }
 
     void sum_stats(bool) override {}
+
+    void init_stats(bool) override {Module::init_stats();}
 
     void real_sum_stats() { Module::sum_stats(false); }
 
@@ -91,7 +106,7 @@ public:
     { return INSPECT; }
 
 private:
-    PegCount* counts;
+    PegCount* mock_counts;
 
     PegInfo pegs[6] =
     {
@@ -124,6 +139,7 @@ TEST_CASE("module stats", "[BaseTracker]")
     config.format = PerfFormat::MOCK;
 
     MockModule mod;
+    mod.init_stats(false);
     ModuleConfig mod_cfg;
     mod_cfg.ptr = &mod;
     mod_cfg.pegs = {0, 2, 4};

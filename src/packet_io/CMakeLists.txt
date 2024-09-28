@@ -1,6 +1,9 @@
 
 set ( PACKET_IO_INCLUDES
     active.h
+    active_action.h
+    packet_constraints.h
+    packet_tracer.h
     sfdaq.h
     sfdaq_instance.h
 )
@@ -26,15 +29,17 @@ if (ENABLE_STATIC_DAQ)
 endif ()
 
 add_library (packet_io OBJECT
+    ${PACKET_IO_INCLUDES}
     active.cc
-    active.h
-    active_action.h
+    active_counts.h
+    packet_constraints.cc
+    packet_tracer.cc
+    packet_tracer_module.cc
+    packet_tracer_module.h
     sfdaq.cc
-    sfdaq.h
     sfdaq_config.cc
     sfdaq_config.h
     sfdaq_instance.cc
-    sfdaq_instance.h
     sfdaq_module.cc
     sfdaq_module.h
     trough.cc
@@ -42,6 +47,8 @@ add_library (packet_io OBJECT
     ${STATIC_DAQ_MODULES_HEADER}
     ${TEST_FILES}
 )
+
+add_subdirectory ( test )
 
 install (FILES ${PACKET_IO_INCLUDES}
     DESTINATION "${INCLUDE_INSTALL_PATH}/packet_io"

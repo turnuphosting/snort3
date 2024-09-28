@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -51,9 +51,8 @@ struct SslStateRuleOptionData
 class SslStateOption : public IpsOption
 {
 public:
-    SslStateOption(const SslStateRuleOptionData& c) :
-        IpsOption(s_name)
-    { ssod = c; }
+    SslStateOption(const SslStateRuleOptionData& c) : IpsOption(s_name), ssod(c)
+    { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -61,7 +60,7 @@ public:
     EvalStatus eval(Cursor&, Packet*) override;
 
 private:
-    SslStateRuleOptionData ssod = {};
+    SslStateRuleOptionData ssod;
 };
 
 //-------------------------------------------------------------------------
@@ -94,7 +93,7 @@ bool SslStateOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus SslStateOption::eval(Cursor&, Packet* pkt)
 {
-    RuleProfile profile(sslStateRuleOptionPerfStats);
+    RuleProfile profile(sslStateRuleOptionPerfStats);   // cppcheck-suppress unreadVariable
 
     if ( !(pkt->packet_flags & PKT_REBUILT_STREAM) && !pkt->is_full_pdu() )
         return NO_MATCH;
@@ -236,7 +235,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* ssl_state_ctor(Module* p, OptTreeNode*)
+static IpsOption* ssl_state_ctor(Module* p, IpsInfo&)
 {
     SslStateModule* m = (SslStateModule*)p;
     return new SslStateOption(m->ssod);

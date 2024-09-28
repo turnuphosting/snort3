@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -60,16 +60,19 @@ bool PDFJSNorm::pre_proc()
     {
         trace_logf(2, js_trace, TRACE_PROC, DetectionEngine::get_current_packet(),
             "pdf processing failed: %d\n", (int)r);
-        return false;
+        alive = false;
     }
 
     src_ptr = (const uint8_t*)buf_pdf_out.data();
-    src_end = src_ptr + buf_pdf_out.data_len();
 
     // script object not found
     if (!src_ptr)
+    {
+        src_end = nullptr;
         return false;
+    }
 
+    src_end = src_ptr + buf_pdf_out.data_len();
     return true;
 }
 

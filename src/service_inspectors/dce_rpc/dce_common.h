@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -186,7 +186,7 @@ struct DCE2_Roptions
     int opnum;    /* Set to sentinel if not applicable */
 
     /* dce_stub_data */
-    const uint8_t* stub_data;  /* Set to null if not applicable */
+    const uint8_t* stub_data;  /* Set to null  if not applicable */
 };
 
 enum DCE2_SsnFlag

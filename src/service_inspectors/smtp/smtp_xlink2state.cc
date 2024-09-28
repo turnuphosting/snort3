@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2011-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -27,7 +27,6 @@
 #include "smtp_xlink2state.h"
 
 #include "detection/detection_engine.h"
-#include "events/event_queue.h"
 #include "packet_io/active.h"
 
 #include "smtp_module.h"
@@ -99,13 +98,13 @@ static char get_xlink_keyword(const uint8_t* ptr, const uint8_t* end)
 
     len = end - ptr;
 
-    if (len > 5 && strncasecmp((const char*)ptr, "FIRST", 5) == 0)
+    // cppcheck-suppress knownConditionTrueFalse
+    if (len > 5)
     {
-        return XLINK_FIRST;
-    }
-    else if (len > 5 && strncasecmp((const char*)ptr, "CHUNK", 5) == 0)
-    {
-        return XLINK_CHUNK;
+        if (strncasecmp((const char*)ptr, "FIRST", 5) == 0)
+            return XLINK_FIRST;
+        if (strncasecmp((const char*)ptr, "CHUNK", 5) == 0)
+            return XLINK_CHUNK;
     }
 
     return XLINK_OTHER;

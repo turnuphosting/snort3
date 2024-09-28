@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 1998-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -29,7 +29,6 @@
 
 #include <cmath> // For ceil
 
-#include "main/thread.h"
 #include "utils/util.h"
 #include "utils/util_net.h"
 
@@ -135,7 +134,7 @@ static inline int _count_bits(unsigned int val)
  * into a number of bits to mask off */
 static inline int _netmask_str_to_bit_count(char* mask, int family)
 {
-    uint32_t buf[4];
+    uint32_t buf[4] = {};
     int bits, i, nBits, nBytes;
     uint8_t* bytes = (uint8_t*)buf;
 

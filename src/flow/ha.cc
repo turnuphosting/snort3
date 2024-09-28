@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -89,7 +89,13 @@ private:
     bool use_daq_channel;
 };
 
-static constexpr uint8_t HA_MESSAGE_VERSION = 3;
+
+// Ensure to increment both versions simultaneously to maintain consistency
+#ifndef DISABLE_TENANT_ID
+static constexpr uint8_t HA_MESSAGE_VERSION = 4;
+#else
+static constexpr uint8_t HA_MESSAGE_VERSION = 5;
+#endif
 
 // define message size and content constants.
 static constexpr uint8_t KEY_SIZE_IP6 = sizeof(FlowKey);
@@ -121,10 +127,6 @@ static inline bool is_ip6_key(const FlowKey* key)
 
 FlowHAState::FlowHAState()
 {
-    state = INITIAL_STATE;
-    state |= (NEW | NEW_SESSION);
-    pending = NONE_PENDING;
-
     // Set the initial update time to now+min_session_lifetime
     packet_gettimeofday(&next_update);
     timeradd(&next_update, &min_session_lifetime, &next_update);
@@ -200,12 +202,10 @@ void FlowHAState::reset()
     init_next_update();
 }
 
-FlowHAClient::FlowHAClient(uint8_t length, bool session_client)
+FlowHAClient::FlowHAClient(uint8_t length, bool session_client) : max_length(length)
 {
     if (!ha)
         return;
-
-    max_length = length;
 
     if (session_client)
     {
@@ -444,6 +444,7 @@ static Flow* consume_ha_update_message(HAMessage& msg, const FlowKey& key, Packe
 
     if( p && no_flow_found && flow && flow->session )
     {
+        p->flow = flow;
         flow->session->setup(p);
         flow->set_direction(p);
         flow->set_client_initiate(p);
@@ -498,7 +499,7 @@ static Flow* consume_ha_message(HAMessage& msg,
     if (read_flow_key(msg, hdr, key) == 0)
         return nullptr;
 
-    if (packet_key and !FlowKey::is_equal(packet_key, &key, 0))
+    if (packet_key and !FlowKey::is_equal(packet_key, &key))
     {
         ha_stats.key_mismatch++;
         return nullptr;

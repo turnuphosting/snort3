@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -58,6 +58,7 @@ void HttpMsgBody::do_file_decompression(const Field&, Field&) {}
 void HttpMsgBody::clean_partial(uint32_t&, uint32_t&, uint8_t*&, uint32_t&) {}
 void HttpMsgBody::bookkeeping_regular_flush(uint32_t&, uint8_t*&, uint32_t&, int32_t) {}
 bool HttpMsgBody::run_detection(snort::Packet*) { return true; }
+const Field& HttpMsgBody::get_classic_client_body() { return classic_client_body; }
 void HttpMsgBody::clear() {}
 void HttpMsgSection::clear() {}
 #ifdef REG_TEST
@@ -71,18 +72,23 @@ HttpMsgSection::HttpMsgSection(const uint8_t* buffer, const uint16_t buf_size,
     session_data(session_data_),
     flow(flow_),
     params(params_),
-    transaction(HttpTransaction::attach_my_transaction(session_data, source_id_)),
+    transaction(HttpTransaction::attach_my_transaction(session_data, source_id_, flow)),
     trans_num(STAT_NOT_PRESENT),
     status_code_num(STAT_NOT_PRESENT),
     source_id(source_id_),
     version_id(VERS__NOT_PRESENT),
     method_id(METH__NOT_PRESENT),
-    tcp_close(false)
-{}
+    tcp_close(false),
+    request(nullptr),
+    status(nullptr)
+{
+    memset(header, 0, sizeof(header));
+    memset(trailer, 0, sizeof(trailer));
+}
 void HttpMsgSection::update_depth() const{}
 bool HttpMsgSection::run_detection(snort::Packet*) { return true; }
 
-HttpTransaction*HttpTransaction::attach_my_transaction(HttpFlowData*, HttpCommon::SourceId)
+HttpTransaction*HttpTransaction::attach_my_transaction(HttpFlowData*, HttpCommon::SourceId, snort::Flow*)
     { return nullptr; }
 Field::Field(int32_t length, const uint8_t* start, bool own_the_buffer_) :
     strt(start), len(length), own_the_buffer(own_the_buffer_)

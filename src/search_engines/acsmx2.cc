@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 // Copyright (C) 2003-2004 Daniel Roelker
 // Copyright (C) 2002-2004 Marc Norton
@@ -127,8 +127,8 @@
 #include <list>
 #include <mutex>
 
+#include "log/log_stats.h"
 #include "log/messages.h"
-#include "utils/stats.h"
 #include "utils/util.h"
 
 using namespace snort;
@@ -968,10 +968,6 @@ int acsmCompile2(SnortConfig* sc, ACSM_STRUCT2* acsm)
         acsmBuildMatchStateTrees2(sc, acsm);
 
     return 0;
-}
-
-void acsmx2_print_qinfo()
-{
 }
 
 /*

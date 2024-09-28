@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2012-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -32,8 +32,9 @@
 #include "detection/detection_engine.h"
 #include "log/messages.h"
 #include "main/snort_config.h"
+#include "main/thread.h"
 #include "managers/inspector_manager.h"
-#include "packet_tracer/packet_tracer.h"
+#include "packet_io/packet_tracer.h"
 #include "protocols/packet.h"
 #include "trace/trace_api.h"
 
@@ -78,7 +79,7 @@ static void populate_trace_data(FileContext* context)
 
     PacketTracer::daq_log("file+%" PRId64"+Matched policy id %u, identification %s, signature %s, capture %s+"
                 "File with ID %lu, name %s, type %s, size %lu, SHA %s detected. Verdict %s.$",
-                TO_NSECS(pt_timer->get()),
+                PacketTracer::get_time(),
                 context->get_policy_id(),
                 ((context->is_file_type_enabled() || context->get_file_type() || context->get_file_sig_sha256()) ? "<on>" : "<off>"),
                 ((context->is_file_signature_enabled() || context->get_file_sig_sha256()) ? "<on>" : "<off>"),
@@ -113,7 +114,7 @@ void FileFlows::handle_retransmit(Packet* p)
     if (!file->get_file_data())
     {
         if (file_cache)
-            file_got = file_cache->get_file(flow, pending_file_id, false);
+            file_got = file_cache->get_file(flow, pending_file_id, false, false);
         if (file_got and file_got->get_file_data() and file_got->verdict == FILE_VERDICT_PENDING)
         {
             file_got->user_file_data_mutex.lock();
@@ -174,7 +175,7 @@ void FileFlows::set_current_file_context(FileContext* ctx)
         current_context_delete_pending = false;
         FileCache* file_cache = FileService::get_file_cache();
         assert(file_cache);
-        FileContext* file_got = file_cache->get_file(flow, file_id, false);
+        FileContext* file_got = file_cache->get_file(flow, file_id, false, false);
         if (file_got and file_got->verdict == FILE_VERDICT_PENDING and current_context != file_got)
         {
             file_got->user_file_data_mutex.lock();
@@ -206,25 +207,6 @@ uint64_t FileFlows::get_new_file_instance()
 
 FileFlows::~FileFlows()
 {
-    std::lock_guard<std::mutex> guard(file_flow_context_mutex);
-    FileCache* file_cache = FileService::get_file_cache();
-    assert(file_cache);
-    uint64_t file_id = 0;
-    if (current_context)
-        file_id = current_context->get_file_id();
-    else if (main_context)
-        file_id = main_context->get_file_id();
-
-    FileContext* file_got = file_cache->get_file(flow, file_id, false);
-
-    if (file_got and (file_got->verdict == FILE_VERDICT_PENDING))
-    {
-        file_got->user_file_data_mutex.lock();
-        delete (file_got->get_file_data());
-        file_got->set_file_data(nullptr);
-        file_got->user_file_data_mutex.unlock();
-    }
-
     delete(main_context);
     if (current_context_delete_pending)
         delete(current_context);
@@ -291,7 +273,7 @@ FileContext* FileFlows::get_file_context(
     {
         FileCache* file_cache = FileService::get_file_cache();
         assert(file_cache);
-        context = file_cache->get_file(flow, file_id, false);
+        context = file_cache->get_file(flow, file_id, false, true);
         FILE_DEBUG(file_trace, DEFAULT_TRACE_OPTION_ID, TRACE_DEBUG_LEVEL, GET_CURRENT_PACKET,
             "get_file_context:trying to get context from cache\n");
     }
@@ -334,23 +316,6 @@ void FileFlows::remove_processed_file_context(uint64_t file_id)
         current_context_delete_pending = true;
 }
 
-// Remove file context explicitly
-void FileFlows::remove_processed_file_context(uint64_t file_id, uint64_t multi_file_processing_id)
-{
-    bool is_new_context = false;
-
-    if (!multi_file_processing_id)
-        multi_file_processing_id = file_id;
-
-    FileContext* context = get_file_context(file_id, false, is_new_context, multi_file_processing_id);
-    if (context)
-    {
-        set_current_file_context(context);
-        context->processing_complete = true;
-        remove_processed_file_context(multi_file_processing_id);
-    }
-}
-
 /* This function is used to process file that is sent in pieces
  *
  * Return:
@@ -359,7 +324,7 @@ void FileFlows::remove_processed_file_context(uint64_t file_id, uint64_t multi_f
  */
 bool FileFlows::file_process(Packet* p, uint64_t file_id, const uint8_t* file_data,
     int data_size, uint64_t offset, FileDirection dir, uint64_t multi_file_processing_id,
-    FilePosition position)
+    FilePosition position, const uint8_t* fname, uint32_t name_size)
 {
     int64_t file_depth = FileService::get_max_file_depth();
     bool continue_processing;
@@ -377,21 +342,24 @@ bool FileFlows::file_process(Packet* p, uint64_t file_id, const uint8_t* file_da
     }
 
     FileContext* context = get_file_context(file_id, true, is_new_context, multi_file_processing_id);
-
     if (!context)
     {
         FILE_DEBUG(file_trace , DEFAULT_TRACE_OPTION_ID, TRACE_CRITICAL_LEVEL, p,
             "file_process:context missing, returning \n");
         return false;
     }
+    context->set_file_name((const char*)fname, name_size, false);
 
     if (PacketTracer::is_daq_activated())
-        PacketTracer::pt_timer_start();
+        PacketTracer::restart_timer();
 
     if (!cacheable)
         context->set_not_cacheable();
 
-    set_current_file_context(context);
+    if(!context->processing_complete)
+        set_current_file_context(context);
+    else
+        current_file_id = file_id;
 
     // Only increase file count when there are no queued segments
     // This will ensure we only count a file once in case it has
@@ -455,7 +423,7 @@ bool FileFlows::file_process(Packet* p, uint64_t file_id, const uint8_t* file_da
  *    false: ignore this file
  */
 bool FileFlows::file_process(Packet* p, const uint8_t* file_data, int data_size,
-    FilePosition position, bool upload, size_t file_index)
+    FilePosition position, bool upload, size_t file_index, const uint8_t* fname, uint32_t name_size)
 {
     FileContext* context;
     FileDirection direction = upload ? FILE_UPLOAD : FILE_DOWNLOAD;
@@ -475,11 +443,12 @@ bool FileFlows::file_process(Packet* p, const uint8_t* file_data, int data_size,
     }
 
     if (PacketTracer::is_daq_activated())
-        PacketTracer::pt_timer_start();
+        PacketTracer::restart_timer();
 
     context = find_main_file_context(position, direction, file_index);
 
     set_current_file_context(context);
+    context->set_file_name((const char*)fname, name_size, false);
 
     context->set_signature_state(gen_signature);
     bool file_process_ret = context->process(p, file_data, data_size, position, file_policy);
@@ -496,10 +465,12 @@ bool FileFlows::file_process(Packet* p, const uint8_t* file_data, int data_size,
 bool FileFlows::set_file_name(const uint8_t* fname, uint32_t name_size, uint64_t file_id,
     uint64_t multi_file_processing_id, const uint8_t* url, uint32_t url_size)
 {
-    bool is_new_context = false;
     FileContext* context;
     if (file_id)
+    {
+        bool is_new_context = false;
         context = get_file_context(file_id, false, is_new_context, multi_file_processing_id);
+    }
     else
         context = get_current_file_context();
     if ( !context )
@@ -531,120 +502,3 @@ void FileFlows::add_pending_file(uint64_t file_id)
     current_file_id = pending_file_id = file_id;
 }
 
-FileInspect::FileInspect(FileIdModule* fm)
-{
-    fm->load_config(config);
-}
-
-FileInspect:: ~FileInspect()
-{
-    if (config)
-        delete config;
-}
-
-bool FileInspect::configure(SnortConfig*)
-{
-    if (!config)
-        return true;
-
-    FileCache* file_cache = FileService::get_file_cache();
-    if (file_cache)
-    {
-        file_cache->set_block_timeout(config->file_block_timeout);
-        file_cache->set_lookup_timeout(config->file_lookup_timeout);
-        file_cache->set_max_files(config->max_files_cached);
-    }
-
-    return true;
-}
-
-static void file_config_show(const FileConfig* fc)
-{
-    if ( ConfigLogger::log_flag("enable_type", FileService::is_file_type_id_enabled()) )
-        ConfigLogger::log_value("type_depth", fc->file_type_depth);
-
-    if ( ConfigLogger::log_flag("enable_signature", FileService::is_file_signature_enabled()) )
-        ConfigLogger::log_value("signature_depth", fc->file_signature_depth);
-
-    if ( ConfigLogger::log_flag("block_timeout_lookup", fc->block_timeout_lookup) )
-        ConfigLogger::log_value("block_timeout", fc->file_block_timeout);
-
-    if ( ConfigLogger::log_flag("enable_capture", FileService::is_file_capture_enabled()) )
-    {
-        ConfigLogger::log_value("capture_memcap", fc->capture_memcap);
-        ConfigLogger::log_value("capture_max_size", fc->capture_max_size);
-        ConfigLogger::log_value("capture_min_size", fc->capture_min_size);
-        ConfigLogger::log_value("capture_block_size", fc->capture_block_size);
-    }
-
-    ConfigLogger::log_value("lookup_timeout", fc->file_lookup_timeout);
-    ConfigLogger::log_value("max_files_cached", fc->max_files_cached);
-    ConfigLogger::log_value("max_files_per_flow", fc->max_files_per_flow);
-    ConfigLogger::log_value("show_data_depth", fc->show_data_depth);
-
-    ConfigLogger::log_flag("trace_type", fc->trace_type);
-    ConfigLogger::log_flag("trace_signature", fc->trace_signature);
-    ConfigLogger::log_flag("trace_stream", fc->trace_stream);
-}
-
-void FileInspect::show(const SnortConfig*) const
-{
-    if ( config )
-        file_config_show(config);
-}
-
-static Module* mod_ctor()
-{ return new FileIdModule; }
-
-static void mod_dtor(Module* m)
-{ delete m; }
-
-static void file_init()
-{
-    FileFlows::init();
-}
-
-static void file_term()
-{
-}
-
-static Inspector* file_ctor(Module* m)
-{
-    FileIdModule* mod = (FileIdModule*)m;
-    return new FileInspect(mod);
-}
-
-static void file_dtor(Inspector* p)
-{
-    delete p;
-}
-
-static const InspectApi file_inspect_api =
-{
-    {
-        PT_INSPECTOR,
-        sizeof(InspectApi),
-        INSAPI_VERSION,
-        0,
-        API_RESERVED,
-        API_OPTIONS,
-        FILE_ID_NAME,
-        FILE_ID_HELP,
-        mod_ctor,
-        mod_dtor
-    },
-    IT_FILE,
-    PROTO_BIT__NONE,
-    nullptr,
-    "file",
-    file_init,
-    file_term,
-    nullptr, // tinit
-    nullptr, // tterm
-    file_ctor,
-    file_dtor,
-    nullptr, // ssn
-    nullptr  // reset
-};
-
-const BaseApi* sin_file_flow = &file_inspect_api.base;

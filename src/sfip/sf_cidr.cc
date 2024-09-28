@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 1998-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -28,7 +28,12 @@ using namespace snort;
 
 SfIpRet SfCidr::set(const char* src)
 {
-    return addr.set(src, &bits);
+    // Can't pass &bits to set() since using an address of a packed
+    // member variable may result in an unaligned pointer value.
+    uint16_t outbits = 0;
+    SfIpRet ret = addr.set(src, &outbits);
+    bits = outbits;
+    return ret;
 }
 
 // Check if ip is contained within the network specified by this addr

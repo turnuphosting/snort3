@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -30,6 +30,8 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include "main/thread_config.h"
 
 #include <CppUTest/CommandLineTestRunner.h>
 #include <CppUTest/TestHarness.h>
@@ -66,12 +68,13 @@ ConnectorCommon* connector_common;
 Connector* connector;
 
 void show_stats(PegCount*, const PegInfo*, unsigned, const char*) { }
-void show_stats(PegCount*, const PegInfo*, const IndexVec&, const char*, FILE*) { }
+void show_stats(PegCount*, const PegInfo*, const std::vector<unsigned>&, const char*, FILE*) { }
 
 namespace snort
 {
 unsigned get_instance_id()
 { return s_instance; }
+unsigned ThreadConfig::get_instance_max() { return 1; }
 
 void ErrorMessage(const char*, ...) { }
 void LogMessage(const char*, ...) { }
@@ -170,7 +173,7 @@ static void set_normal_status()
 
 TcpConnectorModule::TcpConnectorModule() :
     Module("TCPC", "TCPC Help", nullptr)
-{ }
+{ config_set = nullptr; }
 
 TcpConnectorConfig::TcpConnectorConfigSet* TcpConnectorModule::get_and_clear_config()
 {

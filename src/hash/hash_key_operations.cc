@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2003-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -24,8 +24,11 @@
 #include "hash_key_operations.h"
 
 #include <cassert>
+#include <climits>
+#include <random>
 
 #include "main/snort_config.h"
+#include "main/thread.h"
 #include "utils/util.h"
 
 #include "primetable.h"
@@ -34,25 +37,27 @@ using namespace snort;
 
 HashKeyOperations::HashKeyOperations(int rows)
 {
-    static bool one = true;
-
-    if ( one ) /* one time init */
-    {
-        srand( (unsigned)time(nullptr) );
-        one = false;
-    }
-
-    if ( SnortConfig::static_hash() )
+    if (SnortConfig::static_hash()) 
     {
         seed = 3193;
         scale = 719;
         hardener = 133824503;
-    }
-    else
+    } 
+    else 
     {
-        seed = nearest_prime( (rand() % rows) + 3191);
-        scale = nearest_prime( (rand() % rows) + 709);
-        hardener = ((unsigned) rand() * rand()) + 133824503;
+        if ( rows <= 0 )
+            rows = 1;
+
+        std::uniform_int_distribution<> distr(1, rows);
+        static auto gen_seed = get_random_seed();
+        static thread_local std::mt19937 generator(gen_seed + get_instance_id());
+
+        seed = nearest_prime(distr(generator) + 3191);
+        scale = nearest_prime(distr(generator) + 709);
+
+        // For hardener, use a larger range distribution
+        std::uniform_int_distribution<unsigned long long> large_distr(0, ULLONG_MAX);
+        hardener = static_cast<unsigned long long>(large_distr(generator)) * large_distr(generator) + 133824503;
     }
 }
 

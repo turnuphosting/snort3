@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,12 +27,11 @@
 #include "mms_decode.h"
 
 #include "detection/detection_engine.h"
-#include "events/event_queue.h"
+#include "helpers/ber.h"
 #include "log/messages.h"
 #include "managers/plugin_manager.h"
 #include "protocols/packet.h"
 #include "trace/trace_api.h"
-#include "utils/util_ber.h"
 
 #include "mms.h"
 #include "mms_module.h"

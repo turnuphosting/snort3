@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -34,9 +34,9 @@ class SO_PUBLIC ReloadTracker
 public:
     ReloadTracker() = delete;
     static bool start(ControlConn* ctrlcon);
-    static void end(ControlConn* ctrlcon, bool prompt=false);
-    static void failed(ControlConn* ctrlcon, const char* reason);
-    static void update(ControlConn* ctrlcon, const char* status);
+    static void end(const ControlConn* ctrlcon, bool prompt=false);
+    static void failed(const ControlConn* ctrlcon, const char* reason);
+    static void update(const ControlConn* ctrlcon, const char* status);
 
 private:
     static bool reload_in_progress;

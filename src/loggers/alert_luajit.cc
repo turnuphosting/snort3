@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -22,11 +22,9 @@
 #endif
 
 #include "detection/ips_context.h"
-#include "detection/signature.h"
 #include "events/event.h"
 #include "framework/logger.h"
 #include "framework/module.h"
-#include "helpers/chunk.h"
 #include "log/messages.h"
 #include "lua/lua.h"
 #include "main/thread_config.h"
@@ -35,6 +33,7 @@
 #include "managers/script_manager.h"
 #include "profiler/profiler_defs.h"
 #include "protocols/packet.h"
+#include "utils/chunk.h"
 
 using namespace snort;
 
@@ -49,18 +48,13 @@ static THREAD_LOCAL SnortPacket lua_packet;
 SO_PUBLIC const SnortEvent* get_event()
 {
     assert(event);
-
-    lua_event.gid = event->sig_info->gid;
-    lua_event.sid = event->sig_info->sid;
-    lua_event.rev = event->sig_info->rev;
+    event->get_sig_ids(lua_event.gid, lua_event.sid, lua_event.rev);
 
     lua_event.event_id = event->get_event_id();
     lua_event.event_ref = event->get_event_reference();
 
-    if ( !event->sig_info->message.empty() )
-        lua_event.msg = event->sig_info->message.c_str();
-    else
-        lua_event.msg = "";
+    lua_event.msg = event->get_msg();
+    if ( !lua_event.msg ) lua_event.msg = "";
 
     return &lua_event;
 }
@@ -147,12 +141,8 @@ private:
 };
 
 LuaJitLogger::LuaJitLogger(const char* name, std::string& chunk, LuaLogModule* mod)
+    : config("args = { " + mod->args + "}")
 {
-    // create an args table with any rule options
-    config = "args = { ";
-    config += mod->args;
-    config += "}";
-
     unsigned max = ThreadConfig::get_instance_max();
 
     // FIXIT-L might make more sense to have one instance with one lua state in
@@ -168,6 +158,7 @@ LuaJitLogger::LuaJitLogger(const char* name, std::string& chunk, LuaLogModule* m
 
 void LuaJitLogger::alert(Packet* p, const char*, const Event& e)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(luaLogPerfStats);
 
     packet = p;

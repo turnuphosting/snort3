@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,7 +27,7 @@
 
 #include "framework/module.h"
 #include "helpers/markup.h"
-#include "helpers/process.h"
+#include "main/process.h"
 #include "managers/event_manager.h"
 #include "managers/inspector_manager.h"
 #include "managers/module_manager.h"
@@ -256,6 +256,8 @@ void config_markup(SnortConfig*, const char*)
     fprintf(stdout, "max31 = 2147483647\n");
     fprintf(stdout, "max32 = 4294967295\n");
     fprintf(stdout, "max53 = 9007199254740992\n");
+    fprintf(stdout, "max63 = 9223372036854775807\n");
+    fprintf(stdout, "max64 = 18446744073709551615\n");
     fprintf(stdout, "maxSZ = %lu\n", (sizeof(size_t) == 4) ? 4294967295LU : 9007199254740992LU);
     exit(0);
 }

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -133,10 +133,10 @@ int RexecServiceDetector::validate(AppIdDiscoveryArgs& args)
         data_add(args.asd, rd, &rexec_free_state);
         rd->state = REXEC_STATE_PORT;
     }
-    if (appidDebug->is_active())
-        LogMessage("AppIdDbg %s rexec state %d\n", appidDebug->get_debug_session(), rd->state);
+    // cppcheck-suppress nullPointerRedundantCheck
+    appid_log(args.pkt, TRACE_DEBUG_LEVEL, "rexec state %d\n", rd->state);
 
-    switch (rd->state)
+    switch (rd->state) // cppcheck-suppress nullPointerRedundantCheck
     {
     case REXEC_STATE_PORT:
         if (args.dir != APP_ID_FROM_INITIATOR)

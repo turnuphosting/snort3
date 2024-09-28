@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,37 +24,36 @@
 // This provides a wrapper to manage several file contexts
 
 #include "flow/flow.h"
+#include "helpers/event_gen.h"
 #include "main/snort_types.h"
-#include "utils/event_gen.h"
 
 #include "file_api.h"
-#include "file_module.h"
 
 #include <map>
 
+static const uint32_t FILE_ID_GID = 150;
+
+enum FileSid
+{
+    EVENT__NONE = -1,
+    EVENT_FILE_DROPPED_OVER_LIMIT = 1,
+    EVENT__MAX_VALUE
+};
+
 using FileEventGen = EventGen<EVENT__MAX_VALUE, EVENT__NONE, FILE_ID_GID>;
+
+class FileInspect;
 
 namespace snort
 {
 class FileContext;
 class Flow;
 
-class FileInspect : public Inspector
-{
-public:
-    FileInspect(FileIdModule*);
-    ~FileInspect() override;
-    void eval(Packet*) override { }
-    bool configure(SnortConfig*) override;
-    void show(const SnortConfig*) const override;
-    FileConfig* config;
-};
-
 class SO_PUBLIC FileFlows : public FlowData
 {
 public:
 
-    FileFlows(Flow* f, FileInspect* inspect) : FlowData(file_flow_data_id, inspect), flow(f) { }
+    FileFlows(Flow* f, FileInspect* fi) : FlowData(file_flow_data_id, (Inspector*)fi), flow(f) { }
     ~FileFlows() override;
     std::mutex file_flow_context_mutex;
     static void init()
@@ -78,8 +77,6 @@ public:
     // Remove a file from the flow object when processing is complete
     void remove_processed_file_context(uint64_t file_id);
 
-    void remove_processed_file_context(uint64_t file_id, uint64_t multi_file_processing_id);
-
     uint64_t get_new_file_instance();
 
     bool set_file_name(const uint8_t* fname, uint32_t name_size, uint64_t file_id=0,
@@ -94,12 +91,12 @@ public:
 
     // This is used when there is only one file per session
     bool file_process(Packet* p, const uint8_t* file_data, int data_size, FilePosition,
-        bool upload, size_t file_index = 0);
+        bool upload, size_t file_index = 0, const uint8_t* fname = nullptr, uint32_t name_size = 0);
 
     // This is used for each file context. Support multiple files per session
     bool file_process(Packet* p, uint64_t file_id, const uint8_t* file_data,
         int data_size, uint64_t offset, FileDirection, uint64_t multi_file_processing_id=0,
-        FilePosition=SNORT_FILE_POSITION_UNKNOWN);
+        FilePosition=SNORT_FILE_POSITION_UNKNOWN, const uint8_t* fname = nullptr, uint32_t name_size = 0);
 
     static unsigned file_flow_data_id;
 

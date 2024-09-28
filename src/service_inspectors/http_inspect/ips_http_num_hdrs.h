@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -101,7 +101,7 @@ class HttpNumIpsOption : public HttpRangeIpsOption
 public:
     using HttpRangeIpsOption::HttpRangeIpsOption;
 
-    static IpsOption* opt_ctor(snort::Module* m, OptTreeNode*)
+    static IpsOption* opt_ctor(snort::Module* m, IpsInfo&)
     { return new HttpNumIpsOption((const HttpRangeRuleOptModule*)m); }
 
     int32_t get_num(const HttpInspect* hi, snort::Packet* p) override

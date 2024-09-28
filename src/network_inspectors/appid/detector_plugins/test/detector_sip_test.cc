@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -30,8 +30,10 @@
 #include "framework/data_bus.h"
 #include "framework/module.cc"
 #include "framework/mpse_batch.h"
+#include "main/thread_config.h"
 #include "network_inspectors/appid/appid_utils/sf_mlmp.cc"
 #include "protocols/protocol_ids.h"
+#include "service_inspectors/sip/sip_parser.h"
 #include "utils/util_cstring.cc"
 
 #include "appid_inspector.h"
@@ -41,8 +43,8 @@
 #include <CppUTest/TestHarness.h>
 #include <CppUTestExt/MockSupport.h>
 
-static AppIdConfig config;
-static AppIdContext context(config);
+static AppIdConfig s_config;
+static AppIdContext context(s_config);
 OdpContext* AppIdContext::odp_ctxt = nullptr;
 static AppIdModule appid_mod;
 static AppIdInspector appid_inspector(appid_mod);
@@ -65,24 +67,27 @@ Flow::~Flow() = default;
 AppIdSession* AppIdApi::get_appid_session(snort::Flow const&) { return nullptr; }
 
 MpseGroup::~MpseGroup() = default;
-SearchTool::SearchTool(bool)
+SearchTool::SearchTool(bool, const char*)
 {
     mpsegrp = &mpse_group;
 }
 void SearchTool::reload() { }  // LCOV_EXCL_LINE
-int SearchTool::find_all(const char*, unsigned, MpseMatch, bool, void*)
+int SearchTool::find_all(const char*, unsigned, MpseMatch, bool, void*, const SnortConfig*)
 {
     // Seg-fault will be observed if this is called without initializing pattern matchers
     assert(mpsegrp);
     return 0;
 }
+unsigned get_instance_id()
+{ return 0; }
+unsigned ThreadConfig::get_instance_max() { return 1; }
 }
 
-AppIdInspector::AppIdInspector(AppIdModule&) { }
+AppIdInspector::AppIdInspector(AppIdModule&) : config(&s_config), ctxt(s_config)
+{ }
 
 bool AppIdInspector::configure(snort::SnortConfig*)
 {
-    ctxt = &context;
     return true;
 }
 
@@ -92,14 +97,13 @@ void AppIdInspector::show(const SnortConfig*) const { }
 void AppIdInspector::tinit() { }
 void AppIdInspector::tterm() { }
 void AppIdInspector::tear_down(SnortConfig*) { }
-AppIdContext& AppIdInspector::get_ctxt() const { return *ctxt; }
 // LCOV_EXCL_STOP
 
 AppIdInspector::~AppIdInspector() = default;
 
 void AppIdContext::create_odp_ctxt()
 {
-    odp_ctxt = new OdpContext(config, nullptr);
+    odp_ctxt = new OdpContext(s_config, nullptr);
 }
 
 void AppIdContext::pterm() { delete odp_ctxt; }
@@ -126,7 +130,11 @@ void SipPatternMatchers::finalize_patterns(OdpContext&)
 AppIdSession* AppIdSession::allocate_session(snort::Packet const*, IpProtocol,
     AppidSessionDirection, AppIdInspector&, OdpContext& odp_ctxt)
 {
-    session = new AppIdSession(IpProtocol::IP, &sfip, 0, appid_inspector, odp_ctxt);
+    session = new AppIdSession(IpProtocol::IP, &sfip, 0, appid_inspector, odp_ctxt, 0
+#ifndef DISABLE_TENANT_ID
+            ,0 // tenant_id
+#endif
+    );
     return session;
 }
 
@@ -165,7 +173,6 @@ ClientDetector::ClientDetector() { }
 // LCOV_EXCL_START
 void ClientDetector::register_appid(int, unsigned int, OdpContext&) { }
 int AppIdDetector::initialize(AppIdInspector&) { return 1; }
-void AppIdDetector::reload() { }
 int AppIdDetector::data_add(AppIdSession&, void*, void (*)(void*)) { return 1; }
 void AppIdDetector::add_user(AppIdSession&, char const*, int, bool, AppidChangeBits&) { }
 void AppIdDetector::add_payload(AppIdSession&, int) { }
@@ -173,14 +180,15 @@ void AppIdDetector::add_app(snort::Packet const&, AppIdSession&, AppidSessionDir
     int, char const*, AppidChangeBits&) { }
 // LCOV_EXCL_STOP
 
-SipEvent::SipEvent(snort::Packet const* p, SIPMsg const*, SIP_DialogData const*) { this->p = p; }
+SipEvent::SipEvent(const snort::Packet* p, const SIPMsg& msg, const SIP_DialogData*) : p(p), msg(msg)
+{ }
 SipEvent::~SipEvent() = default;
 bool SipEvent::is_invite() const { return false; }
 bool SipEvent::is_dialog_established() const { return false; }
 int SipPatternMatchers::get_client_from_ua(char const*, unsigned int, int&, char*&) { return 0; }  // LCOV_EXCL_LINE
 void SipEventHandler::service_handler(SipEvent&, AppIdSession&, AppidChangeBits&) { }
 
-void* AppIdDetector::data_get(AppIdSession&)
+void* AppIdDetector::data_get(const AppIdSession&)
 {
     sip_data = new ClientSIPData();
     sip_data->from = "<sip:1001@51.1.1.130:11810>";
@@ -189,8 +197,11 @@ void* AppIdDetector::data_get(AppIdSession&)
 
 TEST_GROUP(detector_sip_tests)
 {
+    SIPMsg sip_msg;
+
     void setup() override
     {
+        sip_msg = {};
         appid_inspector.configure(nullptr);
     }
     void teardown() override
@@ -207,7 +218,7 @@ TEST(detector_sip_tests, sip_event_handler)
     OdpContext* odpctxt = pkt_thread_odp_ctxt = &context.get_odp_ctxt();
 
     odpctxt->initialize(appid_inspector);
-    SipEvent event(&pkt, nullptr, nullptr);
+    SipEvent event(&pkt, sip_msg, nullptr);
     SipEventHandler event_handler(appid_inspector);
     Flow* flow = new Flow;
     event_handler.handle(event, flow);

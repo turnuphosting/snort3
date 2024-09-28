@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -397,7 +397,7 @@ inline uint32_t NbssLen(const NbssHdr* nb)
 }
 
 // NbssLen2 should be used by SMB2/SMB3
-inline uint32_t NbssLen2(const NbssHdr *nb)
+inline uint32_t NbssLen2(const NbssHdr* nb)
 {
     // The Length is 3 bytes. [MS-SMB2] 2.1 Transport
     // The left operand of '<<' is a garbage value

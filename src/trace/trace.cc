@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -90,14 +90,16 @@ void Trace::clear()
 
 #include "catch/catch.hpp"
 
-Module::Module(const char* s, const char* h) : name(s), help(h)
+Module::Module(const char* s, const char* h) : name(s), help(h), params(nullptr), list(false)
 {}
-Module::Module(const char*, const char*, const Parameter*, bool)
+Module::Module(const char* s, const char* h, const Parameter* p, bool l) : name(s), help(h), params(p), list(l)
 {}
 PegCount Module::get_global_count(char const*) const { return 0; }
 void Module::show_interval_stats(std::vector<unsigned int, std::allocator<unsigned int> >&, FILE*) {}
 void Module::show_stats(){}
+void Module::init_stats(bool){}
 void Module::sum_stats(bool){}
+void Module::main_accumulate_stats(){}
 void Module::reset_stats() {}
 
 class TraceTestModule : public Module
@@ -122,7 +124,7 @@ TEST_CASE("default option", "[Trace]")
 
     bool result = trace.set(DEFAULT_TRACE_OPTION_NAME, DEFAULT_TRACE_LOG_LEVEL);
     CHECK(result == true);
-    CHECK(trace.enabled(DEFAULT_TRACE_OPTION_ID));
+    CHECK(true == trace.enabled(DEFAULT_TRACE_OPTION_ID));
 }
 
 TEST_CASE("multiple options", "[Trace]")
@@ -149,25 +151,25 @@ TEST_CASE("multiple options", "[Trace]")
 
     bool result = trace.set("option1", DEFAULT_TRACE_LOG_LEVEL);
     CHECK(result == true);
-    CHECK(trace.enabled(TEST_TRACE_OPTION1));
+    CHECK(true == trace.enabled(TEST_TRACE_OPTION1));
 
     result = trace.set("option2", DEFAULT_TRACE_LOG_LEVEL);
     CHECK(result == true);
-    CHECK(trace.enabled(TEST_TRACE_OPTION1));
-    CHECK(trace.enabled(TEST_TRACE_OPTION2));
+    CHECK(true == trace.enabled(TEST_TRACE_OPTION1));
+    CHECK(true == trace.enabled(TEST_TRACE_OPTION2));
 
     result = trace.set("option3", DEFAULT_TRACE_LOG_LEVEL);
     CHECK(result == true);
-    CHECK(trace.enabled(TEST_TRACE_OPTION1));
-    CHECK(trace.enabled(TEST_TRACE_OPTION2));
-    CHECK(trace.enabled(TEST_TRACE_OPTION3));
+    CHECK(true == trace.enabled(TEST_TRACE_OPTION1));
+    CHECK(true == trace.enabled(TEST_TRACE_OPTION2));
+    CHECK(true == trace.enabled(TEST_TRACE_OPTION3));
 
     result = trace.set("option4", DEFAULT_TRACE_LOG_LEVEL);
     CHECK(result == true);
-    CHECK(trace.enabled(TEST_TRACE_OPTION1));
-    CHECK(trace.enabled(TEST_TRACE_OPTION2));
-    CHECK(trace.enabled(TEST_TRACE_OPTION3));
-    CHECK(trace.enabled(TEST_TRACE_OPTION4));
+    CHECK(true == trace.enabled(TEST_TRACE_OPTION1));
+    CHECK(true == trace.enabled(TEST_TRACE_OPTION2));
+    CHECK(true == trace.enabled(TEST_TRACE_OPTION3));
+    CHECK(true == trace.enabled(TEST_TRACE_OPTION4));
 }
 
 TEST_CASE("invalid option", "[Trace]")

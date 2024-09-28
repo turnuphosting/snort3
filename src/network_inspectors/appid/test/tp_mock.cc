@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -48,19 +48,24 @@ public:
         : ThirdPartyAppIdContext(ver, mname, config)
     {
         cerr << WhereMacro << endl;
+        // For tp_appid profiler coverage
+        data = (int*)cfg.tp_appid_profiler_functions.appid_malloc(sizeof(int));
     }
 
     ~ThirdPartyAppIdContextImpl() override
     {
         cerr << WhereMacro << endl;
+        // For tp_appid profiler coverage
+        cfg.tp_appid_profiler_functions.appid_free(data);
     }
 
-    int tinit() override { return 0; }
-    bool tfini(bool) override { return false; }
+    int tinit() override {return 0;}
+    bool tfini(bool) override {return false;}
     const string& get_user_config() const override { return user_config; }
 
 private:
     const string user_config = "";
+    int* data;
 };
 
 class ThirdPartyAppIdSessionImpl : public ThirdPartyAppIdSession

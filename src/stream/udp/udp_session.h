@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -23,7 +23,6 @@
 #include <sys/time.h>
 
 #include "flow/session.h"
-#include "main/snort_types.h"
 
 class SO_PUBLIC UdpSession : public Session
 {
@@ -37,11 +36,8 @@ public:
     void clear() override;
 
 public:
-    struct timeval ssn_time;
+    struct timeval ssn_time = {};
 };
-
-void udp_stats();
-void udp_reset();
 
 #endif
 

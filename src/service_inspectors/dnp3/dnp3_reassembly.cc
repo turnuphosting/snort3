@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2011-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -27,7 +27,6 @@
 #include "dnp3_reassembly.h"
 
 #include "detection/detection_engine.h"
-#include "events/event_queue.h"
 #include "protocols/packet.h"
 
 #include "dnp3_map.h"

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -23,7 +23,6 @@
 #endif
 
 #include "detection/tag.h"
-#include "detection/treenodes.h"
 #include "framework/decode_data.h"
 #include "framework/ips_option.h"
 #include "framework/module.h"
@@ -154,10 +153,10 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* tag_ctor(Module* p, OptTreeNode* otn)
+static IpsOption* tag_ctor(Module* p, IpsInfo& info)
 {
     TagModule* m = (TagModule*)p;
-    otn->tag = m->get_data();
+    IpsOption::set_tag(info, m->get_data());
     return nullptr;
 }
 

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,13 +24,15 @@
 // decoding a packet and detection.  There are several types that operate
 // in different ways.  These correspond to Snort 2X preprocessors.
 
+// the INSAPI_VERSION will change if anything in this file changes.
+// see also framework/base_api.h.
+
 #include <atomic>
 #include <cstring>
 #include <memory>
 #include <vector>
 
 #include "framework/base_api.h"
-#include "main/thread.h"
 #include "target_based/snort_protocols.h"
 
 class Session;
@@ -41,7 +43,7 @@ struct SnortConfig;
 struct Packet;
 
 // this is the current version of the api
-#define INSAPI_VERSION ((BASE_API_VERSION << 16) | 0)
+#define INSAPI_VERSION ((BASE_API_VERSION << 16) | 1)
 
 struct InspectionBuffer
 {
@@ -109,7 +111,7 @@ public:
     // clear is a bookend to eval() for the active service inspector
     // clear is called when Snort is done with the previously eval'd
     // packet to release any thread-local or flow-based data
-    virtual void eval(Packet*) = 0;
+    virtual void eval(Packet*) { }
     virtual void clear(Packet*) { }
 
     // framework support
@@ -185,6 +187,9 @@ public:
     virtual bool can_start_tls() const
     { return false; }
 
+    virtual bool supports_no_ips() const
+    { return false; }
+
     void allocate_thread_storage();
     void set_thread_specific_data(void*);
     void* get_thread_specific_data() const;
@@ -196,8 +201,12 @@ public:
     virtual const uint8_t* adjust_log_packet(Packet*, uint16_t&)
     { return nullptr; }
 
-public:
-    static THREAD_LOCAL unsigned slot;
+    static unsigned get_slot()
+#ifndef _WIN64
+    { return slot; }
+#else
+    { return get_instance_id(); }
+#endif
 
 protected:
     // main thread functions
@@ -212,6 +221,12 @@ private:
     const char* alias_name = nullptr;
     uint64_t network_policy_user_id = 0;
     bool network_policy_user_id_set = false;
+
+#ifndef _WIN64
+private:
+    friend class InspectorManager;
+    static THREAD_LOCAL unsigned slot;
+#endif
 };
 
 // at present there is no sequencing among like types except that appid
@@ -229,6 +244,7 @@ enum InspectorType
     IT_CONTROL,  // process all packets before detection (eg appid)
     IT_PROBE,    // process all packets after detection (eg perf_monitor, port_scan)
     IT_FILE,     // file identification inspector
+    IT_PROBE_FIRST, // process all packets before detection (eg packet_capture)
     IT_MAX
 };
 

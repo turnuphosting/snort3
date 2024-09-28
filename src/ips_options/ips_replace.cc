@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 // Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 //
@@ -23,7 +23,6 @@
 #endif
 
 #include "detection/detection_engine.h"
-#include "detection/treenodes.h"
 #include "framework/cursor.h"
 #include "framework/ips_option.h"
 #include "framework/module.h"
@@ -153,6 +152,7 @@ bool ReplaceOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus ReplaceOption::eval(Cursor& c, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(replacePerfStats);
 
     if ( p->is_cooked() )
@@ -172,6 +172,7 @@ IpsOption::EvalStatus ReplaceOption::eval(Cursor& c, Packet* p)
 
 void ReplaceOption::action(Packet*)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(replacePerfStats);
 
     if ( pending() )
@@ -238,7 +239,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* replace_ctor(Module* p, OptTreeNode*)
+static IpsOption* replace_ctor(Module* p, IpsInfo&)
 {
     ReplModule* m = (ReplModule*)p;
     return new ReplaceOption(m->data);

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -25,17 +25,6 @@
 #include <string>
 
 #include "main/snort_types.h"
-
-#define THREAD_LOCAL_TBD
-//#define THREAD_LOCAL // for single-threaded debugging
-
-// `__thread` is a gnu extension that at present is slightly faster than
-// `thread_local` (possibly due to the lack of dynamic initialization)
-#ifdef USE_THREAD_LOCAL
-#    define THREAD_LOCAL thread_local
-#else
-#    define THREAD_LOCAL __thread
-#endif
 
 enum SThreadType
 {

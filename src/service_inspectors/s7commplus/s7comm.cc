@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,7 +25,6 @@
 
 #include "s7comm.h"
 
-#include "events/event_queue.h"
 #include "detection/detection_engine.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
@@ -36,7 +35,20 @@
 
 using namespace snort;
 
+#define S7COMMPLUS_CONTENT_BUFID 1
+
 THREAD_LOCAL S7commplusStats s7commplus_stats;
+
+bool get_buf_s7commplus_content(Packet* p, InspectionBuffer& b)
+{
+    if ( !p->is_full_pdu() or p->dsize < S7COMMPLUS_MIN_HDR_LEN )
+        return false;
+
+    b.data = p->data + S7COMMPLUS_MIN_HDR_LEN;
+    b.len = p->dsize - S7COMMPLUS_MIN_HDR_LEN;
+    b.is_accumulated = false;
+    return true;
+}
 
 //-------------------------------------------------------------------------
 // flow stuff
@@ -77,11 +89,14 @@ public:
 
     StreamSplitter* get_splitter(bool c2s) override
     { return new S7commplusSplitter(c2s); }
+
+    bool get_buf(unsigned id, snort::Packet* p, snort::InspectionBuffer& b) override
+    { return ( id == S7COMMPLUS_CONTENT_BUFID ) ? get_buf_s7commplus_content(p, b) : false; }
 };
 
 void S7commplus::eval(Packet* p)
 {
-    Profile profile(s7commplus_prof);
+    Profile profile(s7commplus_prof);   // cppcheck-suppress unreadVariable
 
     // preconditions - what we registered for
     assert(p->has_tcp_data());
@@ -114,7 +129,7 @@ void S7commplus::eval(Packet* p)
     // evaluating on the first PDU. Setting this flag stops the caching.
     p->packet_flags |= PKT_ALLOW_MULTIPLE_DETECT;
 
-    if ( !S7commplusDecode(p, mfd))
+    if ( !S7commplusDecode(p, mfd) )
         mfd->reset();
 }
 

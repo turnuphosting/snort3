@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -142,6 +142,7 @@ const StrCode HttpMsgHeadShared::header_list[] =
     { HEAD_HTTP2_SETTINGS,             "http2-settings" },
     { HEAD_RESTRICT_ACCESS_TO_TENANTS, "restrict-access-to-tenants" },
     { HEAD_RESTRICT_ACCESS_CONTEXT,    "restrict-access-context" },
+    { HEAD_ORIGIN,                     "origin" },
     { 0,                               nullptr }
 };
 
@@ -347,6 +348,7 @@ const RuleMap HttpModule::http_events[] =
     { EVENT_UNEXPECTED_H2_PREFACE,      "HTTP/2 preface received instead of an HTTP/1 method" },
     { EVENT_DISALLOWED_METHOD,          "HTTP request method is not on allowed methods list or is on "
                                         "disallowed methods list" },
+    { EVENT_GZIP_RESERVED_FLAGS,        "HTTP gzip body with reserved flag set" },
     { 0, nullptr }
 };
 
@@ -387,6 +389,9 @@ const PegInfo HttpModule::peg_names[PEG_COUNT_MAX+1] =
     { CountType::SUM, "js_external_scripts", "total number of external JavaScripts processed" },
     { CountType::SUM, "js_pdf_scripts", "total number of PDF files processed" },
     { CountType::SUM, "skip_mime_attach", "total number of HTTP requests with too many MIME attachments to inspect" },
+    { CountType::SUM, "compressed_gzip", "total number of HTTP bodies compressed with GZIP" },
+    { CountType::SUM, "compressed_not_supported", "total number of HTTP bodies compressed with known but not supported methods" },
+    { CountType::SUM, "compressed_unknown", "total number of HTTP bodies compressed with unknown methods" },
     { CountType::END, nullptr, nullptr }
 };
 
@@ -688,3 +693,22 @@ const bool HttpEnums::is_print_char[256] =
     false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false
 };
 
+const std::map <std::string, VersionId> HttpEnums::VersionStrToEnum =
+{
+    { "malformed", VERS__PROBLEMATIC },
+    { "other", VERS__OTHER },
+    { "1.0", VERS_1_0 },
+    { "1.1", VERS_1_1 },
+    { "2.0", VERS_2_0 },
+    { "3.0", VERS_3_0 },
+    { "0.9", VERS_0_9 }
+};
+
+const std::map <VersionId, const char*> HttpEnums::VersionEnumToStr =
+{
+    { VERS_1_0, "1.0" },
+    { VERS_1_1, "1.1" },
+    { VERS_2_0, "2.0" },
+    { VERS_3_0, "3.0" },
+    { VERS_0_9, "0.9" }
+};

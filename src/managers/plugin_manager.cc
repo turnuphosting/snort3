@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,11 +28,7 @@
 #include <sstream>
 #include <sys/stat.h>
 
-#include "framework/codec.h"
-#include "framework/connector.h"
-#include "framework/logger.h"
-#include "framework/mpse.h"
-#include "framework/policy_selector.h"
+#include "framework/plugins.h"
 #include "helpers/directory.h"
 #include "helpers/markup.h"
 #include "log/messages.h"
@@ -155,11 +151,9 @@ static void set_key(string& key, Symbol* sym, const char* name)
 static bool compatible_builds(const char* plug_opts)
 {
     const char* snort_opts = API_OPTIONS;
+    assert(snort_opts);
 
-    if ( !snort_opts and !plug_opts )
-        return true;
-
-    if ( !snort_opts or !plug_opts )
+    if ( !plug_opts )
         return false;
 
     if ( strcmp(snort_opts, plug_opts) )
@@ -180,7 +174,10 @@ static bool register_plugin(
     const BaseApi* api, SoHandlePtr handle, const char* file, SnortConfig* sc)
 {
     if ( api->type >= PT_MAX )
+    {
+        ParseWarning(WARN_PLUGINS, "%s: invalid plugin type: %u", file, (unsigned)api->type);
         return false;
+    }
 
     Symbol* sym = symbols + api->type;
 
@@ -231,14 +228,12 @@ static void load_list(
     SoHandlePtr so_file;
     if ( handle and sc )
     {   // for reload, if the so lib file was previously opened, reuse the shared_ptr
-        for( auto const& i : s_plugins.plug_map )
-        {
-            if ( i.second.api == (*api) and i.second.handle.get()->handle == handle )
-            {
-                so_file = i.second.handle;
-                break;
-            }
-        }
+        auto it = std::find_if(s_plugins.plug_map.cbegin(), s_plugins.plug_map.cend(),
+            [api, handle](const std::pair<const std::string, Plugin>& i)
+            { return i.second.api == *api and i.second.handle.get()->handle == handle; });
+
+        if (it != s_plugins.plug_map.cend())
+            so_file = (*it).second.handle;
     }
     if ( !so_file.get() )
         so_file = std::make_shared<SoHandle>(handle);
@@ -252,11 +247,7 @@ static void load_list(
 
 static bool load_lib(const char* file, SnortConfig* sc)
 {
-    struct stat fs;
     void* handle;
-
-    if ( stat(file, &fs) || !(fs.st_mode & S_IFREG) )
-        return false;
 
     if ( !(handle = dlopen(file, RTLD_NOW|RTLD_LOCAL)) )
     {
@@ -351,8 +342,10 @@ static void load_plugins(const std::string& paths, SnortConfig* sc = nullptr)
     for ( auto& path : path_list )
     {
         if ( stat(path.c_str(), &sb) )
+        {
+            ParseWarning(WARN_PLUGINS, "%s: can't get file status", path.c_str());
             continue;
-
+        }
         if ( sb.st_mode & S_IFDIR )
         {
             Directory d(path.c_str(), lib_pattern);
@@ -360,13 +353,15 @@ static void load_plugins(const std::string& paths, SnortConfig* sc = nullptr)
             while ( const char* f = d.next() )
                 load_lib(f, sc);
         }
-        else
+        else if ( sb.st_mode & S_IFREG )
         {
             if ( path.find("/") == string::npos )
                 path = "./" + path;
 
             load_lib(path.c_str(), sc);
         }
+        else
+            ParseWarning(WARN_PLUGINS, "%s: not a directory or regular file", path.c_str());
     }
 }
 
@@ -448,7 +443,7 @@ void PluginManager::list_plugins()
 {
     for ( auto it = s_plugins.plug_map.begin(); it != s_plugins.plug_map.end(); ++it )
     {
-        Plugin& p = it->second;
+        const Plugin& p = it->second;
         cout << Markup::item();
         cout << p.key;
         cout << " v" << p.api->version;
@@ -461,7 +456,7 @@ void PluginManager::show_plugins()
 {
     for ( auto it = s_plugins.plug_map.begin(); it != s_plugins.plug_map.end(); ++it )
     {
-        Plugin& p = it->second;
+        const Plugin& p = it->second;
 
         cout << Markup::item();
         cout << Markup::emphasis(p.key);
@@ -518,7 +513,7 @@ void PluginManager::instantiate(
     switch ( api->type )
     {
     case PT_CODEC:
-        CodecManager::instantiate((const CodecApi*)api, mod, sc);
+        CodecManager::instantiate((const CodecApi*)api, mod);
         break;
 
     case PT_INSPECTOR:

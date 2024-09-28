@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -19,6 +19,10 @@
 
 #ifndef PROTOCOLS_PACKET_H
 #define PROTOCOLS_PACKET_H
+
+// Packet is an abstraction describing a unit of work.  it may define a
+// wire packet or it may define a cooked packet.  the latter contains
+// payload data only, no headers.
 
 #include <daq_common.h>
 
@@ -42,7 +46,7 @@ class SFDAQInstance;
 #define PKT_REBUILT_FRAG          0x00000001  // is a rebuilt fragment
 #define PKT_REBUILT_STREAM        0x00000002  // is a rebuilt stream
 #define PKT_STREAM_UNEST_UNI      0x00000004  // is from an unestablished stream and
-                                         // we've only seen traffic in one direction
+                                              // we've only seen traffic in one direction
 #define PKT_STREAM_EST            0x00000008  // is from an established stream
 
 #define PKT_STREAM_INSERT         0x00000010  // this packet has been queued for stream reassembly
@@ -108,9 +112,6 @@ constexpr uint16_t NUM_IP_PROTOS = 256;
 constexpr uint8_t TCP_OPTLENMAX = 40; /* (((2^4) - 1) * 4  - TCP_HEADER_LEN) */
 constexpr uint8_t DEFAULT_LAYERMAX = 40;
 
-// Packet is an abstraction describing a unit of work.  it may define a
-// wire packet or it may define a cooked packet.  the latter contains
-// payload data only, no headers.
 struct SO_PUBLIC Packet
 {
     Packet(bool packet_data = true);
@@ -120,8 +121,8 @@ struct SO_PUBLIC Packet
     Packet& operator=(const Packet&) = delete;
 
     Flow* flow;   /* for session tracking */
-    Endianness* endianness;
-    Obfuscator* obfuscator;
+    Endianness* endianness = nullptr;
+    Obfuscator* obfuscator = nullptr;
 
     uint32_t packet_flags;      /* special flags for the packet */
     uint32_t xtradata_mask;
@@ -137,32 +138,34 @@ struct SO_PUBLIC Packet
     PduSection sect;
 
     // nothing after this point is zeroed by reset() ...
-    IpsContext* context;
-    Active* active;
+    IpsContext* context = nullptr;
+    Active* active = nullptr;
     Active* active_inst;
-    ActiveAction** action;
-    ActiveAction* action_inst;
+    ActiveAction** action = nullptr;
+    ActiveAction* action_inst = nullptr;
 
-    DAQ_Msg_h daq_msg;              // DAQ message this packet came from
-    SFDAQInstance* daq_instance;    // DAQ instance the message came from
+    DAQ_Msg_h daq_msg = nullptr;            // DAQ message this packet came from
+    SFDAQInstance* daq_instance = nullptr;  // DAQ instance the message came from
 
     // Everything beyond this point is set by PacketManager::decode()
     const DAQ_PktHdr_t* pkth;   // packet meta data
     const uint8_t* pkt;         // raw packet data
-    uint32_t pktlen;            // raw packet data length
+    uint32_t pktlen = 0;        // raw packet data length
 
     // These are both set before PacketManager::decode() returns
-    const uint8_t* data;        /* packet payload pointer */
-    uint16_t dsize;             /* packet payload size */
+    const uint8_t* data = nullptr;  /* packet payload pointer */
+    uint16_t dsize = 0;             /* packet payload size */
 
     DecodeData ptrs; // convenience pointers used throughout Snort++
     Layer* layers;    /* decoded encapsulations */
 
-    PseudoPacketType pseudo_type;    // valid only when PKT_PSEUDO is set
+    PseudoPacketType pseudo_type = PSEUDO_PKT_MAX;  // valid only when PKT_PSEUDO is set
 
     uint64_t user_inspection_policy_id;
     uint64_t user_ips_policy_id;
     uint64_t user_network_policy_id;
+
+    uint64_t inspection_started_timestamp;
 
     uint8_t vlan_idx;
     uint8_t ts_packet_flags; // FIXIT-M packet flags should always be thread safe
@@ -229,7 +232,7 @@ struct SO_PUBLIC Packet
     { return (proto_bits & PROTO_BIT__UDP) and data and dsize; }
 
     bool has_udp_quic_data() const
-    { return (pseudo_type == PSEUDO_PKT_UDP_QUIC) and data and dsize; }
+    { return (is_cooked() and pseudo_type == PSEUDO_PKT_UDP_QUIC) and data and dsize; }
 
     /* Get general, non-boolean information */
     PktType type() const
@@ -373,13 +376,6 @@ struct SO_PUBLIC Packet
 private:
     bool allocated;
 };
-
-/* Macros to deal with sequence numbers - p810 TCP Illustrated vol 2 */
-#define SEQ_LT(a,b)  ((int)((a) - (b)) <  0)
-#define SEQ_LEQ(a,b) ((int)((a) - (b)) <= 0)
-#define SEQ_GT(a,b)  ((int)((a) - (b)) >  0)
-#define SEQ_GEQ(a,b) ((int)((a) - (b)) >= 0)
-#define SEQ_EQ(a,b)  ((int)((a) - (b)) == 0)
 
 #define BIT(i) (0x1 << ((i)-1))
 

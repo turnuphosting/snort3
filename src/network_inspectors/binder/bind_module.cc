@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -39,6 +39,8 @@ using namespace std;
 #define FILE_KEY ".file"
 #define INSPECTION_KEY ".inspection"
 #define IPS_KEY ".ips"
+
+unsigned int BinderModule::module_id = 0;
 
 THREAD_LOCAL BindStats bstats;
 
@@ -122,17 +124,7 @@ static const Parameter binder_when_params[] =
       "use the given configuration on one or any end of a session" },
 
     { "service", Parameter::PT_STRING, nullptr, nullptr,
-      "override default configuration" },
-
-    // FIXIT-D deprecated zone parameters to be removed
-    { "zones", Parameter::PT_STRING, nullptr, nullptr,
-      "deprecated alias for groups" },
-
-    { "src_zone", Parameter::PT_STRING, nullptr, nullptr,
-      "deprecated alias for src_groups" },
-
-    { "dst_zone", Parameter::PT_STRING, nullptr, nullptr,
-      "deprecated alias for dst_groups" },
+      "space separated list of services" },
 
     { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
 };
@@ -242,6 +234,9 @@ bool BinderModule::begin(const char* fqn, int idx, SnortConfig*)
         policy_type.clear();
     }
 
+    if (!module_id)
+        module_id = FlowData::create_flow_data_id();
+
     return true;
 }
 
@@ -250,7 +245,7 @@ bool BinderModule::set(const char* fqn, Value& v, SnortConfig*)
     // both
     if ( !strcmp(fqn, "binder.when.service") )
     {
-        binding.when.svc = v.get_string();
+        binding.when.parse_service(v.get_string());
         binding.when.add_criteria(BindWhen::Criteria::BWC_SVC);
     }
     else if ( !strcmp(fqn, "binder.use.service") )
@@ -325,19 +320,19 @@ bool BinderModule::set(const char* fqn, Value& v, SnortConfig*)
             return false;
         binding.when.add_criteria(BindWhen::Criteria::BWC_SPLIT_INTFS);
     }
-    else if ( v.is("groups") || v.is("zones") )
+    else if ( v.is("groups") )
     {
         if (!parse_int_set<int16_t>(v, binding.when.src_groups))
             return false;
         binding.when.add_criteria(BindWhen::Criteria::BWC_GROUPS);
     }
-    else if ( v.is("src_groups") || v.is("src_zone") )
+    else if ( v.is("src_groups") )
     {
         if (!parse_int_set<int16_t>(v, binding.when.src_groups))
             return false;
         binding.when.add_criteria(BindWhen::Criteria::BWC_SPLIT_GROUPS);
     }
-    else if ( v.is("dst_groups") || v.is("dst_zone") )
+    else if ( v.is("dst_groups") )
     {
         if (!parse_int_set<int16_t>(v, binding.when.dst_groups))
             return false;
@@ -493,7 +488,7 @@ bool BinderModule::end(const char* fqn, int idx, SnortConfig* sc)
 void BinderModule::add(const char* svc, const char* type)
 {
     binding.clear();
-    binding.when.svc = svc;
+    binding.when.parse_service(svc);
     binding.when.add_criteria(BindWhen::Criteria::BWC_SVC);
     binding.use.type = type;
     binding.use.name = type;

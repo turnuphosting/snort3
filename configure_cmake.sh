@@ -68,6 +68,7 @@ Optional Features:
     --enable-jemalloc       enable using jemalloc for dynamic memory management
     --enable-jemalloc-static
                             same as --enable-jemalloc but linked statically
+    --disable-tenant-id     disable tenant ID in the FlowKey
     --enable-luajit-static  enable luajit linked statically
     --enable-appid-third-party
                             enable third party appid
@@ -120,6 +121,11 @@ Optional Packages:
                             libuuid include directory
     --with-uuid-libraries=DIR
                             libuuid library directory
+    --with-libml-includes=DIR
+                            libml include directory
+    --with-libml-libraries=DIR
+                            libml library directory
+    --without-libml         build Snort ML with mock of LibML
 
 Some influential variable definitions:
     SIGNAL_SNORT_RELOAD=<int>
@@ -343,6 +349,9 @@ while [ $# -ne 0 ]; do
         --disable-jemalloc-static)
             append_cache_entry ENABLE_JEMALLOC          BOOL false
             ;;
+        --disable-tenant-id)
+            append_cache_entry DISABLE_TENANT_ID        BOOL true
+            ;;
         --enable-appid-third-party)
             ;;
         --enable-unit-tests)
@@ -459,6 +468,18 @@ while [ $# -ne 0 ]; do
             ;;
         --with-uuid-libraries=*)
             append_cache_entry UUID_LIBRARIES_DIR_HINT PATH $optarg
+            ;;
+        --with-toolchain=*)
+            append_cache_entry CMAKE_TOOLCHAIN_FILE PATH $optarg
+            ;;
+        --with-libml-includes=*)
+            append_cache_entry ML_INCLUDE_DIR_HINT PATH $optarg
+            ;;
+        --with-libml-libraries=*)
+            append_cache_entry ML_LIBRARIES_DIR_HINT PATH $optarg
+            ;;
+        --without-libml)
+            append_cache_entry ENABLE_KAIZEN_MOCK BOOL true
             ;;
         SIGNAL_SNORT_RELOAD=*)
             append_cache_entry SIGNAL_SNORT_RELOAD STRING $optarg

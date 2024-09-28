@@ -1,17 +1,18 @@
 
 set (HASH_INCLUDES
-    ghash.h
     hashes.h
-    hash_defs.h
     hash_key_operations.h
     lru_cache_local.h
     lru_cache_shared.h
+    lru_segmented_cache_shared.h
     xhash.h
 )
 
 add_library( hash OBJECT
     ${HASH_INCLUDES}
     ghash.cc
+    ghash.h
+    hash_defs.h
     hashes.cc
     hash_lru_cache.cc
     hash_lru_cache.h

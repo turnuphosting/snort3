@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -39,6 +39,7 @@
 #include "ips_options/ips_flowbits.h"
 #include "log/messages.h"
 #include "main/snort_config.h"
+#include "main/thread.h"
 #include "parser/parse_conf.h"
 #include "pattern_match_data.h"
 #include "ports/port_group.h"
@@ -142,9 +143,6 @@ void update_buffer_map(const char** bufs, const char* svc)
 
     for ( int i = 0; bufs[i]; ++i )
         buffer_map[bufs[i]].push_back(svc);
-
-    if ( !strcmp(svc, "http") )
-        buffer_map["file_data"].push_back("http");
 }
 
 void add_default_services(SnortConfig* sc, const std::string& buf, OptTreeNode* otn)
@@ -576,7 +574,7 @@ PatternMatchVector get_fp_content(
 
         if ( cat > CAT_ADJUST )
         {
-            if ( cat == CAT_SET_FAST_PATTERN or cat == CAT_SET_RAW )
+            if ( cat >= CAT_SET_RAW )
                 curr_opt = ofl->ips_opt;
 
             curr_cat = cat;
@@ -587,6 +585,9 @@ PatternMatchVector get_fp_content(
 
         if ( !tmp )
             continue;
+
+        if (curr_cat == CAT_SET_SUB_SECTION)
+            tmp->set_sub_section();
 
         content = true;
 
@@ -623,14 +624,16 @@ bool make_fast_pattern_only(const OptFpList* ofp, const PatternMatchData* pmd)
         return false;
 
     // FIXIT-L no_case consideration is mpse specific, delegate
-    if ( !pmd->is_relative() and !pmd->is_negated() and
-         !pmd->offset and !pmd->depth and pmd->is_no_case() )
-    {
-        ofp = ofp->next;
-        if ( !ofp || !ofp->ips_opt || !ofp->ips_opt->is_relative() )
-            return true;
-    }
-    return false;
+    if ( pmd->is_relative() or pmd->is_negated() or pmd->offset or pmd->depth or !pmd->is_no_case() or
+         pmd->is_sub_section())
+        return false;
+
+    ofp = ofp->next;
+
+    if ( ofp and ofp->ips_opt and ofp->ips_opt->is_relative() )
+        return false;
+
+    return true;
 }
 
 bool is_fast_pattern_only(const OptTreeNode* otn, const OptFpList* ofp, Mpse::MpseType mpse_type)
@@ -743,42 +746,42 @@ TEST_CASE("pmd_no_options", "[PatternMatchData]")
 {
     PatternMatchData pmd = { };
     set_pmd(pmd, 0x0, "foo");
-    CHECK(pmd.can_be_fp());
+    CHECK(true == pmd.can_be_fp());
 }
 
 TEST_CASE("pmd_negated", "[PatternMatchData]")
 {
     PatternMatchData pmd = { };
     set_pmd(pmd, 0x1, "foo");
-    CHECK(!pmd.can_be_fp());
+    CHECK(false == pmd.can_be_fp());
 }
 
 TEST_CASE("pmd_no_case", "[PatternMatchData]")
 {
     PatternMatchData pmd = { };
     set_pmd(pmd, 0x2, "foo");
-    CHECK(pmd.can_be_fp());
+    CHECK(true == pmd.can_be_fp());
 }
 
 TEST_CASE("pmd_relative", "[PatternMatchData]")
 {
     PatternMatchData pmd = { };
     set_pmd(pmd, 0x4, "foo");
-    CHECK(pmd.can_be_fp());
+    CHECK(true == pmd.can_be_fp());
 }
 
 TEST_CASE("pmd_negated_no_case", "[PatternMatchData]")
 {
     PatternMatchData pmd = { };
     set_pmd(pmd, 0x3, "foo");
-    CHECK(pmd.can_be_fp());
+    CHECK(true == pmd.can_be_fp());
 }
 
 TEST_CASE("pmd_negated_relative", "[PatternMatchData]")
 {
     PatternMatchData pmd = { };
     set_pmd(pmd, 0x5, "foo");
-    CHECK(!pmd.can_be_fp());
+    CHECK(false == pmd.can_be_fp());
 }
 
 TEST_CASE("pmd_negated_no_case_offset", "[PatternMatchData]")
@@ -786,7 +789,7 @@ TEST_CASE("pmd_negated_no_case_offset", "[PatternMatchData]")
     PatternMatchData pmd = { };
     set_pmd(pmd, 0x1, "foo");
     pmd.offset = 3;
-    CHECK(!pmd.can_be_fp());
+    CHECK(false == pmd.can_be_fp());
 }
 
 TEST_CASE("pmd_negated_no_case_depth", "[PatternMatchData]")
@@ -794,7 +797,7 @@ TEST_CASE("pmd_negated_no_case_depth", "[PatternMatchData]")
     PatternMatchData pmd = { };
     set_pmd(pmd, 0x3, "foo");
     pmd.depth = 1;
-    CHECK(!pmd.can_be_fp());
+    CHECK(false == pmd.can_be_fp());
 }
 
 TEST_CASE("fp_simple", "[FastPatternSelect]")
@@ -803,10 +806,10 @@ TEST_CASE("fp_simple", "[FastPatternSelect]")
     PatternMatchData pmd = { };
     set_pmd(pmd, 0x0, "foo");
     FpSelector left(CAT_SET_RAW, nullptr, &pmd);
-    CHECK(left.is_better_than(test, false, RULE_WO_DIR));
+    CHECK(true == left.is_better_than(test, false, RULE_WO_DIR));
 
     test.size = 1;
-    CHECK(left.is_better_than(test, false, RULE_WO_DIR));
+    CHECK(true == left.is_better_than(test, false, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_negated", "[FastPatternSelect]")
@@ -819,8 +822,8 @@ TEST_CASE("fp_negated", "[FastPatternSelect]")
     set_pmd(p1, 0x1, "foo");
     FpSelector s1(CAT_SET_RAW, nullptr, &p1);
 
-    CHECK(s0.is_better_than(s1, false, RULE_WO_DIR));
-    CHECK(!s1.is_better_than(s0, false, RULE_WO_DIR));
+    CHECK(true == s0.is_better_than(s1, false, RULE_WO_DIR));
+    CHECK(false == s1.is_better_than(s0, false, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_cat1", "[FastPatternSelect]")
@@ -833,7 +836,7 @@ TEST_CASE("fp_cat1", "[FastPatternSelect]")
     set_pmd(p1, 0x0, "short");
     FpSelector s1(CAT_SET_FAST_PATTERN, nullptr, &p1);
 
-    CHECK(s0.is_better_than(s1, true, RULE_WO_DIR));
+    CHECK(true == s0.is_better_than(s1, true, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_cat2", "[FastPatternSelect]")
@@ -846,8 +849,8 @@ TEST_CASE("fp_cat2", "[FastPatternSelect]")
     set_pmd(p1, 0x0, "foo");
     FpSelector s1(CAT_SET_FAST_PATTERN, nullptr, &p1);
 
-    CHECK(!s0.is_better_than(s1, false, RULE_WO_DIR));
-    CHECK(!s1.is_better_than(s0, false, RULE_WO_DIR));
+    CHECK(false == s0.is_better_than(s1, false, RULE_WO_DIR));
+    CHECK(false == s1.is_better_than(s0, false, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_cat3", "[FastPatternSelect]")
@@ -860,7 +863,7 @@ TEST_CASE("fp_cat3", "[FastPatternSelect]")
     set_pmd(p1, 0x0, "foo");
     FpSelector s1(CAT_SET_FAST_PATTERN, nullptr, &p1);
 
-    CHECK(!s0.is_better_than(s1, true, RULE_WO_DIR));
+    CHECK(false == s0.is_better_than(s1, true, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_size", "[FastPatternSelect]")
@@ -873,7 +876,7 @@ TEST_CASE("fp_size", "[FastPatternSelect]")
     set_pmd(p1, 0x0, "short");
     FpSelector s1(CAT_SET_FAST_PATTERN, nullptr, &p1);
 
-    CHECK(s0.is_better_than(s1, false, RULE_WO_DIR));
+    CHECK(true == s0.is_better_than(s1, false, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_pkt_key_port", "[FastPatternSelect]")
@@ -886,7 +889,7 @@ TEST_CASE("fp_pkt_key_port", "[FastPatternSelect]")
     set_pmd(p1, 0x0, "longer");
     FpSelector s1(CAT_SET_FAST_PATTERN, nullptr, &p1);
 
-    CHECK(!s0.is_better_than(s1, false, RULE_WO_DIR));
+    CHECK(false == s0.is_better_than(s1, false, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_pkt_key_port_user", "[FastPatternSelect]")
@@ -899,7 +902,7 @@ TEST_CASE("fp_pkt_key_port_user", "[FastPatternSelect]")
     set_pmd(p1, 0x0, "longer");
     FpSelector s1(CAT_SET_FAST_PATTERN, nullptr, &p1);
 
-    CHECK(s0.is_better_than(s1, false, RULE_WO_DIR));
+    CHECK(true == s0.is_better_than(s1, false, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_pkt_key_port_user_user", "[FastPatternSelect]")
@@ -912,7 +915,7 @@ TEST_CASE("fp_pkt_key_port_user_user", "[FastPatternSelect]")
     set_pmd(p1, 0x10, "short");
     FpSelector s1(CAT_SET_FAST_PATTERN, nullptr, &p1);
 
-    CHECK(!s0.is_better_than(s1, false, RULE_WO_DIR));
+    CHECK(false == s0.is_better_than(s1, false, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_pkt_key_port_user_user2", "[FastPatternSelect]")
@@ -925,7 +928,7 @@ TEST_CASE("fp_pkt_key_port_user_user2", "[FastPatternSelect]")
     set_pmd(p1, 0x10, "short");
     FpSelector s1(CAT_SET_FAST_PATTERN, nullptr, &p1);
 
-    CHECK(!s0.is_better_than(s1, false, RULE_WO_DIR));
+    CHECK(false == s0.is_better_than(s1, false, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_pkt_key_srvc_1", "[FastPatternSelect]")
@@ -938,7 +941,7 @@ TEST_CASE("fp_pkt_key_srvc_1", "[FastPatternSelect]")
     set_pmd(p1, 0x0, "longer");
     FpSelector s1(CAT_SET_FAST_PATTERN, nullptr, &p1);
 
-    CHECK(s1.is_better_than(s0, true, RULE_WO_DIR));
+    CHECK(true == s1.is_better_than(s0, true, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_pkt_key_srvc_2", "[FastPatternSelect]")
@@ -951,7 +954,7 @@ TEST_CASE("fp_pkt_key_srvc_2", "[FastPatternSelect]")
     set_pmd(p1, 0x0, "short");
     FpSelector s1(CAT_SET_FAST_PATTERN, nullptr, &p1);
 
-    CHECK(s0.is_better_than(s1, true, RULE_WO_DIR));
+    CHECK(true == s0.is_better_than(s1, true, RULE_WO_DIR));
 }
 
 TEST_CASE("fp_pkt_key_srvc_rsp", "[FastPatternSelect]")
@@ -964,8 +967,8 @@ TEST_CASE("fp_pkt_key_srvc_rsp", "[FastPatternSelect]")
     set_pmd(p1, 0x0, "longer");
     FpSelector s1(CAT_SET_FAST_PATTERN, nullptr, &p1);
 
-    CHECK(!s0.is_better_than(s1, true, RULE_FROM_SERVER));
-    CHECK(s1.is_better_than(s0, true, RULE_FROM_SERVER));
+    CHECK(false == s0.is_better_than(s1, true, RULE_FROM_SERVER));
+    CHECK(true == s1.is_better_than(s0, true, RULE_FROM_SERVER));
 }
 #endif
 

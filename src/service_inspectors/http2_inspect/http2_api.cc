@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -21,8 +21,9 @@
 #include "config.h"
 #endif
 
-#include "http2_api.h"
+#include "service_inspectors/http_inspect/http_api.h"
 
+#include "http2_api.h"
 #include "http2_inspect.h"
 
 using namespace snort;
@@ -42,6 +43,7 @@ const char* Http2Api::classic_buffer_names[] =
     "http2_frame_header",
     "http2_decoded_header",
 #endif
+    HTTP_CLASSIC_BUFFER_NAMES,
     nullptr
 };
 

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,6 +24,8 @@
 #include "flow/session.h"
 #include "framework/module.h"
 
+#include "stream_icmp.h"
+
 extern const PegInfo icmp_pegs[];
 extern THREAD_LOCAL struct IcmpStats icmpStats;
 extern THREAD_LOCAL snort::ProfileStats icmp_perf_stats;
@@ -45,12 +47,12 @@ struct IcmpStats
 #define MOD_NAME "stream_icmp"
 #define MOD_HELP "stream inspector for ICMP flow tracking"
 
-struct StreamIcmpConfig;
-
 class StreamIcmpModule : public snort::Module
 {
 public:
     StreamIcmpModule();
+    ~StreamIcmpModule() override
+    { delete config; }
     bool set(const char*, snort::Value&, snort::SnortConfig*) override;
     bool begin(const char*, int, snort::SnortConfig*) override;
     bool end(const char*, int, snort::SnortConfig*) override;
@@ -68,7 +70,7 @@ public:
     StreamIcmpConfig* get_data();
 
 private:
-    StreamIcmpConfig* config;
+    StreamIcmpConfig* config = nullptr;
 };
 
 #endif

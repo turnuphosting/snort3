@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -36,20 +36,22 @@ using namespace snort;
 using namespace std;
 
 void EveCaPatternMatchers::add_eve_ca_pattern(AppId app_id, const string& pattern_str,
-    uint8_t confidence, const string& detector)
+    uint8_t confidence, const string& detector, bool literal)
 {
     auto match = find_if(eve_ca_load_list.begin(), eve_ca_load_list.end(),
-        [pattern_str] (EveCaPattern* eve_ca) { return eve_ca->pattern == pattern_str; });
+        [pattern_str, literal] (EveCaPattern* eve_ca)
+        { return (eve_ca->pattern == pattern_str) and (eve_ca->literal == literal); });
+
     if (match != eve_ca_load_list.end())
     {
         if ((*match)->app_id != app_id)
-            WarningMessage("appid: detector %s - process name '%s' for client app %d is already "
+            appid_log(nullptr, TRACE_WARNING_LEVEL, "appid: detector %s - process name '%s' for client app %d is already "
                 "mapped to client app %d\n", detector.c_str(), (*match)->pattern.c_str(), app_id,
                 (*match)->app_id);
     }
     else
     {
-        EveCaPattern* new_eve_ca_pattern = new EveCaPattern(app_id, pattern_str, confidence);
+        EveCaPattern* new_eve_ca_pattern = new EveCaPattern(app_id, pattern_str, confidence, literal);
         eve_ca_load_list.push_back(new_eve_ca_pattern);
     }
 }
@@ -72,19 +74,22 @@ AppId EveCaPatternMatchers::match_eve_ca_pattern(const string& pattern,
 
     for (auto &mp : *eve_ca_match_list)
     {
-        if (mp->pattern.size() == pattern.size())
-        {
-            if (reported_confidence >= mp->confidence)
-                best_match = mp;
-            else if (best_match)
-                best_match = nullptr;
-            break;
-        }
-        else if ((reported_confidence >= mp->confidence) and
-            (!best_match or (mp->pattern.size() > best_match->pattern.size())))
-        {
-            best_match = mp;
+        const bool confident = (reported_confidence >= mp->confidence);
+        const bool same_size = (mp->pattern.size() == pattern.size());
+
+        if (not confident)
             continue;
+
+        if (mp->literal)
+        {
+            if (same_size)
+                best_match = mp;
+        }
+       
+        if (not mp->literal)
+        {
+            if (!best_match or (mp->pattern.size() > best_match->pattern.size()))
+                best_match = mp;
         }
     }
     AppId ret_app_id = APP_ID_NONE;
@@ -107,13 +112,13 @@ void EveCaPatternMatchers::finalize_patterns()
 {
     for (auto& p : eve_ca_load_list)
     {
-        eve_ca_pattern_matcher.add(p->pattern.data(), p->pattern.size(), p, true);
+        eve_ca_pattern_matcher.add(p->pattern.data(), p->pattern.size(), p, true, p->literal);
 
         #ifdef REG_TEST
         AppIdInspector* inspector =
-            (AppIdInspector*) InspectorManager::get_inspector(MOD_NAME, true);
+            (AppIdInspector*)InspectorManager::get_inspector(MOD_NAME, true);
         if (inspector and inspector->get_ctxt().config.log_eve_process_client_mappings)
-            LogMessage("Adding EVE Client App pattern %d %s %d\n",
+            appid_log(nullptr, TRACE_INFO_LEVEL, "Adding EVE Client App pattern %d %s %d\n",
                 p->app_id, p->pattern.c_str(), p->confidence);
         #endif
     }

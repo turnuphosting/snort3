@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -41,11 +41,8 @@ static const Parameter s_params[] =
     { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
 };
 
-StreamUdpModule::StreamUdpModule() :
-    Module(MOD_NAME, MOD_HELP, s_params)
-{
-    config = nullptr;
-}
+StreamUdpModule::StreamUdpModule() : Module(MOD_NAME, MOD_HELP, s_params)
+{ }
 
 ProfileStats* StreamUdpModule::get_profile() const
 {

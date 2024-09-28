@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -37,6 +37,8 @@ static const char BIT_BANNER[] = "\023BitTorrent protocol";
 #define MAX_VER_LEN 4
 #define LAST_BANNER_OFFSET  (BIT_BANNER_LEN+RES_LEN+SHA_LEN+PEER_ID_LEN - 1)
 
+namespace
+{
 enum BITState
 {
     BIT_STATE_BANNER = 0,
@@ -64,6 +66,7 @@ struct ClientBITMsg
     uint8_t code;
 };
 #pragma pack()
+} // anonymous
 
 BitClientDetector::BitClientDetector(ClientDiscovery* cdm)
 {
@@ -124,9 +127,12 @@ int BitClientDetector::validate(AppIdDiscoveryArgs& args)
             fd->pos++;
             break;
         case BIT_STATE_MESSAGE_LEN:
+            if (fd->pos >= offsetof(ClientBITMsg, code))
+                break;
+
             fd->l.raw_len[fd->pos] = args.data[offset];
             fd->pos++;
-            if (fd->pos >= offsetof(ClientBITMsg, code))
+            if (fd->pos == offsetof(ClientBITMsg, code))
             {
                 fd->stringlen = ntohl(fd->l.len);
                 fd->state = BIT_STATE_MESSAGE_DATA;
@@ -157,4 +163,3 @@ done:
     add_app(args.asd, APP_ID_BITTORRENT, APP_ID_BITTORRENT, nullptr, args.change_bits);
     return APPID_SUCCESS;
 }
-

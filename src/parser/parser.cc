@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -34,6 +34,7 @@
 #include "detection/rules.h"
 #include "detection/sfrim.h"
 #include "dump_config/config_output.h"
+#include "events/event_queue.h"
 #include "filters/detection_filter.h"
 #include "filters/rate_filter.h"
 #include "filters/sfthreshold.h"
@@ -42,6 +43,7 @@
 #include "hash/xhash.h"
 #include "helpers/directory.h"
 #include "ips_options/ips_flowbits.h"
+#include "log/log_stats.h"
 #include "log/messages.h"
 #include "main/modules.h"
 #include "main/shell.h"
@@ -70,6 +72,8 @@ static struct rule_index_map_t* ruleIndexMap = nullptr;
 static std::string s_aux_rules;
 static std::string s_special_rules;
 static std::string s_special_includer;
+
+void show_pcre_counts();
 
 class RuleTreeHashKeyOps : public HashKeyOperations
 {
@@ -129,10 +133,10 @@ public:
 
 struct PolicyRuleStats
 {
-    const char* file;
-    int loaded;
-    int shared;
-    int enabled;
+    const char* file = nullptr;
+    int loaded = 0;
+    int shared = 0;
+    int enabled = 0;
 };
 
 //-------------------------------------------------------------------------
@@ -604,6 +608,7 @@ static void ShowPolicyStats(const SnortConfig* sc)
 
 void ParseRulesFinish(SnortConfig* sc)
 {
+    show_pcre_counts();
     ShowPolicyStats(sc);
 
     if ( !sc->dump_rule_info() )
@@ -632,7 +637,7 @@ void ParseRulesFinish(SnortConfig* sc)
  * Returns: the ListHead for the rule type
  *
  ***************************************************************************/
-RuleListNode* CreateRuleType(SnortConfig* sc, const char* name, Actions::Type mode)
+RuleListNode* CreateRuleType(SnortConfig* sc, const char* name, IpsAction::Type mode)
 {
     RuleListNode* node;
 
@@ -710,7 +715,7 @@ void OrderRuleLists(SnortConfig* sc)
     const char* order = sc->rule_order.c_str();
     if ( !*order )
     {
-        default_priorities = Actions::get_default_priorities();
+        default_priorities = IpsAction::get_default_priorities();
         order = default_priorities.c_str();
     }
 

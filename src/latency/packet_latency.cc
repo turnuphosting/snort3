@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -344,16 +344,16 @@ TEST_CASE ( "packet latency impl", "[latency]" )
         {
             MockClock::inc(config.config.max_time + 1_ticks);
 
-            CHECK( impl.fastpath() );
-            CHECK( impl.pop(nullptr) );
+            CHECK( true == impl.fastpath() );
+            CHECK( true == impl.pop(nullptr) );
 
             CHECK( event_handler.count == 1 );
         }
 
         SECTION( "no timeout" )
         {
-            CHECK_FALSE( impl.fastpath() );
-            CHECK_FALSE( impl.pop(nullptr) );
+            CHECK( false == impl.fastpath() );
+            CHECK( false == impl.pop(nullptr) );
 
             CHECK( event_handler.count == 0 );
         }
@@ -370,16 +370,16 @@ TEST_CASE ( "packet latency impl", "[latency]" )
         {
             MockClock::inc(config.config.max_time + 1_ticks);
 
-            CHECK_FALSE( impl.fastpath() );
-            CHECK( impl.pop(nullptr) );
+            CHECK( false == impl.fastpath() );
+            CHECK( true == impl.pop(nullptr) );
 
             CHECK( event_handler.count == 1 );
         }
 
         SECTION( "no timeout" )
         {
-            CHECK_FALSE( impl.fastpath() );
-            CHECK_FALSE( impl.pop(nullptr) );
+            CHECK( false == impl.fastpath() );
+            CHECK( false == impl.pop(nullptr) );
 
             CHECK( event_handler.count == 0 );
         }

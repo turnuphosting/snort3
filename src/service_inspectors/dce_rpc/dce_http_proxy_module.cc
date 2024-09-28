@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -31,7 +31,7 @@ static const PegInfo dce_http_proxy_pegs[] =
     { CountType::END, nullptr, nullptr }
 };
 
-DceHttpProxyModule::DceHttpProxyModule() : Module(DCE_HTTP_PROXY_NAME, DCE_HTTP_PROXY_HELP)
+DceHttpProxyModule::DceHttpProxyModule() :   Module(DCE_HTTP_PROXY_NAME, DCE_HTTP_PROXY_HELP)
 {
 }
 
@@ -44,3 +44,4 @@ PegCount* DceHttpProxyModule::get_counts() const
 {
     return (PegCount*)&dce_http_proxy_stats;
 }
+

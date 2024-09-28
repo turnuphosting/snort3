@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,9 +24,7 @@
 #include "sip.h"
 
 #include "detection/detection_engine.h"
-#include "events/event_queue.h"
 #include "log/messages.h"
-#include "managers/inspector_manager.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
 #include "pub_sub/sip_events.h"
@@ -45,6 +43,33 @@ static void FreeSipData(void*);
 
 unsigned SipFlowData::inspector_id = 0;
 unsigned SIPData::pub_id = 0;
+
+bool get_buf_sip(unsigned id, snort::Packet* p, snort::InspectionBuffer& b)
+{
+    if (id != SIP_HEADER_ID and id != SIP_BODY_ID)
+        return false;
+
+    if ((!p->has_tcp_data() and !p->is_udp()) or !p->flow or !p->dsize)
+        return false;
+
+    if (p->has_tcp_data() and !p->is_full_pdu())
+        return false;
+
+    SIPData* sd = get_sip_session_data(p->flow);
+    if (!sd)
+        return false;
+
+    const SIP_Roptions& ropts = sd->ropts;
+    const uint8_t* data = (id == SIP_HEADER_ID) ? ropts.header_data : ropts.body_data;
+    unsigned len = (id == SIP_HEADER_ID) ? ropts.header_len : ropts.body_len;
+    if (!data or !len)
+        return false;
+
+    b.data = data;
+    b.len = len;
+    b.is_accumulated = false;
+    return true;
+}
 
 SipFlowData::SipFlowData() : FlowData(inspector_id)
 {
@@ -117,7 +142,7 @@ static inline int SIP_Process(Packet* p, SIPData* sessp, SIP_PROTO_CONF* config)
     bool status;
     const char* sip_buff = (const char*)p->data;
     const char* end;
-    SIP_Roptions* pRopts;
+    SIP_Roptions* pRopts = &(sessp->ropts);
     SIPMsg sipMsg;
 
     memset(&sipMsg, 0, SIPMSG_ZERO_LEN);
@@ -129,13 +154,13 @@ static inline int SIP_Process(Packet* p, SIPData* sessp, SIP_PROTO_CONF* config)
 
     status = sip_parse(&sipMsg, sip_buff, end, config);
 
+    memset(pRopts, 0, sizeof(*pRopts));
     if (true == status)
     {
         /*Update the dialog state*/
-        SIP_updateDialog(&sipMsg, &(sessp->dialogs), p, config);
+        SIP_updateDialog(sipMsg, &(sessp->dialogs), p, config);
     }
     /*Update the session data*/
-    pRopts = &(sessp->ropts);
     pRopts->method_data = sipMsg.method;
     pRopts->method_len = sipMsg.methodLen;
     pRopts->header_data = sipMsg.header;
@@ -152,7 +177,7 @@ static inline int SIP_Process(Packet* p, SIPData* sessp, SIP_PROTO_CONF* config)
 
 static void snort_sip(SIP_PROTO_CONF* config, Packet* p)
 {
-    Profile profile(sipPerfStats);
+    Profile profile(sipPerfStats);  // cppcheck-suppress unreadVariable
 
     /* Attempt to get a previously allocated SIP block. */
     SIPData* sessp = get_sip_session_data(p->flow);
@@ -173,7 +198,8 @@ static void snort_sip(SIP_PROTO_CONF* config, Packet* p)
     if (sessp->state_flags & SIP_FLG_MISSED_PACKETS)
         return;
 
-    SIP_Process(p,sessp, config);
+    if (!SIP_Process(p,sessp, config))
+        sessp->sip_aborted = true;
 }
 
 //-------------------------------------------------------------------------
@@ -195,6 +221,9 @@ public:
 
     bool is_control_channel() const override
     { return true; }
+
+    bool get_buf(unsigned id, snort::Packet* p, snort::InspectionBuffer& b) override
+    { return get_buf_sip(id, p, b); }
 
 private:
     SIP_PROTO_CONF* config;
@@ -238,6 +267,10 @@ void Sip::show(const SnortConfig*) const
     ConfigLogger::log_value("max_uri_len", config->maxUriLen);
     ConfigLogger::log_value("max_via_len", config->maxViaLen);
     ConfigLogger::log_list("methods", methods.c_str());
+    ConfigLogger::log_value("sip_timeout", config->sip_timeout);
+    ConfigLogger::log_value("sip_media_timeout", config->sip_media_timeout);
+    ConfigLogger::log_value("sip_invite_timeout", config->sip_invite_timeout);
+    ConfigLogger::log_value("sip_disconnect_timeout", config->sip_disconnect_timeout);
 }
 
 void Sip::eval(Packet* p)

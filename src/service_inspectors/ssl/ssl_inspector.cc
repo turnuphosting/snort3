@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,9 +28,7 @@
 #include <memory>
 #include <string>
 
-#include "detection/detect.h"
 #include "detection/detection_engine.h"
-#include "events/event_queue.h"
 #include "log/messages.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
@@ -149,7 +147,7 @@ static inline bool SSLPP_is_encrypted(SSL_PROTO_CONF* config, uint32_t ssl_flags
 {
     if (config->trustservers)
     {
-        if (ssl_flags & SSL_SAPP_FLAG)
+        if ((ssl_flags & SSL_CAPP_FLAG) || (ssl_flags & SSL_SAPP_FLAG))
             return true;
     }
 
@@ -284,7 +282,7 @@ static inline void SSLPP_process_other(SSL_PROTO_CONF* config, SSLData* sd, uint
 
 static void snort_ssl(SSL_PROTO_CONF* config, Packet* p)
 {
-    Profile profile(sslPerfStats);
+    Profile profile(sslPerfStats);  // cppcheck-suppress unreadVariable
 
     /* Attempt to get a previously allocated SSL block. */
     SSLData* sd = SslBaseFlowData::get_ssl_session_data(p->flow);
@@ -403,6 +401,14 @@ static void snort_ssl(SSL_PROTO_CONF* config, Packet* p)
     else if (SSL_IS_APP(new_flags))
     {
         sd->ssn_flags = SSLPP_process_app(config, sd->ssn_flags, new_flags, p);
+    }
+    else if (SSL_IS_CHANGE_CIPHER(new_flags))
+    {
+        /* If the 'change cipher spec' and 'encrypted handshake message' flags come in separate subsequent packets,
+         * the encrypted handshake message is inspected, and attempts to process some random type and it fails.
+         * To avoid this situation, update the 'change cipher spec' flag in the session to skip processing
+         * the encrypted handshake message.*/
+        sd->ssn_flags |= SSL_CHANGE_CIPHER_FLAG;
     }
     else
     {
@@ -568,8 +574,6 @@ const InspectApi ssl_api =
     nullptr, // ssn
     nullptr  // reset
 };
-
-#undef BUILDING_SO  // FIXIT-L can't be linked dynamically yet
 
 extern const BaseApi* ips_ssl_state;
 extern const BaseApi* ips_ssl_version;

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -109,8 +109,8 @@ const Field& HttpMsgHeader::get_true_ip_addr()
     if (true_ip_addr.length() != STAT_NOT_COMPUTE)
         return true_ip_addr;
 
-    const Field& true_ip = get_true_ip();
-    if (true_ip.length() <= 0)
+    const Field& tmp_true_ip = get_true_ip();
+    if (tmp_true_ip.length() <= 0)
     {
         true_ip_addr.set(STAT_NOT_PRESENT);
         return true_ip_addr;
@@ -491,7 +491,7 @@ void HttpMsgHeader::prepare_body()
         // body
         session_data->detect_depth_remaining[source_id] = INT64_MAX;
     }
-    if ((source_id == SRC_CLIENT) and params->publish_request_body and session_data->for_httpx)
+    if ((source_id == SRC_CLIENT) and params->publish_request_body)
     {
         session_data->publish_octets[source_id] = 0;
         session_data->publish_depth_remaining[source_id] = REQUEST_PUBLISH_DEPTH;
@@ -528,6 +528,8 @@ void HttpMsgHeader::setup_mime()
         {
             if (boundary_present(content_type))
             {
+                mime_boundary_found = true;
+
                 // Generate the unique file id for multi file processing
                 set_multi_file_processing_id(get_transaction_id(), session_data->get_hx_stream_id());
 
@@ -607,6 +609,7 @@ void HttpMsgHeader::setup_encoding_decompression()
         {
         case CONTENTCODE_GZIP:
         case CONTENTCODE_X_GZIP:
+            HttpModule::increment_peg_counts(PEG_COMPRESSED_GZIP);
             compression = CMP_GZIP;
             break;
         case CONTENTCODE_DEFLATE:
@@ -620,11 +623,13 @@ void HttpMsgHeader::setup_encoding_decompression()
             break;
         case CONTENTCODE__OTHER:
             // The ones we never heard of
+            HttpModule::increment_peg_counts(PEG_COMPRESSED_UNKNOWN);
             add_infraction(INF_UNKNOWN_ENCODING);
             create_event(EVENT_UNKNOWN_ENCODING);
             break;
         default:
             // The ones we know by name but don't support
+            HttpModule::increment_peg_counts(PEG_COMPRESSED_NOT_SUPPORTED);
             add_infraction(INF_UNSUPPORTED_ENCODING);
             create_event(EVENT_UNSUPPORTED_ENCODING);
             break;

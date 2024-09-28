@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,6 +26,7 @@
 
 #include <cassert>
 
+#include "main/snort_config.h"
 #include "pub_sub/auxiliary_ip_event.h"
 #include "pub_sub/stash_events.h"
 
@@ -163,9 +164,9 @@ bool FlowStash::store(const SfIp& ip, const SnortConfig* sc)
 
     if ( sc->max_aux_ip > 0 )
     {
-        for ( const auto& aip : aux_ip_fifo )
-            if ( aip == ip )
-                return false;
+        if ( std::any_of(aux_ip_fifo.cbegin(), aux_ip_fifo.cend(),
+            [ip](const snort::SfIp& aip){ return aip == ip; }) )
+            return false;
 
         if ( aux_ip_fifo.size() == (unsigned)sc->max_aux_ip )
             aux_ip_fifo.pop_back();

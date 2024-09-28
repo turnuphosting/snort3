@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -57,10 +57,8 @@ public:
 // class methods
 //-------------------------------------------------------------------------
 
-FileTypeOption::FileTypeOption(const FileTypeBitSet& t) : IpsOption(s_name)
-{
-    types = t;
-}
+FileTypeOption::FileTypeOption(const FileTypeBitSet& t) : IpsOption(s_name), types(t)
+{ }
 
 uint32_t FileTypeOption::hash() const
 {
@@ -80,6 +78,7 @@ bool FileTypeOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus FileTypeOption::eval(Cursor&, Packet* pkt)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(fileTypePerfStats);
 
     if (!pkt->flow)
@@ -238,7 +237,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* file_type_ctor(Module* m, OptTreeNode*)
+static IpsOption* file_type_ctor(Module* m, IpsInfo&)
 {
     FileTypeModule* mod = (FileTypeModule*)m;
     return new FileTypeOption(mod->types);

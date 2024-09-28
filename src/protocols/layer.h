@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -19,6 +19,8 @@
 
 #ifndef PROTOCOLS_LAYER_H
 #define PROTOCOLS_LAYER_H
+
+// Packet contains a Layer for each decoded encapsulation.
 
 #include "main/snort_types.h"
 #include "protocols/protocol_ids.h"
@@ -105,12 +107,8 @@ void set_packet_pointer(const Packet* const);
 
 SO_PUBLIC const uint8_t* get_root_layer(const Packet* const);
 
-SO_PUBLIC const uint8_t* get_inner_layer(const Packet*, ProtocolId proto);
-SO_PUBLIC const uint8_t* get_outer_layer(const Packet*, ProtocolId proto);
-
 SO_PUBLIC const arp::EtherARP* get_arp_layer(const Packet*);
 SO_PUBLIC const cisco_meta_data::CiscoMetaDataHdr* get_cisco_meta_data_layer(const Packet* const);
-SO_PUBLIC const eapol::EtherEapol* get_eapol_layer(const Packet*);
 SO_PUBLIC const eth::EtherHdr* get_eth_layer(const Packet*);
 SO_PUBLIC const geneve::GeneveLyr* get_geneve_layer(const Packet*, bool inner);
 SO_PUBLIC const gre::GREHdr* get_gre_layer(const Packet*);

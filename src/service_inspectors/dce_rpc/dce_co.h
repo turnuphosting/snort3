@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -265,7 +265,8 @@ enum DCE2_CoCtxTransport
     DCE2_CO_CTX_TRANS_SYNTAX_NDR64
 };
 
-enum DCE2_CoEpmOpnum {
+enum DCE2_CoEpmOpnum
+{
     DCE2_CO_EPT_NONE = -1,
     DCE2_CO_EPT_INSERT = 0,
     DCE2_CO_EPT_DELETE,

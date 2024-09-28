@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -21,13 +21,13 @@
 #ifndef MEMORY_CONTEXT_H
 #define MEMORY_CONTEXT_H
 
-struct CombinedMemoryStats;
+struct MemoryStats;
 
 class MemoryProfiler
 {
 public:
     // global accumulated stats
-    static const CombinedMemoryStats& get_fallthrough_stats();
+    static const MemoryStats& get_fallthrough_stats();
 
     // thread local call
     static void consolidate_fallthrough_stats();

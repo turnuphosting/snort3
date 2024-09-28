@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -33,6 +33,7 @@
 #include "framework/base_api.h"
 #include "framework/mpse_batch.h"
 #include "main/snort_config.h"
+#include "main/thread_config.h"
 #include "managers/mpse_manager.h"
 
 #include "mpse_test_stubs.h"
@@ -57,12 +58,12 @@ const MpseApi* get_test_api()
 TEST_GROUP(search_tool_full)
 {
     Module* mod = nullptr;
-    SearchTool* stool;
+    SearchTool* stool;  // cppcheck-suppress variableScope
     const MpseApi* mpse_api = (const MpseApi*)se_hyperscan;
 
     void setup() override
     {
-        mod = mpse_api->base.mod_ctor();
+        mod = mpse_api->base.mod_ctor();    // cppcheck-suppress unreadVariable
         stool = new SearchTool;
         CHECK(stool->mpsegrp->normal_mpse);
 

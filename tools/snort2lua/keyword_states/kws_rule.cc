@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -50,7 +50,7 @@ bool RuleHeader::convert(std::istringstream& data_stream)
     const std::istringstream::off_type curr_pos = data_stream.tellg();
     std::string rule_string = data_stream.str();
     std::size_t end_pos = rule_string.rfind(')');
-    rule_string = rule_string.substr(0, end_pos);
+    rule_string.resize(end_pos);
     util::rtrim(rule_string); // guarantee last char is a rule opt/subopt
     data_stream.str(rule_string);
     data_stream.seekg(curr_pos);  // position was reset. so find curr position

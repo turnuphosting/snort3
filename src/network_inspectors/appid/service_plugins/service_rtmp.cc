@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -585,9 +585,7 @@ int RtmpServiceDetector::validate(AppIdDiscoveryArgs& args)
                 else
                 {
                     /* We've gotten all of the bytes that we wanted. */
-                    ss->server_state = RTMP_STATE_SENT_HANDSHAKE2;
                     args.data += ss->server_bytes_left;
-                    args.size -= ss->server_bytes_left;
                 }
             /* fall through */
 

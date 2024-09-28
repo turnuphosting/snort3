@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -145,7 +145,7 @@ enum dnp3_reassembly_state_t
 
 struct dnp3_reassembly_data_t
 {
-    uint8_t buffer[DNP3_BUFFER_SIZE];
+    uint8_t buffer[DNP3_BUFFER_SIZE] = {0};
     uint16_t buflen = 0;
     dnp3_reassembly_state_t state = DNP3_REASSEMBLY_STATE__IDLE;
     uint8_t last_seq = 0;
@@ -183,6 +183,8 @@ public:
 
 extern THREAD_LOCAL Dnp3Stats dnp3_stats;
 extern THREAD_LOCAL snort::ProfileStats dnp3_perf_stats;
+
+bool get_buf_dnp3_data(snort::Packet* p, snort::InspectionBuffer& b);
 
 #endif
 

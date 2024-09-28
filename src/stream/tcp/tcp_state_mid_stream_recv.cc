@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -51,6 +51,13 @@ bool TcpStateMidStreamRecv::syn_recv(TcpSegmentDescriptor& tsd, TcpStreamTracker
 
 bool TcpStateMidStreamRecv::syn_ack_sent(TcpSegmentDescriptor& tsd, TcpStreamTracker& trk)
 {
+    if ( trk.normalizer.is_tcp_ips_enabled() )
+    {
+        trk.seglist.skip_midstream_pickup_seglist_hole(tsd);
+        trk.eval_flush_policy_on_data(tsd.get_pkt());
+        trk.midstream_initial_ack_flush = true;
+    }
+
     trk.session->check_for_repeated_syn(tsd);
     trk.set_tcp_state(TcpStreamTracker::TCP_ESTABLISHED);
     return true;
@@ -58,6 +65,13 @@ bool TcpStateMidStreamRecv::syn_ack_sent(TcpSegmentDescriptor& tsd, TcpStreamTra
 
 bool TcpStateMidStreamRecv::ack_sent(TcpSegmentDescriptor& tsd, TcpStreamTracker& trk)
 {
+    if ( trk.normalizer.is_tcp_ips_enabled() )
+    {
+        trk.seglist.skip_midstream_pickup_seglist_hole(tsd);
+        trk.eval_flush_policy_on_data(tsd.get_pkt());
+        trk.midstream_initial_ack_flush = true;
+    }
+
     trk.update_tracker_ack_sent(tsd);
     trk.set_tcp_state(TcpStreamTracker::TCP_ESTABLISHED);
     return true;
@@ -71,6 +85,13 @@ bool TcpStateMidStreamRecv::ack_recv(TcpSegmentDescriptor& tsd, TcpStreamTracker
 
 bool TcpStateMidStreamRecv::data_seg_sent(TcpSegmentDescriptor& tsd, TcpStreamTracker& trk)
 {
+    if ( trk.normalizer.is_tcp_ips_enabled() )
+    {
+        trk.seglist.skip_midstream_pickup_seglist_hole(tsd);
+        trk.eval_flush_policy_on_data(tsd.get_pkt());
+        trk.midstream_initial_ack_flush = true;
+    }
+
     trk.update_tracker_ack_sent(tsd);
     trk.set_tcp_state(TcpStreamTracker::TCP_ESTABLISHED);
     if ( trk.session->no_ack_mode_enabled() )
@@ -81,12 +102,19 @@ bool TcpStateMidStreamRecv::data_seg_sent(TcpSegmentDescriptor& tsd, TcpStreamTr
 bool TcpStateMidStreamRecv::data_seg_recv(TcpSegmentDescriptor& tsd, TcpStreamTracker& trk)
 {
     trk.update_tracker_ack_recv(tsd);
-    trk.session->handle_data_segment(tsd);
+    trk.session->handle_data_segment(tsd, !trk.normalizer.is_tcp_ips_enabled());
     return true;
 }
 
 bool TcpStateMidStreamRecv::fin_sent(TcpSegmentDescriptor& tsd, TcpStreamTracker& trk)
 {
+    if ( trk.normalizer.is_tcp_ips_enabled() )
+    {
+        trk.seglist.skip_midstream_pickup_seglist_hole(tsd);
+        trk.eval_flush_policy_on_data(tsd.get_pkt());
+        trk.midstream_initial_ack_flush = true;
+    }
+
     trk.update_on_fin_sent(tsd);
     trk.session->flow->call_handlers(tsd.get_pkt(), true);
     TcpStreamTracker::TcpState listener_state = tsd.get_listener()->get_tcp_state();
@@ -132,9 +160,7 @@ bool TcpStateMidStreamRecv::rst_recv(TcpSegmentDescriptor& tsd, TcpStreamTracker
 bool TcpStateMidStreamRecv::do_post_sm_packet_actions(TcpSegmentDescriptor& tsd, TcpStreamTracker& trk)
 {
     // Always need to check for one sided
-    bool one_sided = trk.session->check_for_one_sided_session(tsd.get_pkt());
-    if ( one_sided && TcpStreamTracker::TCP_MID_STREAM_RECV == trk.get_tcp_state() )
-        trk.set_tcp_state(TcpStreamTracker::TCP_ESTABLISHED);
+    trk.session->check_for_one_sided_session(tsd.get_pkt());
     return true;
 }
 

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -31,6 +31,7 @@
 #include "trace/trace_api.h"
 
 #include "host_cache.h"
+#include "host_cache_segmented.h"
 
 #define HOST_CACHE_NAME "host_cache"
 #define HOST_CACHE_HELP "global LRU cache of host_tracker data about hosts"
@@ -64,7 +65,9 @@ public:
     const snort::Command* get_commands() const override;
     const PegInfo* get_pegs() const override;
     PegCount* get_counts() const override;
+    void prep_counts(bool) override;
     void sum_stats(bool) override;
+    void reset_stats() override;
 
     // in sum_stats, just populate the counts vector with whatever we have now
     bool global_stats() const override
@@ -75,6 +78,7 @@ public:
 
     void log_host_cache(const char* file_name, bool verbose = false);
     std::string get_host_cache_stats();
+    std::string get_host_cache_segment_stats(int seg_idx);
 
     void set_trace(const snort::Trace*) const override;
     const snort::TraceOption* get_trace_options() const override;
@@ -82,6 +86,7 @@ public:
 private:
     std::string dump_file;
     size_t memcap = 0;
+    uint8_t segments = 1;
 };
 extern THREAD_LOCAL const snort::Trace* host_cache_trace;
 

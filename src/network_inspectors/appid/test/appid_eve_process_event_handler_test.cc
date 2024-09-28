@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -60,6 +60,8 @@ Packet* DetectionEngine::get_current_packet()
 }
 }
 
+void appid_log(const snort::Packet*, unsigned char, char const*, ...) { }
+
 AppIdSession* AppIdSession::allocate_session(const Packet*, IpProtocol,
     AppidSessionDirection, AppIdInspector&, OdpContext&)
 {
@@ -117,7 +119,11 @@ TEST_GROUP(appid_eve_process_event_handler_tests)
     void setup() override
     {
         SfIp ip;
-        session = new AppIdSession(IpProtocol::TCP, &ip, 0, dummy_appid_inspector, stub_odp_ctxt);
+        session = new AppIdSession(IpProtocol::TCP, &ip, 0, dummy_appid_inspector, stub_odp_ctxt, 0
+#ifndef DISABLE_TENANT_ID
+        ,0
+#endif
+        );
         pkt_thread_odp_ctxt = &stub_odp_ctxt;
         appidDebug = new AppIdDebug();
         appidDebug->activate(nullptr, nullptr, false);

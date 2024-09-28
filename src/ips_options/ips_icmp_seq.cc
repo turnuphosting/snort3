@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -61,9 +61,8 @@ static THREAD_LOCAL ProfileStats icmpSeqPerfStats;
 class IcmpSeqOption : public IpsOption
 {
 public:
-    IcmpSeqOption(const RangeCheck& c) :
-        IpsOption(s_name)
-    { config = c; }
+    IcmpSeqOption(const RangeCheck& c) : IpsOption(s_name), config(c)
+    { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -100,6 +99,7 @@ bool IcmpSeqOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus IcmpSeqOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(icmpSeqPerfStats);
 
     if (!p->ptrs.icmph)
@@ -179,7 +179,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* icmp_seq_ctor(Module* p, OptTreeNode*)
+static IpsOption* icmp_seq_ctor(Module* p, IpsInfo&)
 {
     IcmpSeqModule* m = (IcmpSeqModule*)p;
     return new IcmpSeqOption(m->data);

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -30,10 +30,12 @@
 #include <cassert>
 #include <vector>
 
+#include "log/log_stats.h"
 #include "log/messages.h"
 #include "main/snort_config.h"
 #include "main/snort_types.h"
 #include "main/thread.h"
+#include "managers/module_manager.h"
 #include "time/periodic.h"
 #include "trace/trace_api.h"
 #include "utils/stats.h"
@@ -81,7 +83,18 @@ static void epoch_check(void*)
     else
         current_epoch = 0;
 
+#ifndef REG_TEST
     MemoryCounts& mc = MemoryCap::get_mem_stats();
+#else
+    auto orig_type = get_thread_type();
+
+    // Due to call of epoch_check in first pthread
+    // for build with REG_TEST, we need make that
+    // pthread think that we're main thread
+    set_thread_type(STHREAD_TYPE_MAIN);
+    MemoryCounts& mc = MemoryCap::get_mem_stats();
+    set_thread_type(orig_type);
+#endif
 
     if ( total > mc.max_in_use )
         mc.max_in_use = total;
@@ -143,7 +156,7 @@ void MemoryCap::test_main_check()
 void MemoryCap::init(unsigned n)
 {
     assert(in_main_thread());
-    pkt_mem_stats.resize(n);
+    pkt_mem_stats.resize(n + 1);
 
 #ifdef UNIT_TEST
     pkt_mem_stats[0] = { };
@@ -216,7 +229,7 @@ MemoryCounts& MemoryCap::get_mem_stats()
     if ( in_main_thread() )
         return pkt_mem_stats[0];
 
-    auto id = get_instance_id();
+    auto id = get_instance_id() + 1;
     return pkt_mem_stats[id];
 }
 
@@ -302,21 +315,10 @@ void MemoryCap::free_space()
 
 // required to capture any update in final epoch
 // which happens after packet threads have stopped
-void MemoryCap::update_pegs(PegCount* pc)
+void MemoryCap::update_pegs()
 {
-    MemoryCounts* mp = (MemoryCounts*)pc;
-    const MemoryCounts& mc = get_mem_stats();
-
     if ( config.enabled )
-    {
-        mp->epochs = mc.epochs;
-        mp->cur_in_use = mc.cur_in_use;
-    }
-    else
-    {
-        mp->allocated = 0;
-        mp->deallocated = 0;
-    }
+        ModuleManager::accumulate_module("memory");
 }
 
 // called at startup and shutdown

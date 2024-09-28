@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -42,12 +42,14 @@ namespace snort
 char* snort_strdup(const char* str)
 { return strdup(str); }
 time_t packet_time() { return test_time; }
+void FatalError(const char* fmt, ...) { (void)fmt; exit(1); }
 }
 
 // There always needs to be a HostCacheIp associated with HostTracker,
 // because any allocation / deallocation into the HostTracker will take up
 // memory managed by the cache.
-HostCacheIp host_cache(1024);
+HostCacheIp default_host_cache(LRU_CACHE_INITIAL_SIZE);
+HostCacheSegmentedIp host_cache(4,1024);
 
 TEST_GROUP(host_tracker)
 {
@@ -96,10 +98,10 @@ TEST(host_tracker, add_rediscover_service_payload_test)
     auto services = ht.get_services();
 
     // Verify we added the services, payload visibility == true
-    for (auto& srv : services)
+    for (const auto& srv : services)
     {
         CHECK(true == srv.visibility);
-        for (auto& pld : srv.payloads)
+        for (const auto& pld : srv.payloads)
             CHECK(true == pld.second);
     }
 
@@ -111,11 +113,9 @@ TEST(host_tracker, add_rediscover_service_payload_test)
     for (const auto& srv : services)
     {
         if (srv.port == 80)
-        {
             CHECK(false == srv.visibility);
-            for (const auto& pld : srv.payloads)
-                CHECK(false == pld.second);
-        }
+        for ( const auto& pld : srv.payloads )
+            CHECK(false == pld.second);
     }
 
     // Test rediscovery
@@ -129,11 +129,9 @@ TEST(host_tracker, add_rediscover_service_payload_test)
     for (const auto& srv : services)
     {
         if (srv.port == 80)
-        {
             CHECK(true == srv.visibility);
-            for (const  auto& pld : srv.payloads)
-                CHECK(true == pld.second);
-        }
+        for ( const auto& pld : srv.payloads )
+            CHECK(true == pld.second);
     }
 
     CHECK(2 == services.front().payloads.size());
@@ -160,7 +158,7 @@ TEST(host_tracker, max_payloads_test)
     // Verify we added the services, payload visibility == true
     CHECK(5 == services.front().payloads.size());
 
-    for (auto& pld : services.front().payloads)
+    for (const auto& pld : services.front().payloads)
         CHECK(true == pld.second);
 
     // Delete the service
@@ -276,7 +274,7 @@ TEST(host_tracker, client_payload_max_payloads_test)
     ht.add_client_payload(hc, 666, 5);
     ht.add_client_payload(hc, 777, 5);
     clients = ht.get_clients();
-    for (auto& pld : clients.front().payloads)
+    for (const auto& pld : clients.front().payloads)
     {
         if (pld.first == 666 or pld.first == 777)
         {
@@ -429,5 +427,7 @@ TEST(host_tracker, rediscover_host)
 
 int main(int argc, char** argv)
 {
-    return CommandLineTestRunner::RunAllTests(argc, argv);
+    int ret = CommandLineTestRunner::RunAllTests(argc, argv);
+    host_cache.term();
+    return ret;
 }

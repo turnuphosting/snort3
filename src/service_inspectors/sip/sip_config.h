@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2011-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -25,7 +25,6 @@
 // Configuration for SIP service inspector
 
 #include "framework/counts.h"
-#include "main/thread.h"
 #include "sip_common.h"
 
 #define SIP_METHOD_DEFAULT     0x003f
@@ -58,6 +57,7 @@ struct SipStats
     PegCount sessions;
     PegCount concurrent_sessions;
     PegCount max_concurrent_sessions;
+    PegCount aborted_sessions;
     PegCount events;
     PegCount dialogs;
     PegCount ignoreChannels;
@@ -103,6 +103,10 @@ struct SIP_PROTO_CONF
     uint16_t maxViaLen;      // Maximum Via field size
     uint16_t maxContactLen;  // Maximum Contact field size
     uint16_t maxContentLen;  // Maximum Content length
+    uint64_t sip_timeout;
+    uint64_t sip_media_timeout;
+    uint64_t sip_invite_timeout;
+    uint64_t sip_disconnect_timeout;
     bool ignoreChannel;   // Whether to ignore media channels found by SIP PP
 };
 

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -22,6 +22,7 @@
 #include "config.h"
 #endif
 
+#include "log/messages.h"
 #include "sip_module.h"
 
 #include <cassert>
@@ -81,9 +82,6 @@ static const Parameter s_params[] =
     { "max_request_name_len", Parameter::PT_INT, "0:65535", "20",
       "maximum request name field size" },
 
-    { "max_requestName_len", Parameter::PT_INT, "0:65535", "20",
-      "deprecated - use max_request_name_len instead" },
-
     { "max_to_len", Parameter::PT_INT, "0:65535", "256",
       "maximum to field size" },
 
@@ -95,6 +93,18 @@ static const Parameter s_params[] =
 
     { "methods", Parameter::PT_STRING, nullptr, default_methods,
       "list of methods to check in SIP messages" },
+
+    { "sip_timeout", Parameter::PT_INT, "0:", "0",
+      "SIP Timeout value in milliseconds" },
+
+    { "sip_media_timeout", Parameter::PT_INT, "0:", "0",
+      "SIP Media timeout milliseconds" },
+
+    { "sip_invite_timeout", Parameter::PT_INT, "0:", "0",
+      "SIP Invite timeout milliseconds" },
+
+    { "sip_disconnect_timeout", Parameter::PT_INT, "0:", "0",
+      "SIP Disconnect timeout milliseconds" },
 
     { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
 };
@@ -139,6 +149,7 @@ static const PegInfo sip_pegs[] =
     { CountType::SUM, "sessions", "total sessions" },
     { CountType::NOW, "concurrent_sessions", "total concurrent SIP sessions" },
     { CountType::MAX, "max_concurrent_sessions", "maximum concurrent SIP sessions" },
+    { CountType::SUM, "aborted_sessions", "total session aborted" },
     { CountType::SUM, "events", "events generated" },
     { CountType::SUM, "dialogs", "total dialogs" },
     { CountType::SUM, "ignored_channels", "total channels ignored" },
@@ -218,8 +229,7 @@ bool SipModule::set(const char*, Value& v, SnortConfig*)
     else if ( v.is("max_from_len") )
         conf->maxFromLen = v.get_uint16();
 
-    // FIXIT-L max_requestName_len is deprecated - delete
-    else if ( v.is("max_request_name_len") or v.is("max_requestName_len") )
+    else if ( v.is("max_request_name_len") )
         conf->maxRequestNameLen = v.get_uint16();
 
     else if ( v.is("max_to_len") )
@@ -233,6 +243,18 @@ bool SipModule::set(const char*, Value& v, SnortConfig*)
 
     else if ( v.is("methods") )
         sip_methods = v.get_string();
+
+    else if ( v.is("sip_timeout") )
+        conf->sip_timeout = v.get_uint64()/1000;
+
+    else if ( v.is("sip_invite_timeout") )
+        conf->sip_invite_timeout = v.get_uint64()/1000;
+
+    else if ( v.is("sip_media_timeout") )
+        conf->sip_media_timeout = v.get_uint64()/1000;
+
+    else if ( v.is("sip_disconnect_timeout") )
+        conf->sip_disconnect_timeout = v.get_uint64()/1000;
 
     return true;
 }

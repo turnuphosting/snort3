@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -49,7 +49,6 @@ std::array<Codec*, UINT8_MAX> CodecManager::s_protocols {
 
 THREAD_LOCAL ProtocolId CodecManager::grinder_id = ProtocolId::ETHERTYPE_NOT_SET;
 THREAD_LOCAL uint8_t CodecManager::grinder = 0;
-THREAD_LOCAL uint8_t CodecManager::max_layers = DEFAULT_LAYERMAX;
 
 // This is hardcoded into Snort++
 extern const CodecApi* default_codec;
@@ -78,11 +77,10 @@ uint8_t CodecManager::get_codec(const char* const keyword)
 
 CodecManager::CodecApiWrapper& CodecManager::get_api_wrapper(const CodecApi* cd_api)
 {
-    for (CodecApiWrapper& caw : s_codecs)
-    {
-        if (caw.api == cd_api)
-            return caw;
-    }
+    auto it = std::find_if(s_codecs.begin(), s_codecs.end(),
+        [cd_api](const CodecApiWrapper& caw){ return caw.api == cd_api; });
+    if (it != s_codecs.end())
+        return *it;
 
     ParseAbort("Attempting to instantiate Codec '%s', "
         "but codec has not been added", cd_api->base.name);
@@ -135,7 +133,7 @@ void CodecManager::release_plugins()
     s_proto_map.fill(0);
 }
 
-void CodecManager::instantiate(CodecApiWrapper& wrap, Module* m, SnortConfig*)
+void CodecManager::instantiate(CodecApiWrapper& wrap, Module* m)
 {
     if (!wrap.init)
     {
@@ -169,10 +167,10 @@ void CodecManager::instantiate(CodecApiWrapper& wrap, Module* m, SnortConfig*)
     }
 }
 
-void CodecManager::instantiate(const CodecApi* cd_api, Module* m, SnortConfig* sc)
+void CodecManager::instantiate(const CodecApi* cd_api, Module* m)
 {
     CodecApiWrapper& wrap = get_api_wrapper(cd_api);
-    instantiate(wrap, m, sc);
+    instantiate(wrap, m);
 }
 
 void CodecManager::instantiate()
@@ -180,20 +178,18 @@ void CodecManager::instantiate()
     CodecApiWrapper tmp_wrap;
     tmp_wrap.api = default_codec;
     tmp_wrap.init = false;
-    instantiate(tmp_wrap, nullptr, nullptr);
+    instantiate(tmp_wrap, nullptr);
 
     // default codec is the api ... I want the codec.
     s_protocols[0] = s_protocols[get_codec(default_codec->base.name)];
 
     // and instantiate every codec which does not have a module
     for (CodecApiWrapper& wrap : s_codecs)
-        instantiate(wrap, nullptr, nullptr);
+        instantiate(wrap, nullptr);
 }
 
-void CodecManager::thread_init(const SnortConfig* sc)
+void CodecManager::thread_init()
 {
-    max_layers = sc->num_layers;
-
     for ( CodecApiWrapper& wrap : s_codecs )
         if (wrap.api->tinit)
             wrap.api->tinit();
@@ -243,7 +239,7 @@ void CodecManager::dump_plugins()
 {
     Dumper d("Codecs");
 
-    for ( CodecApiWrapper& wrap : s_codecs )
+    for ( const CodecApiWrapper& wrap : s_codecs )
         d.dump(wrap.api->base.name, wrap.api->base.version);
 }
 

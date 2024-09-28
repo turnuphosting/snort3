@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,6 +27,7 @@
 #include <list>
 #include <mutex>
 #include <set>
+#include <string>
 
 #include "framework/counts.h"
 #include "main/analyzer_command.h"
@@ -86,18 +87,25 @@ public:
 
     static PegCount* get_stats(const char* name);
     static void dump_stats(const char* skip = nullptr, bool dynamic = false);
+    static void accumulate_dump_stats();
+    static void init_stats();
+    static void add_thread_stats_entry(const char* name);
 
-    static void accumulate(const char* except = nullptr);
+    static void accumulate(const char* except = "snort");
     static void accumulate_module(const char* name);
 
     static void reset_stats(SnortConfig*);
     static void reset_stats(clear_counter_type_t);
+    static void reset_module_stats(const char* name);
 
     static void clear_global_active_counters();
+    static bool is_parallel_cmd(std::string control_cmd);
+    static std::string remove_whitespace(std::string& control_cmd);
 
 
     static std::set<uint32_t> gids;
     SO_PUBLIC static std::mutex stats_mutex;
+    SO_PUBLIC static const char* dynamic_stats_modules;
 };
 }
 

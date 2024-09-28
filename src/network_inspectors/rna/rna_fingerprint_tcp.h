@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -132,7 +132,7 @@ struct FpFingerprintState
     int initial_mss = -1;
     int timestamp = -1;
     int numopts = -1;
-    uint8_t tcpopts[4];
+    uint8_t tcpopts[4] = {};
     time_t timeout = -1;
 
     bool set(const snort::Packet*);

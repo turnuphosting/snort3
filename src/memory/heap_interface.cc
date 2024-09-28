@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2023-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2023-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -33,7 +33,6 @@
 
 #include "control/control.h"
 #include "log/messages.h"
-#include "main/thread.h"
 
 namespace memory
 {

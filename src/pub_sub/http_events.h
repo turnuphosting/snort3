@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -41,6 +41,7 @@ public:
     const uint8_t* get_cookie(int32_t &length);
     const uint8_t* get_authority(int32_t &length);
     const uint8_t* get_uri_host(int32_t &length);
+    const uint8_t* get_uri_query(int32_t &length);
     const uint8_t* get_location(int32_t &length);
     const uint8_t* get_referer(int32_t &length);
     const uint8_t* get_server(int32_t &length);

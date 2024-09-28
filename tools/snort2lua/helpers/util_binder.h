@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -117,7 +117,6 @@ public:
     void set_use_type(const std::string& module_name);
     void set_use_name(const std::string& struct_name);
     void set_use_file(const std::string& file_name, IncludeType = IT_FILE);
-    void set_use_service(const std::string& service_name);
     void set_use_action(const std::string& action);
 
     std::string get_use_type() const

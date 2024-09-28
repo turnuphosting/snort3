@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -23,10 +23,10 @@
 
 #include "stream_ha.h"
 
+#include <algorithm>
 #include <unordered_map>
 
 #include "flow/flow_key.h"
-#include "managers/inspector_manager.h"
 #include "pub_sub/stream_event_ids.h"
 #include "stream/stream.h"
 
@@ -104,6 +104,7 @@ bool StreamHAClient::consume(Flow*& flow, const FlowKey* key, HAMessage& msg, ui
         if ( (flow = protocol_create_session(key)) == nullptr )
             return false;
 
+        flow->flags.ha_flow = true;
         BareDataEvent event;
         DataBus::publish(Stream::get_pub_id(), StreamEventIds::HA_NEW_FLOW, event, flow);
 
@@ -126,6 +127,7 @@ bool StreamHAClient::consume(Flow*& flow, const FlowKey* key, HAMessage& msg, ui
     }
 
     flow->ssn_state = hac->ssn_state;
+    flow->ssn_state.session_flags &= ~SSNFLAG_ESTABLISHED;  // clear flag for tcp established event to be generated
     flow->flow_state = hac->flow_state;
 
     if ( !flow->ha_state->check_any(FlowHAState::STANDBY) )
@@ -253,19 +255,13 @@ ProtocolHA::~ProtocolHA()
 {
     assert( proto_map );
 
-    for( auto map : *proto_map )
-    {
-        if ( map.second == this )
-        {
-            proto_map->erase(map.first);
-            break;
-        }
-    }
+    auto it = std::find_if(proto_map->cbegin(), proto_map->cend(),
+        [this](const std::pair<const int, ProtocolHA*>& map){ return map.second == this; });
+    if ( it != proto_map->cend() )
+        proto_map->erase((*it).first);
 
     if ( proto_map->empty() )
-    {
         delete proto_map;
-    }
 }
 
 void ProtocolHA::process_deletion(Flow& flow)

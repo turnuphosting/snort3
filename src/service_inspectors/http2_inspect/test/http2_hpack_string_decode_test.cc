@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -53,7 +53,7 @@ TEST_GROUP(http2_hpack_string_decode_success)
     Http2EventGen events;
     Http2Infractions inf;
     Http2HpackStringDecode* const decode = new Http2HpackStringDecode();
-    Http2HpackIntDecode decode_int7{7};
+    Http2HpackIntDecode decode_int7{7}; // cppcheck-suppress unreadVariable
 
     void teardown() override
     {

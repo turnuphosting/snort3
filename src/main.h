@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -22,7 +22,7 @@
 #define MAIN_H
 
 struct lua_State;
-
+extern bool exit_requested;
 const char* get_prompt();
 
 // commands provided by the snort module
@@ -43,6 +43,8 @@ int main_pause(lua_State* = nullptr);
 int main_resume(lua_State* = nullptr);
 int main_quit(lua_State* = nullptr);
 int main_help(lua_State* = nullptr);
+int convert_counter_type(const char* type);
+int show_snort_cpu(lua_State* = nullptr);
 
 #ifdef SHELL
 int main_dump_plugins(lua_State* = nullptr);

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,7 +25,6 @@
 #include <string>
 
 #include "detection/detection_engine.h"
-#include "detection/detection_util.h"
 #include "js_norm/js_pdf_norm.h"
 #include "log/messages.h"
 #include "log/unified2.h"
@@ -49,6 +48,13 @@
 #endif
 
 using namespace snort;
+
+// Indices in the buffer array exposed by InspectApi
+// Must remain synchronized with smtp_bufs
+enum SmtpBufId
+{
+    SMTP_FILE_DATA_ID = 1, SMTP_VBA_DATA_ID, SMTP_JS_DATA_ID
+};
 
 THREAD_LOCAL ProfileStats smtpPerfStats;
 THREAD_LOCAL SmtpStats smtpstats;
@@ -200,6 +206,7 @@ enum SMTPCmdGroup
 
 static void snort_smtp(SmtpProtoConf* GlobalConf, Packet* p);
 static void SMTP_ResetState(Flow*);
+static void update_eol_state(SMTPEol new_eol, SMTPEol& curr_eol_state);
 
 SmtpFlowData::SmtpFlowData() : FlowData(inspector_id)
 {
@@ -228,13 +235,18 @@ static SMTPData* get_session_data(Flow* flow)
 
 static inline PDFJSNorm* acquire_js_ctx(SMTPData& smtp_ssn, const void* data, size_t len)
 {
-    if (smtp_ssn.jsn)
+    auto reload_id = SnortConfig::get_conf()->get_reload_id();
+
+    if (smtp_ssn.jsn and smtp_ssn.jsn->get_generation_id() == reload_id)
         return smtp_ssn.jsn;
+
+    delete smtp_ssn.jsn;
+    smtp_ssn.jsn = nullptr;
 
     JSNormConfig* cfg = get_inspection_policy()->jsn_config;
     if (cfg and PDFJSNorm::is_pdf(data, len))
     {
-        smtp_ssn.jsn = new PDFJSNorm(cfg);
+        smtp_ssn.jsn = new PDFJSNorm(cfg, reload_id);
         ++smtpstats.js_pdf_scripts;
     }
 
@@ -540,11 +552,14 @@ void SmtpProtoConf::show() const
 static void SMTP_ResetState(Flow* ssn)
 {
     SMTPData* smtp_ssn = get_session_data(ssn);
-    smtp_ssn->state = STATE_COMMAND;
-    smtp_ssn->state_flags = (smtp_ssn->state_flags & SMTP_FLAG_ABANDON_EVT) ? SMTP_FLAG_ABANDON_EVT : 0;
+    if( smtp_ssn )
+    {
+        smtp_ssn->state = STATE_COMMAND;
+        smtp_ssn->state_flags = (smtp_ssn->state_flags & SMTP_FLAG_ABANDON_EVT) ? SMTP_FLAG_ABANDON_EVT : 0;
 
-    delete smtp_ssn->jsn;
-    smtp_ssn->jsn = nullptr;
+        delete smtp_ssn->jsn;
+        smtp_ssn->jsn = nullptr;
+    }
 }
 
 static inline int InspectPacket(Packet* p)
@@ -696,7 +711,7 @@ static const uint8_t* SMTP_HandleCommand(SmtpProtoConf* config, Packet* p, SMTPD
     char alert_long_command_line = 0;
 
     /* get end of line and end of line marker */
-    SMTP_GetEOL(ptr, end, &eol, &eolm);
+    SMTPEol new_eol = SMTP_GetEOL(ptr, end, &eol, &eolm);
 
     /* calculate length of command line */
     cmd_line_len = eol - ptr;
@@ -954,12 +969,14 @@ static const uint8_t* SMTP_HandleCommand(SmtpProtoConf* config, Packet* p, SMTPD
                     while ((last < eolm) && isspace((int)*last))
                         last++;
 
+                    // cppcheck-suppress knownConditionTrueFalse
                     if (((eolm - last) >= 4)
                         && (strncasecmp("LAST", (const char*)last, 4) == 0))
                     {
                         bdat_last = true;
                     }
 
+                    // cppcheck-suppress knownConditionTrueFalse
                     if (bdat_last || (dat_chunk == 0))
                         smtp_ssn->state_flags &= ~(SMTP_FLAG_BDAT);
                     else
@@ -1020,6 +1037,8 @@ static const uint8_t* SMTP_HandleCommand(SmtpProtoConf* config, Packet* p, SMTPD
        DetectionEngine::queue_event(GID_SMTP, SMTP_STARTTLS_INJECTION_ATTEMPT);
     }
 
+    update_eol_state(new_eol, smtp_ssn->client_eol);
+
     return eol;
 }
 
@@ -1063,7 +1082,7 @@ static void SMTP_ProcessClientPacket(SmtpProtoConf* config, Packet* p, SMTPData*
             break;
         case STATE_XEXCH50:
             if (smtp_normalizing)
-                SMTP_CopyToAltBuffer(p, ptr, end - ptr);
+                (void)SMTP_CopyToAltBuffer(p, ptr, end - ptr);
             if (smtp_is_data_end (p->flow))
                 smtp_ssn->state = STATE_COMMAND;
             return;
@@ -1131,7 +1150,7 @@ static void SMTP_ProcessServerPacket(
         const uint8_t* eol;
         const uint8_t* eolm;
 
-        SMTP_GetEOL(ptr, end, &eol, &eolm);
+        SMTPEol new_eol = SMTP_GetEOL(ptr, end, &eol, &eolm);
 
         int resp_line_len = eol - ptr;
 
@@ -1212,10 +1231,11 @@ static void SMTP_ProcessServerPacket(
             }
         }
 
-        if ((config->max_response_line_len != 0) &&
-            (resp_line_len > config->max_response_line_len) &&
-            (smtp_ssn->state != STATE_TLS_DATA))
+        if (smtp_ssn->state != STATE_TLS_DATA)
         {
+            update_eol_state(new_eol, smtp_ssn->server_eol);
+            if ((config->max_response_line_len != 0) &&
+                (resp_line_len > config->max_response_line_len))
             DetectionEngine::queue_event(GID_SMTP, SMTP_RESPONSE_OVERFLOW);
         }
 
@@ -1383,6 +1403,25 @@ static void SMTP_RegXtraDataFuncs(SmtpProtoConf* config)
     config->xtra_ehdrs_id = Stream::reg_xtra_data_cb(SMTP_GetEmailHdrs);
 }
 
+static void update_eol_state(SMTPEol new_eol, SMTPEol& curr_eol_state)
+{
+    if (new_eol == EOL_NOT_SEEN or curr_eol_state == EOL_MIXED)
+        return;
+
+    if (curr_eol_state == EOL_NOT_SEEN)
+    {
+        curr_eol_state = new_eol;
+        return;
+    }
+
+    if ((new_eol == EOL_LF and curr_eol_state == EOL_CRLF) or
+        (new_eol == EOL_CRLF and curr_eol_state == EOL_LF))
+    {
+        curr_eol_state = EOL_MIXED;
+        DetectionEngine::queue_event(GID_SMTP, SMTP_LF_CRLF_MIX);
+    }
+}
+
 int SmtpMime::handle_header_line(
     const uint8_t* ptr, const uint8_t* eol, int max_header_len, Packet* p)
 {
@@ -1499,7 +1538,8 @@ public:
 
     void ProcessSmtpCmdsList(const SmtpCmd*);
 
-    bool get_fp_buf(snort::InspectionBuffer::Type, snort::Packet*, snort::InspectionBuffer&) override;
+    bool get_buf(snort::InspectionBuffer::Type, snort::Packet*, snort::InspectionBuffer&) override;
+    bool get_buf(unsigned id, snort::Packet* p, snort::InspectionBuffer& b) override;
 
 private:
     SmtpProtoConf* config;
@@ -1520,11 +1560,11 @@ Smtp::~Smtp()
     delete config;
 }
 
-bool Smtp::configure(SnortConfig*)
+bool Smtp::configure(SnortConfig* sc)
 {
     SMTP_RegXtraDataFuncs(config);
 
-    config->decode_conf.sync_all_depths();
+    config->decode_conf.sync_all_depths(sc);
 
     if (config->decode_conf.get_file_depth() > -1)
         config->log_config.log_filename = true;
@@ -1542,7 +1582,7 @@ void Smtp::show(const SnortConfig*) const
 
 void Smtp::eval(Packet* p)
 {
-    Profile profile(smtpPerfStats);
+    Profile profile(smtpPerfStats); // cppcheck-suppress unreadVariable
 
     // precondition - what we registered for
     assert(p->has_tcp_data());
@@ -1591,7 +1631,7 @@ void Smtp::ProcessSmtpCmdsList(const SmtpCmd* sc)
         config->cmd_config[id].max_line_len = sc->number;
 }
 
-bool Smtp::get_fp_buf(InspectionBuffer::Type ibt, Packet* p, InspectionBuffer& b)
+bool Smtp::get_buf(InspectionBuffer::Type ibt, Packet* p, InspectionBuffer& b)
 {
     SMTPData* smtp_ssn = get_session_data(p->flow);
 
@@ -1633,6 +1673,21 @@ bool Smtp::get_fp_buf(InspectionBuffer::Type ibt, Packet* p, InspectionBuffer& b
     b.len = dst_len;
 
     return dst && dst_len;
+}
+
+bool Smtp::get_buf(unsigned id, snort::Packet* p, snort::InspectionBuffer& b)
+{
+    switch (id)
+    {
+    case SMTP_FILE_DATA_ID:
+        return false;
+    case SMTP_VBA_DATA_ID:
+        return get_buf(InspectionBuffer::IBT_VBA, p, b);
+    case SMTP_JS_DATA_ID:
+        return get_buf(InspectionBuffer::IBT_JS_DATA, p, b);
+    default:
+        return false;
+    }
 }
 
 //-------------------------------------------------------------------------

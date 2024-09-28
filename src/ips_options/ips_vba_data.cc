@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -37,6 +37,7 @@ CursorActionType VbaDataOption::get_cursor_type() const
 
 IpsOption::EvalStatus VbaDataOption::eval(Cursor& c, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(vbaDataPerfStats);
 
     if (!p->flow or !p->flow->gadget)
@@ -105,7 +106,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* vba_data_ctor(Module*, OptTreeNode*)
+static IpsOption* vba_data_ctor(Module*, IpsInfo&)
 {
     return new VbaDataOption;
 }
@@ -140,11 +141,7 @@ static const IpsApi vba_data_api =
     nullptr
 };
 
-#ifdef BUILDING_SO
-SO_PUBLIC const BaseApi* snort_plugins[] =
-#else
 const BaseApi* ips_vba_data[] =
-#endif
 {
     &vba_data_api.base,
     nullptr

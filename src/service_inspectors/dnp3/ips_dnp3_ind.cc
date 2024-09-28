@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -80,6 +80,7 @@ bool Dnp3IndOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus Dnp3IndOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(dnp3_ind_perf_stats);
 
     if ((p->has_tcp_data() && !p->is_full_pdu()) || !p->flow || !p->dsize)
@@ -132,7 +133,7 @@ public:
     { return DETECT; }
 
 public:
-    uint16_t flags;
+    uint16_t flags = 0;
 };
 
 bool Dnp3IndModule::set(const char*, Value& v, SnortConfig*)
@@ -184,7 +185,7 @@ static void dnp3_ind_mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* dnp3_ind_ctor(Module* p, OptTreeNode*)
+static IpsOption* dnp3_ind_ctor(Module* p, IpsInfo&)
 {
     Dnp3IndModule* m = (Dnp3IndModule*)p;
     return new Dnp3IndOption(m->flags);

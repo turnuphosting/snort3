@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,7 +26,6 @@
 
 #include <unordered_map>
 
-#include "detection/treenodes.h"
 #include "framework/ips_option.h"
 #include "framework/module.h"
 #include "hash/hash_defs.h"
@@ -35,8 +34,6 @@
 #include "log/messages.h"
 #include "protocols/packet.h"
 #include "profiler/profiler.h"
-#include "utils/sflsq.h"
-#include "utils/util.h"
 
 using namespace snort;
 
@@ -287,21 +284,12 @@ IpsOption::EvalStatus FlowBitsOption::eval(Cursor&, Packet* p)
 
 bool FlowBitsOption::is_set(BitOp* bitop)
 {
-    if ( !config->or_bits )
-    {
-        for ( auto id : config->ids )
-        {
-            if ( !bitop->is_set(id) )
-                return false;
-        }
-        return true;
-    }
-    for ( auto id : config->ids )
-    {
-        if ( bitop->is_set(id) )
-            return true;
-    }
-    return false;
+    return config->or_bits ?
+        std::any_of(config->ids.cbegin(), config->ids.cend(),
+            [&bitop](uint16_t id){ return bitop->is_set(id); })
+        :
+        std::none_of(config->ids.cbegin(), config->ids.cend(),
+            [&bitop](uint16_t id){ return !bitop->is_set(id); });
 }
 
 void FlowBitsOption::get_dependencies(bool& set, std::vector<std::string>& bits)
@@ -518,14 +506,14 @@ static void mod_dtor(Module* m)
     delete fb;
 }
 
-static IpsOption* flowbits_ctor(Module* p, OptTreeNode* otn)
+static IpsOption* flowbits_ctor(Module* p, IpsInfo& info)
 {
     FlowbitsModule* m = (FlowbitsModule*)p;
     FlowBitCheck* fbc = m->get_data();
     FlowBitsOption* opt = new FlowBitsOption(fbc);
 
     if ( opt->is_checker() )
-        otn->set_flowbits_check();
+        IpsOption::set_flowbits_check(info);
 
     return opt;
 }
@@ -560,5 +548,9 @@ static const IpsApi flowbits_api =
     nullptr
 };
 
-const BaseApi* ips_flowbits = &flowbits_api.base;
+const BaseApi* ips_flowbits[] =
+{
+    &flowbits_api.base,
+    nullptr
+};
 

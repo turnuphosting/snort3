@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -128,14 +128,14 @@ public:
 
 public:
     static unsigned inspector_id;
-    DCE2_TcpSsnData dce2_tcp_session;
-    DCE2_TcpFlowState state;
+    DCE2_TcpSsnData dce2_tcp_session = {};
+    DCE2_TcpFlowState state = DCE2_TCP_FLOW__COMMON;
 };
 
 class Dce2Tcp : public snort::Inspector
 {
 public:
-    Dce2Tcp(const dce2TcpProtoConf&);
+    explicit Dce2Tcp(const dce2TcpProtoConf&);
 
     bool configure(snort::SnortConfig*) override;
     void show(const snort::SnortConfig*) const override;

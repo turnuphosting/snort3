@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -20,9 +20,9 @@
 #ifndef HTTP2_PUSH_PROMISE_FRAME_H
 #define HTTP2_PUSH_PROMISE_FRAME_H
 
+#include "helpers/event_gen.h"
+#include "helpers/infractions.h"
 #include "service_inspectors/http_inspect/http_common.h"
-#include "utils/event_gen.h"
-#include "utils/infractions.h"
 
 #include "http2_enum.h"
 #include "http2_frame.h"

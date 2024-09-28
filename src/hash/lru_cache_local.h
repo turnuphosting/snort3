@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -34,8 +34,9 @@
     { CountType::SUM, "cache_hits", module " cache found existing entry" }, \
     { CountType::SUM, "cache_misses", module " cache did not find entry" }, \
     { CountType::SUM, "cache_replaces", module " cache found entry and replaced its value" }, \
-    { CountType::SUM, "cache_max", module " cache's maximum byte usage"}, \
-    { CountType::SUM, "cache_prunes", module " cache pruned entry to make space for new entry" }
+    { CountType::MAX, "cache_max", module " cache's maximum byte usage"}, \
+    { CountType::SUM, "cache_prunes", module " cache pruned entry to make space for new entry" }, \
+    { CountType::SUM, "cache_removes", module " cache removed existing entry"}
 
 struct LruCacheLocalStats
 {
@@ -45,6 +46,7 @@ struct LruCacheLocalStats
     PegCount cache_replaces;
     PegCount cache_max;
     PegCount cache_prunes;
+    PegCount cache_removes;
 };
 
 template<typename Key, typename Value, typename Hash>
@@ -65,6 +67,10 @@ public:
     // If key does not exist, insert the key-value pair and return true;
     // else return false replacing the existing value if asked
     bool add(const Key&, const Value&, bool replace = false);
+
+    // If key does not exist, return false;
+    // else remove the entry associated with key
+    bool remove(const Key&);
 
     // Copy all key-value pairs from the cache
     void get_all_values(std::vector<std::pair<Key, Value>>&);
@@ -123,7 +129,7 @@ void LruCacheLocal<Key, Value, Hash>::add_entry(const Key& key, const Value& val
 template<typename Key, typename Value, typename Hash>
 Value& LruCacheLocal<Key, Value, Hash>::find_else_create(const Key& key, bool* is_new)
 {
-    LruMapIter it = map.find(key);
+    auto it = map.find(key);
     if (it == map.end())
     {
         stats.cache_misses++;
@@ -141,7 +147,7 @@ Value& LruCacheLocal<Key, Value, Hash>::find_else_create(const Key& key, bool* i
 template<typename Key, typename Value, typename Hash>
 bool LruCacheLocal<Key, Value, Hash>::add(const Key& key, const Value& value, bool replace)
 {
-    LruMapIter it = map.find(key);
+    auto it = map.find(key);
     if (it == map.end())
     {
         stats.cache_misses++;
@@ -157,6 +163,21 @@ bool LruCacheLocal<Key, Value, Hash>::add(const Key& key, const Value& value, bo
         stats.cache_replaces++;
     }
     return false;
+}
+
+template<typename Key, typename Value, typename Hash>
+bool LruCacheLocal<Key, Value, Hash>::remove(const Key& key)
+{
+    auto it = map.find(key);
+    if (it == map.end())
+    {
+        return false;
+    }
+    list.erase(it->second);
+    map.erase(it);
+    current_size -= entry_size;
+    stats.cache_removes++;
+    return true;
 }
 
 template<typename Key, typename Value, typename Hash>

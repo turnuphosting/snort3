@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 // Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 //
@@ -34,8 +34,10 @@ namespace snort
 struct Packet;
 }
 
+class Event;
+struct ListHead;
 struct OptTreeNode;
-struct Event;
+struct SigInfo;
 
 #define GID_TAG       2
 #define TAG_LOG_PKT   1
@@ -64,7 +66,7 @@ struct TagData
 
 void InitTag();
 void CleanupTag();
-int CheckTagList(snort::Packet*, Event&, void**);
+int CheckTagList(snort::Packet*, SigInfo&, ListHead*&, struct timeval&, uint32_t& id, const char*& action);
 void SetTags(const snort::Packet*, const OptTreeNode*, uint16_t);
 
 #endif

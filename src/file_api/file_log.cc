@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -81,8 +81,8 @@ static void dl_tterm()
 class LogHandler : public DataHandler
 {
 public:
-    LogHandler(const FileLogConfig& conf) : DataHandler(s_name)
-    { config = conf; }
+    LogHandler(const FileLogConfig& conf) : DataHandler(s_name), config(conf)
+    { }
 
     void handle(DataEvent&, Flow*) override;
 
@@ -202,10 +202,10 @@ void LogHandler::handle(DataEvent&, Flow* f)
 class FileLog : public Inspector
 {
 public:
-    FileLog(const FileLogConfig& conf) { config = conf; }
+    FileLog(const FileLogConfig& conf) : config(conf)
+    { }
 
     void show(const SnortConfig*) const override;
-    void eval(Packet*) override { }
 
     bool configure(SnortConfig*) override
     {

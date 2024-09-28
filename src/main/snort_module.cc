@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -42,6 +42,7 @@
 #include "parser/vars.h"
 #include "trace/trace_api.h"
 #include "trace/trace_config.h"
+#include "utils/stats.h"
 
 #if defined(UNIT_TEST) || defined(BENCHMARK_TEST)
 #include "catch/unit_test.h"
@@ -118,6 +119,12 @@ static const Parameter main_log_command_param[] =
     { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
 };
 
+static const Parameter reset_stat_param[] =
+{
+	{ "type", Parameter::PT_STRING, nullptr, nullptr, "possible type can be: daq|module|appid|file_id|snort|ha|all." },
+	{ nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
+};
+
 static const Command snort_cmds[] =
 {
     { "set_watchdog_params", main_set_watchdog_params, s_watchdog, "set watchdog parameters" },
@@ -128,7 +135,8 @@ static const Command snort_cmds[] =
 
     { "dump_stats", main_dump_stats, nullptr, "show summary statistics" },
     { "dump_heap_stats", main_dump_heap_stats, nullptr, "show heap statistics" },
-    { "reset_stats", main_reset_stats, nullptr, "clear summary statistics" },
+    { "reset_stats", main_reset_stats, reset_stat_param, "clear summary statistics. "
+      "Type can be: daq|module|appid|file_id|snort|ha|all. reset_stats() without a parameter clears all statistics."},
     { "rotate_stats", main_rotate_stats, nullptr, "roll perfmonitor log files" },
     { "reload_config", main_reload_config, s_reload_w_path, "load new configuration" },
     { "reload_policy", main_reload_policy, s_reload, "reload part or all of the default policy" },
@@ -136,18 +144,19 @@ static const Command snort_cmds[] =
     { "reload_hosts", main_reload_hosts, s_reload, "load a new hosts table" },
     { "log_command", main_log_command,main_log_command_param, "enable or disable command logging"},
     { "show_config_generation", main_show_config_generation, nullptr, "show loaded configuration ID"},
+    { "show_snort_cpu", show_snort_cpu, nullptr, "show snort cpu usage"},
 
     // FIXIT-M rewrite trough to permit updates on the fly
     //{ "process", main_process, nullptr, "process given pcap" },
 
-    { "pause", main_pause, nullptr, "suspend packet processing" },
+    { "pause", main_pause, nullptr, "suspend packet processing", true },
 
     { "resume", main_resume, s_pktnum, "continue packet processing. "
-      "If number of packets is specified, will resume for n packets and pause" },
+      "If number of packets is specified, will resume for n packets and pause", true },
 
-    { "detach", main_detach, nullptr, "detach from control shell (without shutting down)" },
-    { "quit", main_quit, nullptr, "shutdown and dump-stats" },
-    { "help", main_help, nullptr, "this output" },
+    { "detach", main_detach, nullptr, "detach from control shell (without shutting down)", true },
+    { "quit", main_quit, nullptr, "shutdown and dump-stats", true },
+    { "help", main_help, nullptr, "this output", true },
 
     { nullptr, nullptr, nullptr, nullptr }
 };
@@ -683,6 +692,12 @@ public:
     void sum_stats(bool) override
     { }  // accumulate externally
 
+    void reset_stats() override
+    {
+        if (snort::in_main_thread())
+            Module::reset_stats();
+    }
+
     ProfileStats* get_profile(unsigned, const char*&, const char*&) const override;
 
     Usage get_usage() const override
@@ -694,7 +709,7 @@ public:
 private:
     inline bool is(const Value& v, const char* opt);
 
-    SFDAQModuleConfig* module_config;
+    SFDAQModuleConfig* module_config = nullptr;
     bool no_warn_flowbits = false;
     bool no_warn_rules = false;
     std::string stub_opts;

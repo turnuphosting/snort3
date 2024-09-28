@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -51,7 +51,7 @@ struct DetectorPackageInfo
     std::string validateFunctionName;
     int minimum_matches = 0;
     std::string name = "NoName";
-    IpProtocol proto;
+    IpProtocol proto = IpProtocol::PROTO_NOT_SET;
 };
 
 struct LuaDetectorParameters
@@ -69,7 +69,7 @@ struct LuaDetectorParameters
     const uint8_t* data = nullptr;
     uint16_t size = 0;
     AppidSessionDirection dir = APP_ID_FROM_INITIATOR;
-    AppIdSession* asd;
+    AppIdSession* asd = nullptr;
     AppidChangeBits* change_bits = nullptr;
     const snort::Packet* pkt = nullptr;
 };

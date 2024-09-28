@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -350,11 +350,9 @@ static const char* sp_help = "a proxy inspector to track flow data from SO rules
 class SoProxy : public Inspector
 {
 public:
-    void eval(Packet*) override { }
     bool configure(SnortConfig* sc) override
     {
-        for( auto i : sc->so_rules->handles )
-            handles.emplace_back(i);
+        copy(sc->so_rules->handles.begin(), sc->so_rules->handles.end(), back_inserter(handles));
         sc->so_rules->proxy = this;
         return true;
     }

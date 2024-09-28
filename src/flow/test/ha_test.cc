@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -31,6 +31,8 @@
 
 using namespace snort;
 
+#include "flow_stubs.h"
+
 #define MSG_SIZE 100
 #define TEST_KEY 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47
 
@@ -42,6 +44,9 @@ static const FlowKey s_test_key =
     /* .ip_h = */ { 5, 6, 7, 8 },
     /* .mplsLabel = */ 9,
     /* .addressSpaceId = */ 0,
+#ifndef DISABLE_TENANT_ID
+    /* .tenant_id = */ 0,
+#endif
     /* .port_l = */ 10,
     /* .port_h = */ 11,
     /* .group_l = */ 0,
@@ -63,7 +68,11 @@ static struct __attribute__((__packed__)) TestDeleteMessage {
     {
         HA_DELETE_EVENT,
         HA_MESSAGE_VERSION,
+#ifndef DISABLE_TENANT_ID
+        65,
+#else
         61,
+#endif
         KEY_TYPE_IP6
     },
     s_test_key
@@ -79,7 +88,11 @@ static struct __attribute__((__packed__)) TestUpdateMessage {
     {
         HA_UPDATE_EVENT,
         HA_MESSAGE_VERSION,
+#ifndef DISABLE_TENANT_ID
+        77,
+#else
         73,
+#endif
         KEY_TYPE_IP6
     },
     s_test_key,
@@ -180,9 +193,6 @@ Flow* Stream::get_flow(const FlowKey* flowkey)
     return (Flow*)mock().getData("flow").getObjectPointer();
 }
 
-Packet::Packet(bool) { }
-Packet::~Packet() = default;
-
 void Stream::delete_flow(const FlowKey* flowkey)
 {
     mock().actualCall("delete_flow");
@@ -193,8 +203,9 @@ void Stream::delete_flow(const FlowKey* flowkey)
 
 namespace snort
 {
-void ErrorMessage(const char*,...) { }
-void LogMessage(const char*,...) { }
+Flow::~Flow() = default;
+void Flow::set_client_initiate(Packet*) { }
+void Flow::set_direction(Packet*) { }
 
 void packet_gettimeofday(struct timeval* tv)
 {
@@ -202,23 +213,14 @@ void packet_gettimeofday(struct timeval* tv)
 }
 }
 
-bool FlowKey::is_equal(const void*, const void*, size_t) { return false; }
-
 int SFDAQInstance::ioctl(DAQ_IoctlCmd, void*, size_t) { return DAQ_SUCCESS; }
 
-Flow::~Flow() { }
-
 FlowStash::~FlowStash() = default;
-
-void Flow::set_client_initiate(Packet*) { }
-void Flow::set_direction(Packet*) { }
 
 SideChannel* SideChannelManager::get_side_channel(SCPort)
 {
     return (SideChannel*)mock().getData("s_side_channel").getObjectPointer();
 }
-
-SideChannel::SideChannel() = default;
 
 Connector::Direction SideChannel::get_direction()
 { return Connector::CONN_DUPLEX; }
@@ -395,8 +397,8 @@ TEST_GROUP(high_availability_test)
 {
     Flow s_flow;
     Active active;
-    StreamHAClient* s_ha_client; // cppcheck-suppress variableScope
-    FlowHAClient* s_other_ha_client; // cppcheck-suppress variableScope
+    StreamHAClient* s_ha_client;
+    FlowHAClient* s_other_ha_client;
     uint8_t s_message[MSG_SIZE];
     SCMessage s_sc_message;
     Packet s_pkt;
@@ -427,7 +429,7 @@ TEST_GROUP(high_availability_test)
         s_sc_message = {};
         s_sc_message.content = s_message;
         mock().setDataObject("message_content", "SCMessage", &s_sc_message);
-        s_pkt.active = &active; // cppcheck-suppress unreadVariable
+        s_pkt.active = &active;
 
         memset(&ha_stats, 0, sizeof(ha_stats));
 
@@ -440,8 +442,8 @@ TEST_GROUP(high_availability_test)
 
         HighAvailabilityManager::configure(&hac);
         HighAvailabilityManager::thread_init();
-        s_ha_client = new StreamHAClient; // cppcheck-suppress unreadVariable
-        s_other_ha_client = new OtherHAClient; // cppcheck-suppress unreadVariable
+        s_ha_client = new StreamHAClient;
+        s_other_ha_client = new OtherHAClient;
     }
 
     void teardown() override

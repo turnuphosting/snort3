@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -75,29 +75,14 @@ bool Dnp3DataOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus Dnp3DataOption::eval(Cursor& c, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(dnp3_data_perf_stats);
 
-    if ((p->has_tcp_data() && !p->is_full_pdu()) || !p->flow || !p->dsize)
+    InspectionBuffer b;
+    if (!get_buf_dnp3_data(p, b))
         return NO_MATCH;
 
-    Dnp3FlowData* fd = (Dnp3FlowData*)p->flow->get_flow_data(Dnp3FlowData::inspector_id);
-
-    if (!fd)
-        return NO_MATCH;
-
-    dnp3_session_data_t* dnp3_session = &fd->dnp3_session;
-    dnp3_reassembly_data_t* rdata;
-
-    if (dnp3_session->direction == DNP3_CLIENT)
-        rdata = &(dnp3_session->client_rdata);
-    else
-        rdata = &(dnp3_session->server_rdata);
-
-    /* Only evaluate rules against complete Application-layer fragments */
-    if (rdata->state != DNP3_REASSEMBLY_STATE__DONE)
-        return NO_MATCH;
-
-    c.set(s_name,(uint8_t*)rdata->buffer, rdata->buflen);
+    c.set(s_name, b.data, b.len);
 
     return MATCH;
 }
@@ -135,7 +120,7 @@ static void dnp3_data_mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* dnp3_data_ctor(Module*, OptTreeNode*)
+static IpsOption* dnp3_data_ctor(Module*, IpsInfo&)
 {
     return new Dnp3DataOption;
 }

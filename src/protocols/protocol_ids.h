@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -160,6 +160,8 @@ enum class ProtocolId : std::uint16_t
     ETHERTYPE_FPATH = 0x8903,
     ETHERTYPE_CISCO_META = 0x8909,
 };
+
+constexpr auto num_protocol_idx = UINT8_MAX;
 
 static const auto num_protocol_ids =
     std::numeric_limits<std::underlying_type<ProtocolId>::type>::max() + 1;

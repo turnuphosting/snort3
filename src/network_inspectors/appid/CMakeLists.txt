@@ -148,6 +148,7 @@ set ( APPID_SOURCES
     appid_config.h
     appid_cip_event_handler.cc
     appid_cip_event_handler.h
+    appid_data_decrypt_event_handler.cc
     appid_data_decrypt_event_handler.h
     appid_debug.cc
     appid_debug.h
@@ -203,6 +204,11 @@ set ( APPID_SOURCES
     tp_lib_handler.cc
     tp_lib_handler.h
     tp_appid_types.h
+    tp_appid_session_api.h
+    tp_appid_module_api.h
+    tp_appid_module_api.cc
+    appid_cpu_profile_table.cc 
+    appid_cpu_profile_table.h
 )
 
 #if (STATIC_INSPECTORS)

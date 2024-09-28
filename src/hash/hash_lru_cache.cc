@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -37,26 +37,22 @@ HashLruCache::HashLruCache()
 
 void HashLruCache::insert(HashNode* hnode)
 {
-    if ( head )
-    {
-        hnode->gprev = nullptr;
-        hnode->gnext = head;
+    hnode->gprev = nullptr;
+    hnode->gnext = head;
+    if (head)
         head->gprev = hnode;
-        head = hnode;
-    }
     else
-    {
-        hnode->gprev = nullptr;
-        hnode->gnext = nullptr;
-        head = hnode;
         tail = hnode;
-    }
+    head = hnode;
 }
 
 void HashLruCache::touch(HashNode* hnode)
 {
     if ( hnode == cursor )
         cursor = hnode->gprev;
+
+    if ( walk_cursor == hnode )
+        walk_cursor = hnode->gprev;
 
     if ( hnode != head )
     {
@@ -69,6 +65,9 @@ void HashLruCache::remove_node(HashNode* hnode)
 {
     if ( cursor == hnode )
         cursor = hnode->gprev;
+
+    if ( walk_cursor == hnode )
+        walk_cursor = hnode->gprev;
 
     if ( head == hnode )
     {

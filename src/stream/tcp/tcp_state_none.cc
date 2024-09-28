@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,6 +25,7 @@
 
 #include "tcp_state_none.h"
 
+#include "packet_io/packet_tracer.h"
 #include "pub_sub/stream_event_ids.h"
 #include "stream/stream.h"
 
@@ -60,7 +61,7 @@ bool TcpStateNone::syn_ack_recv(TcpSegmentDescriptor& tsd, TcpStreamTracker& trk
         trk.init_on_synack_recv(tsd);
         trk.normalizer.ecn_tracker(tsd.get_tcph(), trk.session->tcp_config->require_3whs());
         if ( tsd.is_data_segment() )
-            trk.session->handle_data_segment(tsd);
+            trk.session->handle_data_segment(tsd, !trk.normalizer.is_tcp_ips_enabled());
     }
     else if ( trk.session->tcp_config->require_3whs() )
     {
@@ -86,9 +87,20 @@ bool TcpStateNone::data_seg_sent(TcpSegmentDescriptor& tsd, TcpStreamTracker& tr
     {
         Flow* flow = tsd.get_flow();
         flow->session_state |= STREAM_STATE_MIDSTREAM;
+
         if ( !Stream::is_midstream(flow) )
         {
+            TcpStreamTracker* listener = tsd.get_listener();
+            TcpStreamTracker* talker = tsd.get_talker();
+
+            trk.normalizer.init(StreamPolicy::MISSED_3WHS, trk.session, listener, talker);
+            trk.normalizer.init(StreamPolicy::MISSED_3WHS, trk.session, talker, listener);
             flow->set_session_flags(SSNFLAG_MIDSTREAM);
+
+            if ( PacketTracer::is_active() )
+                PacketTracer::log("Stream TCP did not see the complete 3-Way Handshake. "
+                "Not all normalizations will be in effect\n");
+
             DataBus::publish(Stream::get_pub_id(), StreamEventIds::TCP_MIDSTREAM, tsd.get_pkt());
         }
 
@@ -111,7 +123,7 @@ bool TcpStateNone::data_seg_recv(TcpSegmentDescriptor& tsd, TcpStreamTracker& tr
         flow->session_state |= STREAM_STATE_MIDSTREAM;
         trk.init_on_data_seg_recv(tsd);
         trk.normalizer.ecn_tracker(tsd.get_tcph(), trk.session->tcp_config->require_3whs());
-        trk.session->handle_data_segment(tsd);
+        trk.session->handle_data_segment(tsd, !trk.normalizer.is_tcp_ips_enabled());
     }
     else if ( trk.session->tcp_config->require_3whs() )
     {

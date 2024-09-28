@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -33,8 +33,8 @@ public:
     RuleOption(const std::string& name, const std::string& val);
     virtual ~RuleOption();
 
-    inline const std::string& get_name() { return name; }
-    inline const std::string& get_value() { return value; }
+    inline const std::string& get_name() const { return name; }
+    inline const std::string& get_value() const { return value; }
     inline void update_value(const std::string& new_value) { value = new_value; }
 
     bool add_suboption(const std::string& name);

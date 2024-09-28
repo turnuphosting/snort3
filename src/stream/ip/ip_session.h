@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -86,7 +86,7 @@ public:
     bool check_alerted(snort::Packet*, uint32_t gid, uint32_t sid) override;
 
 public:
-    FragTracker tracker;
+    FragTracker tracker = {};
 };
 
 extern THREAD_LOCAL IpStats ip_stats;

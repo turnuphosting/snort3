@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -20,12 +20,16 @@
 #ifndef JS_PDF_NORM_H
 #define JS_PDF_NORM_H
 
-#include <FlexLexer.h>
 #include <cstring>
 
+// This follows the prefix from pdf_tokenizer.l
+#undef yyFlexLexer
+#define yyFlexLexer pdfFlexLexer
+#include <FlexLexer.h>
+
+#include "helpers/streambuf.h"
 #include "js_norm/js_norm.h"
 #include "js_norm/pdf_tokenizer.h"
-#include "utils/streambuf.h"
 
 namespace snort
 {
@@ -40,8 +44,9 @@ public:
         return magic_len < len and !strncmp((const char*)data, magic, magic_len);
     }
 
-    PDFJSNorm(JSNormConfig* cfg) :
-        JSNorm(cfg), pdf_in(&buf_pdf_in), pdf_out(&buf_pdf_out), extractor(pdf_in, pdf_out)
+    PDFJSNorm(JSNormConfig* cfg, uint32_t gen_id) :
+        JSNorm(cfg, false, gen_id),
+        pdf_in(&buf_pdf_in), pdf_out(&buf_pdf_out), extractor(pdf_in, pdf_out)
     { }
 
 protected:

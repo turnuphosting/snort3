@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -20,9 +20,9 @@
 #ifndef HTTP2_HPACK_H
 #define HTTP2_HPACK_H
 
+#include "helpers/event_gen.h"
+#include "helpers/infractions.h"
 #include "service_inspectors/http_inspect/http_common.h"
-#include "utils/event_gen.h"
-#include "utils/infractions.h"
 
 #include "http2_hpack_int_decode.h"
 #include "http2_hpack_string_decode.h"
@@ -86,8 +86,8 @@ public:
     void cleanup();
 
 private:
-    Http2StartLine* start_line;
-    bool pseudo_headers_allowed;
+    Http2StartLine* start_line = nullptr;
+    bool pseudo_headers_allowed = false;
     uint8_t* decoded_headers = nullptr; // working buffer to store decoded headers
     Http2FlowData* session_data;
     Http2EventGen* const events;

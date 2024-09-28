@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -31,7 +31,7 @@
 
 #include "control/control.h"
 #include "host_tracker/host_cache.h"
-#include "log/messages.h"
+#include "host_tracker/host_cache_segmented.h"
 #include "main/analyzer.h"
 #include "main/analyzer_command.h"
 #include "main/reload_tracker.h"
@@ -50,6 +50,7 @@
 #include "appid_inspector.h"
 #include "appid_peg_counts.h"
 #include "service_state.h"
+#include "appid_cpu_profile_table.h"
 
 using namespace snort;
 using namespace std;
@@ -61,6 +62,7 @@ THREAD_LOCAL const Trace* appid_trace = nullptr;
 //-------------------------------------------------------------------------
 
 THREAD_LOCAL ProfileStats appid_perf_stats;
+THREAD_LOCAL ProfileStats tp_appid_perf_stats;
 THREAD_LOCAL AppIdStats appid_stats;
 THREAD_LOCAL bool ThirdPartyAppIdContext::tp_reload_in_progress = false;
 
@@ -109,7 +111,7 @@ static const Parameter s_params[] =
 class AcAppIdDebug : public AnalyzerCommand
 {
 public:
-    AcAppIdDebug(AppIdDebugSessionConstraints* cs);
+    AcAppIdDebug(const AppIdDebugSessionConstraints* cs);
     bool execute(Analyzer&, void**) override;
     const char* stringify() override { return "APPID_DEBUG"; }
 
@@ -118,7 +120,7 @@ private:
     bool enable = false;
 };
 
-AcAppIdDebug::AcAppIdDebug(AppIdDebugSessionConstraints* cs)
+AcAppIdDebug::AcAppIdDebug(const AppIdDebugSessionConstraints* cs)
 {
     if (cs)
     {
@@ -157,16 +159,16 @@ class ACThirdPartyAppIdContextSwap : public AnalyzerCommand
 {
 public:
     bool execute(Analyzer&, void**) override;
-    ACThirdPartyAppIdContextSwap(const AppIdInspector& inspector, ControlConn* conn)
+    ACThirdPartyAppIdContextSwap(AppIdInspector& inspector, ControlConn* conn)
         : AnalyzerCommand(conn), inspector(inspector)
     {
-        LogMessage("== swapping third-party configuration\n");
+        appid_log(nullptr, TRACE_INFO_LEVEL, "== swapping third-party configuration\n");
     }
 
     ~ACThirdPartyAppIdContextSwap() override;
     const char* stringify() override { return "THIRD-PARTY_CONTEXT_SWAP"; }
 private:
-    const AppIdInspector& inspector;
+    AppIdInspector& inspector;
 };
 
 bool ACThirdPartyAppIdContextSwap::execute(Analyzer&, void**)
@@ -175,7 +177,7 @@ bool ACThirdPartyAppIdContextSwap::execute(Analyzer&, void**)
     pkt_thread_tp_appid_ctxt = inspector.get_ctxt().get_tp_appid_ctxt();
     pkt_thread_tp_appid_ctxt->tinit();
     ThirdPartyAppIdContext::set_tp_reload_in_progress(false);
-
+    appid_log(nullptr, TRACE_INFO_LEVEL, "== third-party context swap in progress\n");
     return true;
 }
 
@@ -185,7 +187,7 @@ ACThirdPartyAppIdContextSwap::~ACThirdPartyAppIdContextSwap()
     std::string file_path = ctxt.get_tp_appid_ctxt()->get_user_config();
     ctxt.get_odp_ctxt().get_app_info_mgr().dump_appid_configurations(file_path);
     log_message("== reload third-party complete\n");
-    LogMessage("== third-party configuration swap complete\n");
+    appid_log(nullptr, TRACE_INFO_LEVEL, "== third-party configuration swap complete\n");
     ReloadTracker::end(ctrlcon, true);
 }
 
@@ -193,13 +195,13 @@ class ACThirdPartyAppIdContextUnload : public AnalyzerCommand
 {
 public:
     bool execute(Analyzer&, void**) override;
-    ACThirdPartyAppIdContextUnload(const AppIdInspector& inspector, ThirdPartyAppIdContext* tp_ctxt,
+    ACThirdPartyAppIdContextUnload(AppIdInspector& inspector, ThirdPartyAppIdContext* tp_ctxt,
         ControlConn* conn): AnalyzerCommand(conn), inspector(inspector), tp_ctxt(tp_ctxt)
     { }
     ~ACThirdPartyAppIdContextUnload() override;
     const char* stringify() override { return "THIRD-PARTY_CONTEXT_UNLOAD"; }
 private:
-    const AppIdInspector& inspector;
+    AppIdInspector& inspector;
     ThirdPartyAppIdContext* tp_ctxt =  nullptr;
 };
 
@@ -212,10 +214,14 @@ bool ACThirdPartyAppIdContextUnload::execute(Analyzer& ac, void**)
         reload_in_progress = pkt_thread_tp_appid_ctxt->tfini(true);
     else
         reload_in_progress = pkt_thread_tp_appid_ctxt->tfini();
-    if (reload_in_progress)
+
+    if (reload_in_progress) {
+        appid_log(nullptr, TRACE_INFO_LEVEL, "== rescheduling third-party context unload\n");
         return false;
+    }
     pkt_thread_tp_appid_ctxt = nullptr;
 
+    appid_log(nullptr, TRACE_INFO_LEVEL, "== third-party context unload in progress\n");
     return true;
 }
 
@@ -224,7 +230,7 @@ ACThirdPartyAppIdContextUnload::~ACThirdPartyAppIdContextUnload()
     delete tp_ctxt;
     AppIdContext& ctxt = inspector.get_ctxt();
     ctxt.create_tp_appid_ctxt();
-    main_broadcast_command(new ACThirdPartyAppIdContextSwap(inspector, ctrlcon));
+    main_broadcast_command(new ACThirdPartyAppIdContextSwap(inspector, ctrlcon), ctrlcon);
     log_message("== unload old third-party complete\n");
     ReloadTracker::update(ctrlcon, "unload old third-party complete, start swapping to new configuration.");
 }
@@ -233,43 +239,45 @@ class ACOdpContextSwap : public AnalyzerCommand
 {
 public:
     bool execute(Analyzer&, void**) override;
-    ACOdpContextSwap(const AppIdInspector& inspector, OdpContext& odp_ctxt, ControlConn* conn) :
+    ACOdpContextSwap(AppIdInspector& inspector, OdpContext& odp_ctxt, ControlConn* conn) :
         AnalyzerCommand(conn), inspector(inspector), odp_ctxt(odp_ctxt)
     { }
     ~ACOdpContextSwap() override;
     const char* stringify() override { return "ODP_CONTEXT_SWAP"; }
 private:
-    const AppIdInspector& inspector;
+    AppIdInspector& inspector;
     OdpContext& odp_ctxt;
 };
 
 bool ACOdpContextSwap::execute(Analyzer&, void**)
 {
-    AppIdContext& ctxt = inspector.get_ctxt();
-    OdpContext& current_odp_ctxt = ctxt.get_odp_ctxt();
-    assert(pkt_thread_odp_ctxt != &current_odp_ctxt);
-
     HostAttributesManager::clear_appid_services();
     AppIdServiceState::clean();
     AppIdPegCounts::cleanup_pegs();
-    AppIdServiceState::initialize(ctxt.config.memcap);
+    const AppIdConfig& config = inspector.get_config();
+    AppIdServiceState::initialize(config.memcap);
     AppIdPegCounts::init_pegs();
     ServiceDiscovery::set_thread_local_ftp_service();
+    AppIdContext& ctxt = inspector.get_ctxt();
+    OdpContext& current_odp_ctxt = ctxt.get_odp_ctxt();
+    assert(pkt_thread_odp_ctxt != &current_odp_ctxt);
     pkt_thread_odp_ctxt = &current_odp_ctxt;
 
     assert(odp_thread_local_ctxt);
     delete odp_thread_local_ctxt;
-    odp_thread_local_ctxt = new OdpThreadContext;
-    odp_thread_local_ctxt->initialize(SnortConfig::get_conf(), ctxt, false, true);
+    odp_thread_local_ctxt = new OdpPacketThreadContext;
+    odp_thread_local_ctxt->initialize(SnortConfig::get_conf());
     return true;
 }
 
 ACOdpContextSwap::~ACOdpContextSwap()
 {
     odp_ctxt.get_app_info_mgr().cleanup_appid_info_table();
+    odp_ctxt.get_appid_cpu_profiler_mgr().cleanup_appid_cpu_profiler_table();
+    
     delete &odp_ctxt;
     AppIdContext& ctxt = inspector.get_ctxt();
-    LuaDetectorManager::cleanup_after_swap();
+    ControlLuaDetectorManager::cleanup_after_swap();
     if (ctxt.config.app_detector_dir)
     {
         std::string file_path = std::string(ctxt.config.app_detector_dir) + "/custom/userappid.conf";
@@ -288,12 +296,13 @@ static int enable_debug(lua_State* L)
     int sport = luaL_optint(L, 3, 0);
     const char* dipstr = luaL_optstring(L, 4, nullptr);
     int dport = luaL_optint(L, 5, 0);
+    const char *tenantsstr = luaL_optstring(L, 6, nullptr);
 
     AppIdDebugSessionConstraints constraints = { };
     if (sipstr)
     {
         if (constraints.sip.set(sipstr) != SFIP_SUCCESS)
-            LogMessage("Invalid source IP address provided: %s\n", sipstr);
+            appid_log(nullptr, TRACE_INFO_LEVEL, "Invalid source IP address provided: %s\n", sipstr);
         else if (constraints.sip.is_set())
             constraints.sip_flag = true;
     }
@@ -301,7 +310,7 @@ static int enable_debug(lua_State* L)
     if (dipstr)
     {
         if (constraints.dip.set(dipstr) != SFIP_SUCCESS)
-            LogMessage("Invalid destination IP address provided: %s\n", dipstr);
+            appid_log(nullptr, TRACE_INFO_LEVEL, "Invalid destination IP address provided: %s\n", dipstr);
         else if (constraints.dip.is_set())
             constraints.dip_flag = true;
     }
@@ -311,6 +320,9 @@ static int enable_debug(lua_State* L)
 
     constraints.sport = sport;
     constraints.dport = dport;
+
+    if (tenantsstr)
+        str_to_int_vector(tenantsstr, ',', constraints.tenants);
 
     AppIdDebugLogEvent event(&constraints, "AppIdDbg");
     DataBus::publish(AppIdInspector::get_pub_id(), AppIdEventIds::DEBUG_LOG, event);
@@ -337,7 +349,8 @@ static int reload_third_party(lua_State* L)
         return 0;
     }
 
-    AppIdInspector* inspector = (AppIdInspector*) InspectorManager::get_inspector(MOD_NAME);
+    AppIdInspector* inspector = (AppIdInspector*)InspectorManager::get_inspector(MOD_NAME, true);
+
     if (!inspector)
     {
         ReloadTracker::failed(ctrlcon, "appid not enabled");
@@ -359,6 +372,22 @@ static int reload_third_party(lua_State* L)
     return 0;
 }
 
+static int print_appid_config(lua_State* L)
+{
+    ControlConn* ctrlcon = ControlConn::query_from_lua(L);
+    AppIdInspector* inspector = (AppIdInspector*) InspectorManager::get_inspector(MOD_NAME);
+    if (!inspector)
+    {
+        ctrlcon->respond("== printing appid config failed - appid not enabled\n");
+        return 0;
+    }
+    ctrlcon->respond("== printing appid configs\n");
+    const AppIdContext& ctxt = inspector->get_ctxt();
+    OdpContext& odp_ctxt = ctxt.get_odp_ctxt();
+    odp_ctxt.dump_appid_config();
+    return 0;
+}
+
 static void clear_dynamic_host_cache_services()
 {
     auto hosts = host_cache.get_all_data();
@@ -366,6 +395,68 @@ static void clear_dynamic_host_cache_services()
     {
         h.second->remove_inferred_services();
     }
+}
+
+static int show_cpu_profiler_stats(lua_State* L)
+{
+    int appid = luaL_optint(L, 1, 0);
+    int display_rows_limit = luaL_optint(L, 2, APPID_CPU_PROFILER_DEFAULT_DISPLAY_ROWS);
+
+    ControlConn* ctrlcon = ControlConn::query_from_lua(L);
+    AppIdInspector* inspector = (AppIdInspector*) InspectorManager::get_inspector(MOD_NAME);
+    if (!inspector)
+    {
+        ctrlcon->respond("== displaying appid cpu profiler failed - appid not enabled\n");
+        return 0;
+    }
+    const AppIdContext& ctxt = inspector->get_ctxt();
+    OdpContext& odp_ctxt = ctxt.get_odp_ctxt(); 
+
+    if (odp_ctxt.is_appid_cpu_profiler_enabled())
+    {
+        AppidCpuTableDisplayStatus displayed = DISPLAY_SUCCESS;
+        ctrlcon->respond("== showing appid cpu profiler table\n");
+        if (!appid)
+        {
+            if (display_rows_limit > APPID_CPU_PROFILER_MAX_DISPLAY_ROWS)
+                ctrlcon->respond("given number of rows exceeds maximum limit of %d, limiting to %d\n",
+                                                   APPID_CPU_PROFILER_MAX_DISPLAY_ROWS, APPID_CPU_PROFILER_MAX_DISPLAY_ROWS);
+            displayed = odp_ctxt.get_appid_cpu_profiler_mgr().display_appid_cpu_profiler_table(odp_ctxt, display_rows_limit, false, ctrlcon);
+        }
+        else
+            displayed = odp_ctxt.get_appid_cpu_profiler_mgr().display_appid_cpu_profiler_table(appid, odp_ctxt, ctrlcon);
+
+        switch (displayed){
+            case DISPLAY_ERROR_TABLE_EMPTY:
+                ctrlcon->respond("== appid cpu profiler table is empty\n");
+                break;
+            case DISPLAY_ERROR_APPID_PROFILER_RUNNING:
+                ctrlcon->respond("== appid cpu profiler is still running\n");
+                break;
+            case DISPLAY_SUCCESS:
+                break;
+        }
+    }
+    else
+        ctrlcon->respond("appid cpu profiler is disabled\n");
+        
+    return 0;
+}
+
+static int show_cpu_profiler_status(lua_State* L)
+{
+    ControlConn* ctrlcon = ControlConn::query_from_lua(L);
+    AppIdInspector* inspector = (AppIdInspector*) InspectorManager::get_inspector(MOD_NAME);
+    if (!inspector)
+    {
+        ctrlcon->respond("== appid cpu profiler status check failed- appid not enabled\n");
+        return 0;
+    }
+    const AppIdContext& ctxt = inspector->get_ctxt();
+    OdpContext& odp_ctxt = ctxt.get_odp_ctxt();
+    ctrlcon->respond("appid cpu profiler enabled: %s, running: %s \n",
+            odp_ctxt.is_appid_cpu_profiler_enabled() ? "yes" : "no", odp_ctxt.is_appid_cpu_profiler_running() ? "yes" : "no");
+    return 0;
 }
 
 static int reload_detectors(lua_State* L)
@@ -376,7 +467,8 @@ static int reload_detectors(lua_State* L)
         ctrlcon->respond("== reload pending; retry\n");
         return 0;
     }
-    AppIdInspector* inspector = (AppIdInspector*) InspectorManager::get_inspector(MOD_NAME);
+    AppIdInspector* inspector = (AppIdInspector*)InspectorManager::get_inspector(MOD_NAME, true);
+
     if (!inspector)
     {
         ctrlcon->respond("== reload detectors failed - appid not enabled\n");
@@ -403,19 +495,20 @@ static int reload_detectors(lua_State* L)
     ServiceDiscovery::clear_ftp_service_state();
     clear_dynamic_host_cache_services();
     AppIdPegCounts::cleanup_peg_info();
-    LuaDetectorManager::clear_lua_detector_mgrs();
+    AppIdPegCounts::init_peg_info();
+    ControlLuaDetectorManager::clear_lua_detector_mgrs();
     ctxt.create_odp_ctxt();
-    assert(odp_thread_local_ctxt);
-    odp_thread_local_ctxt->get_lua_detector_mgr().set_ignore_chp_cleanup(true);
-    delete odp_thread_local_ctxt;
-    odp_thread_local_ctxt = new OdpThreadContext;
+    assert(odp_control_thread_ctxt);
+    odp_control_thread_ctxt->set_ignore_chp_cleanup();
+    delete odp_control_thread_ctxt;
+    odp_control_thread_ctxt = new OdpControlContext;
 
     OdpContext& odp_ctxt = ctxt.get_odp_ctxt();
     odp_ctxt.get_client_disco_mgr().initialize(*inspector);
     odp_ctxt.get_service_disco_mgr().initialize(*inspector);
     odp_ctxt.set_client_and_service_detectors();
 
-    odp_thread_local_ctxt->initialize(SnortConfig::get_conf(), ctxt, true, true);
+    odp_control_thread_ctxt->initialize(SnortConfig::get_conf(), ctxt);
     odp_ctxt.initialize(*inspector);
 
     ctrlcon->respond("== swapping detectors configuration\n");
@@ -426,8 +519,8 @@ static int reload_detectors(lua_State* L)
     {
     #endif
         getrusage(RUSAGE_SELF, &ru);
-        LogMessage("appid: MaxRss diff: %li\n", ru.ru_maxrss - prev_maxrss);
-        LogMessage("appid: patterns loaded: %u\n", odp_ctxt.get_pattern_count());
+        appid_log(nullptr, TRACE_INFO_LEVEL, "appid: MaxRss diff: %li\n", ru.ru_maxrss - prev_maxrss);
+        appid_log(nullptr, TRACE_INFO_LEVEL, "appid: patterns loaded: %u\n", odp_ctxt.get_pattern_count());
     #ifdef REG_TEST
     }
     #endif
@@ -443,6 +536,15 @@ static const Parameter enable_debug_params[] =
     { "src_port", Parameter::PT_INT, nullptr, nullptr, "source port filter" },
     { "dst_ip", Parameter::PT_STRING, nullptr, nullptr, "destination IP address filter" },
     { "dst_port", Parameter::PT_INT, nullptr, nullptr, "destination port filter" },
+    { "tenants", Parameter::PT_STRING, nullptr, nullptr, "tenants filter" },
+
+    { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
+};
+
+static const Parameter appid_cpu_params[] =
+{
+    { "appid", Parameter::PT_INT, nullptr, "0", "show appid cpu profiling stats" },
+    { "display_rows_limit", Parameter::PT_INT, "1:2000", "100", "num of rows to be displayed" },
 
     { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
 };
@@ -453,6 +555,10 @@ static const Command appid_cmds[] =
     { "disable_debug", disable_debug, nullptr, "disable appid debugging"},
     { "reload_third_party", reload_third_party, nullptr, "reload appid third-party module" },
     { "reload_detectors", reload_detectors, nullptr, "reload appid detectors" },
+    { "print_appid_config", print_appid_config, nullptr, "print appid configs" },
+    { "show_cpu_profiler_stats", show_cpu_profiler_stats, appid_cpu_params, "show appid cpu profiling stats" },
+    { "show_cpu_profiler_status", show_cpu_profiler_status, nullptr, "show appid cpu profiling status" },
+
     { nullptr, nullptr, nullptr, nullptr }
 };
 
@@ -474,12 +580,12 @@ static const PegInfo appid_pegs[] =
 
 AppIdModule::AppIdModule() : Module(MOD_NAME, MOD_HELP, s_params)
 {
-    config = nullptr;
 }
 
 AppIdModule::~AppIdModule()
 {
     AppIdPegCounts::cleanup_peg_info();
+    delete config;
 }
 
 void AppIdModule::set_trace(const Trace* trace) const
@@ -487,20 +593,32 @@ void AppIdModule::set_trace(const Trace* trace) const
 
 const TraceOption* AppIdModule::get_trace_options() const
 {
-#ifndef DEBUG_MSGS
-    return nullptr;
-#else
     static const TraceOption appid_trace_options(nullptr, 0, nullptr);
     return &appid_trace_options;
-#endif
 }
 
-ProfileStats* AppIdModule::get_profile() const
+
+
+snort::ProfileStats* AppIdModule::get_profile(
+        unsigned i, const char*& name, const char*& parent) const
 {
-    return &appid_perf_stats;
+    switch (i)
+    {
+
+        case 0:
+            name = get_name();
+            parent = nullptr;
+            return &appid_perf_stats;
+
+        case 1:
+            name = "tp_appid";
+            parent = get_name();
+            return &tp_appid_perf_stats;
+    }
+    return nullptr;
 }
 
-const AppIdConfig* AppIdModule::get_data()
+AppIdConfig* AppIdModule::get_data()
 {
     AppIdConfig* temp = config;
     config = nullptr;

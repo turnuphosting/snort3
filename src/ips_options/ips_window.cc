@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -38,9 +38,8 @@ static THREAD_LOCAL ProfileStats tcpWinPerfStats;
 class TcpWinOption : public IpsOption
 {
 public:
-    TcpWinOption(const RangeCheck& c) :
-        IpsOption(s_name)
-    { config = c; }
+    TcpWinOption(const RangeCheck& c) : IpsOption(s_name), config(c)
+    { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -77,6 +76,7 @@ bool TcpWinOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus TcpWinOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(tcpWinPerfStats);
 
     if (!p->ptrs.tcph)
@@ -149,7 +149,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* window_ctor(Module* p, OptTreeNode*)
+static IpsOption* window_ctor(Module* p, IpsInfo&)
 {
     WindowModule* m = (WindowModule*)p;
     return new TcpWinOption(m->data);

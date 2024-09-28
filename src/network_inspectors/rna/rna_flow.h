@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -29,6 +29,7 @@
 #include "sfip/sf_ip.h"
 
 #include "rna_fingerprint_tcp.h"
+#include "rna_tracker.h"
 
 namespace snort
 {
@@ -36,8 +37,6 @@ struct Packet;
 }
 
 class DiscoveryFilter;
-
-using RnaTracker = std::shared_ptr<snort::HostTracker>;
 
 class RNAFlow : public snort::FlowData
 {
@@ -61,8 +60,8 @@ public:
     RnaTracker get_client(const snort::SfIp&);
     RnaTracker get_tracker(const snort::Packet*, DiscoveryFilter&);
 
-    void set_server(RnaTracker& ht);
-    void set_client(RnaTracker& ht);
+    void set_server(const RnaTracker& ht);
+    void set_client(const RnaTracker& ht);
 
 };
 

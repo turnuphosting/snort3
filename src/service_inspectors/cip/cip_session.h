@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -67,9 +67,6 @@ bool cip_request_add(CipUnconnectedMessageList* unconnected_list,
 bool cip_request_remove(CipUnconnectedMessageList* unconnected_list,
     const EnipSessionData* enip_data,
     CipRequestType* request_type);
-
-// Set timeout (milliseconds) to use for unconnected messages that don't have a built-in timeout.
-void set_unconnected_timeout(uint32_t unconnected_timeout);
 
 #endif  // CIP_SESSION_H
 

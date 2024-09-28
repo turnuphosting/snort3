@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -47,7 +47,7 @@ struct AppIdStatRecord
 
 struct StatsBucket
 {
-    uint32_t start_time = 0;
+    time_t start_time = 0;
     std::map<AppId, AppIdStatRecord> apps_tree;
     struct
     {
@@ -60,6 +60,7 @@ struct StatsBucket
 class AppIdStatistics
 {
 public:
+    AppIdStatistics() = delete;
     ~AppIdStatistics();
 
     static AppIdStatistics* initialize_manager(const AppIdConfig&);
@@ -88,7 +89,6 @@ private:
     void open_stats_log_file();
     void dump_statistics();
 
-    bool enabled = false;
     SF_LIST* curr_buckets = nullptr;
     SF_LIST* log_buckets = nullptr;
     struct TextLog* log = nullptr;
@@ -96,6 +96,7 @@ private:
     time_t bucket_interval = 0;
     time_t bucket_end = 0;
     size_t roll_size = 0;
+    bool log_err = false;
 };
 
 #endif

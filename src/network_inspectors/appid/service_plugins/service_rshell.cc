@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -129,10 +129,10 @@ int RshellServiceDetector::validate(AppIdDiscoveryArgs& args)
         rd->state = RSHELL_STATE_PORT;
     }
 
-    if (appidDebug->is_active())
-        LogMessage("AppIdDbg %s RSHELL state %d\n", appidDebug->get_debug_session(), rd->state);
+    // cppcheck-suppress nullPointerRedundantCheck
+    appid_log(args.pkt, TRACE_DEBUG_LEVEL, "RSHELL state %d\n",rd->state);
 
-    switch (rd->state)
+    switch (rd->state) // cppcheck-suppress nullPointerRedundantCheck
     {
     case RSHELL_STATE_PORT:
         if (args.dir != APP_ID_FROM_INITIATOR)

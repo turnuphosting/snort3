@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2011-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -24,9 +24,11 @@
 #endif
 
 #include "paf.h"
+#include "paf_stats.h"
 
 #include "detection/detection_engine.h"
 #include "protocols/packet.h"
+#include "protocols/tcp.h"
 
 using namespace snort;
 
@@ -250,7 +252,7 @@ int32_t paf_check (
     const uint8_t* data, uint32_t len, uint32_t total,
     uint32_t seq, uint32_t* flags)
 {
-    Profile profile(pafPerfStats);
+    Profile profile(pafPerfStats);  // cppcheck-suppress unreadVariable
     PafAux px;
 
     if ( !paf_initialized(ps) )
@@ -296,7 +298,7 @@ int32_t paf_check (
     // occurs at the paf_max byte. So, we manually set the data's length and
     // total queued bytes (px.len) to guarantee that at most paf_max bytes will
     // be analyzed and flushed since the last flush point.  It should also be
-    // noted that we perform the check here rather in in paf_flush() to
+    // noted that we perform the check here rather in paf_flush() to
     // avoid scanning the same data twice. The first scan would analyze the
     // entire segment and the second scan would analyze this segments
     // unflushed data.

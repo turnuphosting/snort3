@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -170,7 +170,7 @@ void UdpSession::update_direction(
 
 int UdpSession::process(Packet* p)
 {
-    Profile profile(udp_perf_stats);
+    Profile profile(udp_perf_stats);    // cppcheck-suppress unreadVariable
 
     StreamUdpConfig* pc = get_udp_cfg(flow->ssn_server);
     // Check if the session is expired.

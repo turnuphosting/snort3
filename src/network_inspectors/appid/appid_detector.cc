@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -38,34 +38,29 @@ using namespace snort;
 int AppIdDetector::initialize(AppIdInspector& inspector)
 {
     if ( !tcp_patterns.empty() )
-        for (auto& pat : tcp_patterns)
+        for (const auto& pat : tcp_patterns)
             handler->register_tcp_pattern(this, pat.pattern, pat.length, pat.index, pat.nocase);
 
     if ( !udp_patterns.empty() )
-        for (auto& pat : udp_patterns)
+        for (const auto& pat : udp_patterns)
             handler->register_udp_pattern(this, pat.pattern, pat.length, pat.index, pat.nocase);
 
     if (!appid_registry.empty())
     {
-        AppIdContext& ctxt = inspector.get_ctxt();
-        for (auto& id : appid_registry)
+        const AppIdContext& ctxt = inspector.get_ctxt();
+        for (const auto& id : appid_registry)
             register_appid(id.appId, id.additionalInfo, ctxt.get_odp_ctxt());
       }
 
     if (!service_ports.empty())
-        for (auto& port: service_ports)
+        for (const auto& port: service_ports)
             handler->add_service_port(this, port);
 
     do_custom_init();
     return APPID_SUCCESS;
 }
 
-void AppIdDetector::reload()
-{
-    do_custom_reload();
-}
-
-void* AppIdDetector::data_get(AppIdSession& asd)
+void* AppIdDetector::data_get(const AppIdSession& asd)
 {
     return asd.get_flow_data(flow_data_index);
 }

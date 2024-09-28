@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,11 +25,11 @@
 // packet (PDU), first call set_next_packet().  If rebuild is successful,
 // then instantiate a new DetectionEngine to detect that packet.
 
-#include "detection/detection_util.h"
+#include "detection/detection_buf.h"
 #include "detection/ips_context.h"
 #include "main/snort_types.h"
 
-struct DataPointer;
+struct OptTreeNode;
 struct Replacement;
 
 namespace snort
@@ -59,6 +59,7 @@ public:
     static Packet* set_next_packet(const Packet* parent = nullptr, Flow* flow = nullptr);
     static uint8_t* get_next_buffer(unsigned& max);
 
+    static void enable_offload();
     static bool offload(Packet*);
 
     static void onload(Flow*);
@@ -74,7 +75,9 @@ public:
     static const DataPointer& get_file_data(const IpsContext*, uint64_t& id, bool& drop_sse, bool& no_sse);
 
     static uint8_t* get_buffer(unsigned& max);
-    static struct DataBuffer& get_alt_buffer(Packet*);
+    static inline DataPointer get_alt_buffer(const Packet*);
+    static inline DataBuffer& acquire_alt_buffer(const Packet*);
+    static void inline reset_alt_buffer(Packet*);
 
     static void set_data(unsigned id, IpsContextData*);
     static IpsContextData* get_data(unsigned id);
@@ -87,7 +90,7 @@ public:
     static bool detect(Packet*, bool offload_ok = false);
     static bool inspect(Packet*);
 
-    static int queue_event(const struct OptTreeNode*);
+    static int queue_event(const OptTreeNode*);
     static int queue_event(unsigned gid, unsigned sid);
 
     static void disable_all(Packet*);
@@ -100,8 +103,8 @@ public:
     static IpsContext::ActiveRules get_detects(Packet*);
     static void set_detects(Packet*, IpsContext::ActiveRules);
 
-    static void set_check_tags(bool enable = true);
-    static bool get_check_tags();
+    static void set_check_tags(Packet*, bool enable = true);
+    static bool get_check_tags(Packet*);
 
     static void wait_for_context();
 
@@ -120,8 +123,32 @@ private:
     static void finish_packet(Packet*, bool flow_deletion = false);
 
 private:
+    static bool offload_enabled;
     IpsContext* context;
 };
+
+DataPointer DetectionEngine::get_alt_buffer(const Packet* p)
+{
+    assert(p);
+    auto& alt_buf = p->context->alt_data;
+
+    return { alt_buf.data, alt_buf.len };
+}
+
+DataBuffer& DetectionEngine::acquire_alt_buffer(const Packet* p)
+{
+    assert(p);
+
+    auto& alt_buf = p->context->alt_data;
+
+    if (!alt_buf.data)
+        alt_buf.allocate_data();
+
+    return alt_buf;
+}
+
+void snort::DetectionEngine::reset_alt_buffer(Packet *p)
+{ p->context->alt_data.len = 0; }
 
 static inline void set_file_data(const uint8_t* p, unsigned n)
 {

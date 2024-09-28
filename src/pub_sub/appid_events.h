@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2017-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2017-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -69,7 +69,7 @@ enum AppidChangeBit
 
 typedef std::bitset<APPID_MAX_BIT> AppidChangeBits;
 
-inline void change_bits_to_string(AppidChangeBits& change_bits, std::string& str)
+inline void change_bits_to_string(const AppidChangeBits& change_bits, std::string& str)
 {
     size_t n = change_bits.count();
 

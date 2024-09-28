@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2017-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2017-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,7 +25,6 @@
 
 #include "framework/cursor.h"
 #include "main/snort_types.h"
-#include "main/thread.h"
 
 namespace snort
 {
@@ -40,13 +39,14 @@ struct PatternMatchData;
 
 enum
 {
-    TRACE_DETECTION_ENGINE = 0,
+    TRACE_OPTION_TREE = 0,
+    TRACE_FP_INFO,
+    TRACE_DETECTION_ENGINE,
     TRACE_RULE_EVAL,
     TRACE_BUFFER,
     TRACE_RULE_VARS,
     TRACE_FP_SEARCH,
     TRACE_PKT_DETECTION,
-    TRACE_OPTION_TREE,
     TRACE_TAG,
     TRACE_CONT,
 };

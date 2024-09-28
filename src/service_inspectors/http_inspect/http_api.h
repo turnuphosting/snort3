@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,6 +25,29 @@
 
 #include "http_flow_data.h"
 #include "http_module.h"
+
+#define HTTP_CLASSIC_BUFFER_NAMES \
+    "file_data",                  \
+    "http_client_body",           \
+    "http_cookie",                \
+    "http_header",                \
+    "http_method",                \
+    "http_param",                 \
+    "http_raw_body",              \
+    "http_raw_cookie",            \
+    "http_raw_header",            \
+    "http_raw_request",           \
+    "http_raw_status",            \
+    "http_raw_trailer",           \
+    "http_raw_uri",               \
+    "http_stat_code",             \
+    "http_stat_msg",              \
+    "http_trailer",               \
+    "http_true_ip",               \
+    "http_uri",                   \
+    "http_version",               \
+    "js_data",                    \
+    "vba_data"
 
 class HttpApi
 {

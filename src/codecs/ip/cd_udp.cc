@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -283,7 +283,7 @@ bool UdpCodec::valid_checksum4(const RawData& raw, const DecodeData& snort)
     ph.hdr.sip = ip4h->get_src();
     ph.hdr.dip = ip4h->get_dst();
     ph.hdr.zero = 0;
-    ph.hdr.protocol = ip4h->proto();
+    ph.hdr.protocol = IpProtocol::UDP;
     ph.hdr.len = htons((uint16_t) raw.len);
 
     return (checksum::udp_cksum((const uint16_t*) raw.data, raw.len, ph) == 0);

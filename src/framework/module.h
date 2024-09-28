@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -16,10 +16,6 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 //--------------------------------------------------------------------------
 // module.h author Russ Combs <rucombs@cisco.com>
-
-// FIXIT-M add trace param(s)
-// FIXIT-M add memcap related
-// FIXIT-L add set_default method
 
 #ifndef MODULE_H
 #define MODULE_H
@@ -46,7 +42,7 @@
 #include "framework/parameter.h"
 #include "framework/value.h"
 #include "main/snort_types.h"
-#include "utils/stats.h"
+#include "main/thread.h"
 
 struct lua_State;
 
@@ -66,6 +62,8 @@ struct Command
     LuaCFunction func;
     const Parameter* params;
     const char* help;
+    // the flag determines if the command is allowed to run in parallel with other control commands
+    bool can_run_in_parallel = false;
 
     std::string get_arg_list() const;
 };
@@ -169,10 +167,22 @@ public:
     virtual bool global_stats() const
     { return false; }
 
+    // Return true only if all of the module's stats are aggregated into
+    // another module.
+    virtual bool stats_are_aggregated() const
+    { return false; }
+
+    // Return true only if all of the module's stats are aggregated from
+    // other modules.
+    virtual bool is_aggregator() const
+    { return false; }
+
     virtual void sum_stats(bool dump_stats);
-    virtual void show_interval_stats(IndexVec&, FILE*);
     virtual void show_stats();
+    virtual void show_interval_stats(std::vector<unsigned>&, FILE*);
     virtual void reset_stats();
+    virtual void init_stats(bool new_thread=false);
+    virtual void main_accumulate_stats();
     virtual void show_dynamic_stats() {}
     void clear_global_active_counters();
 
@@ -181,13 +191,7 @@ public:
     bool verified_set(const char*, Value&, SnortConfig*);
     bool verified_end(const char*, int, SnortConfig*);
 
-    enum Usage
-    {
-        GLOBAL,
-        CONTEXT,
-        INSPECT,
-        DETECT
-    };
+    enum Usage { GLOBAL, CONTEXT, INSPECT, DETECT };
 
     virtual Usage get_usage() const
     { return CONTEXT; }
@@ -201,16 +205,49 @@ protected:
 
     void set_params(const Parameter* p)
     { params = p; }
+    std::vector<unsigned> dump_stats_initialized;
+    std::vector<std::vector<PegCount>> counts;
+    std::vector<std::vector<PegCount>> dump_stats_counts;
+    std::vector<PegCount> dump_stats_results;
+    int num_counts = -1;
 
-    bool dump_stats_initialized = false;
+    void set_peg_count(int index, PegCount value, bool dump_stats)
+    {
+        assert(index < num_counts);
+        if (dump_stats)
+            dump_stats_counts[get_instance_id()][index] = value;
+        else
+            counts[get_instance_id()][index] = value;
+    }
+
+    void set_max_peg_count(int index, PegCount value, bool dump_stats)
+    {
+        assert(index < num_counts);
+        if (dump_stats)
+        {
+            if(value > dump_stats_counts[get_instance_id()][index])
+                dump_stats_counts[get_instance_id()][index] = value;
+        }
+        else
+        {
+            if(value > counts[get_instance_id()][index])
+                counts[get_instance_id()][index] = value;
+        }
+    }
+
+    void add_peg_count(int index, PegCount value, bool dump_stats)
+    {
+        assert(index < num_counts);
+        if (dump_stats)
+            dump_stats_counts[get_instance_id()][index] += value;
+        else
+            counts[get_instance_id()][index] += value;
+    }
 
 private:
     friend ModuleManager;
     void init(const char*, const char* = nullptr);
 
-    std::vector<PegCount> counts;
-    std::vector<PegCount> dump_stats_counts;
-    int num_counts = -1;
 
     const char* name;
     const char* help;
@@ -219,39 +256,6 @@ private:
     bool list;
     int table_level = 0;
 
-    void set_peg_count(int index, PegCount value, bool dump_stats = false)
-    {
-        assert(index < num_counts);
-        if(dump_stats)
-            dump_stats_counts[index] = value;
-        else
-            counts[index] = value;
-    }
-
-    void set_max_peg_count(int index, PegCount value, bool dump_stats = false)
-    {
-        assert(index < num_counts);
-        if(dump_stats)
-        {
-            if(value > dump_stats_counts[index])
-                dump_stats_counts[index] = value;
-        }
-        else
-        {
-            if(value > counts[index])
-                counts[index] = value;
-        }
-    }
-
-    void add_peg_count(int index, PegCount value, bool dump_stats = false)
-    {
-        assert(index < num_counts);
-        if(dump_stats)
-            dump_stats_counts[index] += value;
-        else
-            counts[index] += value;
-
-    }
 };
 }
 #endif

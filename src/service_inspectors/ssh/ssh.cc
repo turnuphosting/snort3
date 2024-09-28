@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2004-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -30,7 +30,6 @@
 #include "ssh.h"
 
 #include "detection/detection_engine.h"
-#include "events/event_queue.h"
 #include "log/messages.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
@@ -60,7 +59,6 @@ unsigned SshFlowData::inspector_id = 0;
 
 SshFlowData::SshFlowData() : FlowData(inspector_id)
 {
-    session = {};
     sshstats.concurrent_sessions++;
     if (sshstats.max_concurrent_sessions < sshstats.concurrent_sessions)
         sshstats.max_concurrent_sessions = sshstats.concurrent_sessions;

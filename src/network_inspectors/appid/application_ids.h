@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -1022,6 +1022,8 @@ enum ApplicationIds : AppId
     APP_ID_CIP_UNKNOWN                    = 5003,
     APP_ID_CIP_MALFORMED                  = 5005,
     APP_ID_CIP_SAFETY                     = 7430,
+    APP_ID_DNS_OVER_QUIC                  = 7504,
+    APP_ID_DNS_OVER_HTTP3                 = 7505,
 #ifdef REG_TEST
     APP_ID_DNS_OVER_TLS                   = 4615,
     APP_ID_REGTEST                        = 10000,

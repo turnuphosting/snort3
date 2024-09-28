@@ -1,3 +1,450 @@
+2024-09-05: 3.3.5.0
+
+* appid: added new logs for reload third party
+* extractor: add field name to logging function
+* extractor: add json logger
+* extractor: add unit tests for enum types
+* extractor: fix guard-macro names
+* extractor: fix local variable
+* extractor: mention a field in initialization list
+* extractor: remove unused headers
+* extractor: take a note of FIXIT-P in key points
+* file_api: set file name for file processing
+* http_inspect: when cutting chunks check for MAX_OCTETS too
+* packet_tracer: add tcp window size, options and meta-ack info
+
+2024-08-26: 3.3.4.0
+
+* appid: notify binder on service change
+* appid: replaced hsessions vector of raw pointers into vector of smart pointers
+* ftp_telnet: refactoring ftp-data
+* latency, dce, stream_ip: fix max pegs incorrectly declared sum
+* telnet: avoid flush when cr or lf is between commands
+
+2024-08-13: 3.3.3.0
+
+* control: code cleanup
+* control: handle control commands after packet threads are fully initialised
+* daq: add outstanding packets counter
+* extractor: add flow hash key
+* file_api: max depth is set as part of initial config
+* file: remove unused variable in FileFlows destructor
+* filters: update dev_notes.txt with details for event_filter
+* flow: optimize timeout handling for different packet type
+* http_inspect: add peg counts for gzip, known-not-supported, and unknown
+* http_inspect: log normalized URI in extra data
+* ips_options: separate main thread pcre counts from packet threads stats
+* memory: account memory for profiler only when packet thread is involved
+* src: resolve various warnings
+* stream_tcp: make sure ports are correctly swapped when filling a meta-ACK packet
+
+2024-07-29: 3.3.2.0
+
+* appid: fixing cpp warnings and cosmetic changes for appid cpu profiler
+* appid: removing trailing whitespaces
+* daq: added outstanding packets counter
+* doc: builtin rule documentation updates
+* flow: added compile-time option to disable tenant_id
+* flow: clear deferred trust after the flow is trusted to stop repeated trusting
+* js_norm: address pdf tokenizer issues
+* kaizen: fix verbose mode output for unlimited options
+* main: fix coverage
+* sip: fallback functionality for sip inspector
+* stream: refactor paf logic into a c++ class
+* stream_tcp: delete lws_init, it was redundant with tcp_init; delete FIXITs that are no longer relevant
+* stream_tcp: improve variable and function names for overlap processing
+* stream_tcp: integrate and streamline setting of flush policy and splitter
+* stream_tcp: merge TcpStreamSession into TcpSession
+* stream_tcp: refactor segment nodes to implement reassembly cursor and eliminate tracking variables
+* stream_tcp: refactor TcpReassembler into a virtual base class and subclasses for each mode: ignore, IPS and IDS
+* stream_tcp: refactor to move alert functions to their own class
+* stream_tcp: refactor to move tcp overlap processing out of reassembly class
+
+2024-07-15: 3.3.1.0
+
+* appid: restructure the appid code to make it easier to follow and maintain
+* appid: updating appid cpu profiler cli
+* dce_rpc: correct the session counters post the upgrade to smb v2 from v1
+* detection: include OPT_TREE traces in release build
+* detection: make print of fast pattern as a trace module
+* extractor: support trans_depth, origin and referrer fields
+* file: fixing file context reuse
+* flow: clear flow stash when freeing the flow data
+* flow: handle significant groups with unknown group value as non-group flow keys
+* http_inspect: add origin header
+* parser: do not skip symbols while expanding variables
+* perf_monitor: introducing new parameters for ip flow profiling
+* stream_tcp: move prev_norm object from TcpNormalizer to TcpNormalizerState
+* stream_tcp: set daq_msg field in meta-ack pseudo-packet header to the value from the wire packet.
+* stream_tcp: support tracing without compilation flags
+* wizard: expand MMS curse
+
+2024-06-18: 3.3.0.0
+
+* appid: display rows limit of table and totals
+* appid: using different api for picking appids for appid cpu profiler
+* build: bump version to 3.2.0
+* codecs: add handling of NDP types
+* dns: set Flow timeout after getting DNS response
+* extractor: add protocol logging for HTTP
+* framework: add new Cursor Action Type
+* http_inspect: set CAT_SET_SUB_SECTION for buffer with a sub-selector configured
+* js_norm: fix prerequisites for FlexLexer includes
+* main: add CLI command to show snort cpu percentage
+* stream_tcp: use default size atomsplitter on fallback
+* utils: remove duplication of definition. Thanks to xxxx81 for reporting the issue.
+
+2024-06-02: 3.2.2.0
+
+* appid: appid cpu profiler max columns
+* appid: re-enabling appid cpu profiler making it thread safe
+* appid: store and retrieve only SNI in AppIdSession
+* appid: updating file_magic.rules with some new file types added to the VDB.
+* dce_smb: do not prune from LRU cache during file tracker update
+* doc: fix formatting in dev_notes.txt
+* flow: add the newly-created flow to p->flow to avoid segv
+* js_norm: stop PDF processing on syntax error
+* main: apply loaded configuration only once
+* packet_capture: make sure packet_capture executed before detection
+* service_inspectors: fix get_buf handling
+* sip: flow clean-up based on lina configured timeout
+* src: remove repetitive words. Thanks @gopherorg for finding those typos
+* src: udpate to resolve new issues
+* stream_tcp: don't attempt to verify or process keep-alive probes with data
+* stream_tcp: fix infinite recursion cases. Thanks to scloder-ut-iso for helping with debug information that uncovered a case of infinite recursion
+* utils: add explicit include
+
+2024-05-16: 3.2.1.0
+
+* framework: supply directories to system headers to plug_gen.sh
+* main: updates for types used by Alpine.
+* memory: fix unit test
+
+2024-05-08: 3.2.0.0
+
+* actions: add action counters and aggregate them under ips_actions
+* active, host_tracker, profiler, stats, stream: refactor installed headers to exclude implementation like counts and perf stats
+* api: refactor base API
+* build: eliminate SO_PUBLIC THREAD_LOCALs
+* build: fix cppcheck warnings
+* build: fix coverity warnings
+* build: fix LTO ODR issues with anonymous namespaces
+* codecs: PacketManager::max_layers is not THREAD_LOCAL
+* detection: introduce re-evaluation of ips content in next packet
+* detection: refactor detection_util.\*
+* detection: refactor headers
+* doc: add versioning information to the developer guide
+* event_filter, suppress:  keep antiquated dynamic array support private (use std::vector instead)
+* extract: move extract methods to detection
+* file: do not install internal headers
+* flow: move StreamFlowIntf to stream_flow.h
+* flow: split ExpectFlow into a separate header
+* framework: bump api version to 18
+* framework: bump api version tp 19
+* framework: bump api version to 20
+* framework: expand decode flags
+* framework: generate preprocessor output for validation
+* framework: improve exported header comments
+* host_cache: do not install private header
+* inspector: eval override is optional for passive inspectors
+* inspectors: remove redundant slot variable
+* inspector: use thread local slot for best perf on Linux
+* ips_options: fix dynamic build of some options
+* ips: tweak check for offload enable
+* log: refactor out app implementation stuff into log_errors.h
+* mpse: add modules for pegs and perf profiling; remove \_search
+* numa: do not install implementation (private) header
+* packet_tracer: eliminate SO_PUBLIC THREAD_LOCALs
+* pig_pen: use Module::usage directly
+* plugins: add missing error messages when an so fails to load
+* plugins: add warning for invalid plugin types
+* plugins: bump base API and all plugin API version numbers
+* profiler: eliminate SO_PUBLIC THREAD_LOCALs for \_WIN64
+* profiler: move implementation class to profiler_impl.h
+* protocols: defensive fix for malformed packets, discard log
+* reputation: move private defines out of installed header
+* rna: refactor headers for better encapsulation
+* snort: remove deprecated features:
+** string binder[].when.zones: deprecated alias for groups
+** string binder[].when.src_zone: deprecated alias for src_groups
+** string binder[].when.dst_zone: deprecated alias for dst_groups
+** enum dce_smb.smb_file_inspection: deprecated (not used): file inspection controlled by smb_file_depth { 'off' | 'on' | 'only' }
+* ssl: support dynamic build of inspector and ips options
+* stats: change shutdown Mbits/sec from mebibits to megabits
+* stats: stats.h is for internal use only, do not install
+* stream: delete obsolete / unused methods
+* style: miscellaneous cleanup
+* style: remove trailing spaces
+* tag: tweak enable toggle
+* tcp: move SEQ_* macros to tcp header
+* thread: move THREAD_LOCAL definition to snort_types.h
+* utils: refactor out non-public code
+
+2024-05-06: 3.1.85.0
+
+* anaylzer, framework: add a data bus method to publish to all network policies and use it for idle
+* appid: add http url regex patterns
+* appid: appid CPU Profiler Table and CLI
+* appid: disable appid cpu profiler
+* detection: clear inspector data before flow_data
+* detection: fix postponed rule evaluation with recall presence
+* file_api: fix incorrect data size being passed to IPS engine for file type detection
+* flow: connection profiling feature
+* flow: fix unit test for debian
+* main: update usage of a deprecated hwloc macro. Thanks to teicors for reporting the issue!
+* stream_tcp: add reassembler class for missed_3whs
+* stream_tcp: change drop reason issuer to stream
+* stream_tcp: drop packet with invalid sequence number if inspection policy is inline and fix sequence number comparisons
+* stream_tcp: implement an asymmetric flow (one-way traffic) mode for reassembly that purges flushed segments immediately (no waiting for ack that will never come)
+* stream_tcp: support for asymmetric normalization
+* stream_tcp: track offset into data buffer due to overlaps with state variable on the TCP segment node
+* utils: move file specific functions from perfmonitor to utils
+
+2024-04-08: 3.1.84.0
+
+* appid: enhanced appid config parsing
+* appid: remove locks from peg counts
+* appid: separate main thread and packet thread appid_pub_id
+* dce_smb: fixing an ASAN memory corruption issue
+* detection: handle policy changes in continuation
+* framework: add correct cast from double to unsigned
+* http_inspect: add file_data to buffer list
+* packet_capture: include cstdint in a header file. Thanks to Plup <plup@plup.io> and Hauke Mehrtens <hauke@hauke-m.de> for reporting this!
+* xhash: fixed typo
+
+2024-03-24: 3.1.83.0
+
+* detection: use correct packet in trace logs
+* doc: add libml to optional dependencies
+* flow: add filter to dump flows
+* flow: fix UT
+* hash: exception handling for random device
+* packet_capture: fixed wrong dlt in pcap header when nfq is used
+* stream: count retransmits when we disable content rules
+* trace: replace colon delimiter for tenant with whitespace in the trace_logger output
+
+2024-03-12: 3.1.82.0
+
+* appid: broadcast commands with ctrlcon
+* appid: change eve pattern matching logic
+* appid: replaced warning log with logging api for CBD
+* file_api: do not clear the file capture and user file data pointers when updating the verdict from the cache
+* filters: updated dyn array with vector
+* flow: updated flow_data linklist with STL container
+* framework: validate parameter of number type in a string form
+* kaizen: rename to Snort ML
+* main: clear lua stack when registering commands in a shell
+* main: reset main-thread stats from the main thread
+* main: update limits help
+* packet_capture: add packet capturing per tenant
+* sfip: remove references to unused mode feature
+* sfip: zero out var/node pointers after operations to remedy heap-use-after-free on reload
+* smb: fix for improper session cache destruction in tterm during config reload
+* snort2lua: change deprecated use of ptr_fn to lambda
+* stats: fix timing stats
+* stats: perf improvement changes
+* stream: remove splitter from session before inspectors
+* stream_tcp: add reasons for drops due to trims
+* stream_tcp: implement support for proxy mode normalization behavior
+* stream_tcp: update documentation for stream TCP alerts to include the new 129:21 and 129:22 alerts
+* trace: add tenants logging
+
+2024-02-20: 3.1.81.0
+
+* appid: check tenant_match() if required
+* appid: log error message instead of fatal error if appid stats logfile is not accessible
+* appid: Lowering max packet count before service fail
+* control: Adds counting to ctrlcon blocked to allow for nested commands
+* detection: add c'tors, use new instead of snort_calloc
+* detection: copy ip var name in dup_rtn
+* flow: added ips event suppression flags
+* host_cache: fixed update_stats to remove race_condition
+* http_inspect: recreate JSNorm if reload takes place inside transaction
+* ips_context: add lazy-allocation of alt buffer
+* kaizen: provide an option to enable Kaizen's mock
+* kaizen: remove redundant semicolon and add explicit cast
+* kaizen: rename modules
+* lua: improve spell of wizard for HTTP
+* memory: prevent data race between main and packet threads
+* service_inspectors: add check for JSNorm config actuality
+* stream_tcp: add alerts for exceeding thresholds for max queued bytes or segments
+* stream_tcp: add check to verify seglist head is not nullptr and only initialize PAF when it is not
+* utils: add macro for setting thread name
+
+2024-02-01: 3.1.79.0
+
+* appid: add tenants filter for appid debug
+* appid: process organization unit instead of organization name
+* appid: return false in is_appid_inspecting_session for quic if not decrypting
+* appid: update peg counts to be thread safe
+* coverity: fix for stream and hash
+* filters: make rate_filter multithreaded + some cleanup
+* kaizen: add dev_notes.txt
+* kaizen: change default value of uri_depth to -1
+* kaizen: change kaizen gid to 411
+* kaizen: extend mock object with simple matching mechanism
+* kaizen: make kaizen configurable per policy
+* kaizen: register module only when LibML present or REG_TEST defined
+* kaizen: update copyright
+* mercury: updating alpn info without sni in 7.6
+* network_inspectors: add kaizen ML based exploit detector
+* packet_tracer: add tenants to filters
+* profiler: improve multithread rule percentage calculation
+* ssl: heap overflow issue when processing handshake records
+* stream_tcp: correct labeling of in-sequence and out-of-sequence packets
+* stream_tcp: persist disable_reassembly in Flow
+* stream_tcp: set packet direction flag based on direction saved in reassembly state
+
+2024-01-16: 3.1.78.0
+
+* appid: print odp version and odp detector count on startup
+* copyright: update year to 2024
+* doc: update arg list for "generate_builtin.sh". Add parity to "generate_" scripts arg list, thanks to @puck(https://github.com/puck)
+* main: fix inconsistent lua variables assignment
+* parser: fix --dump-rule-meta for negated ports
+
+2023-12-20: 3.1.77.0
+
+* appid: add http3 to the list of ssl protocols as http3 will always be inside quic and encrypted
+* appid: do not delete hsession for http3
+* appid: fix coverity issues
+* appid: lua logging doc update
+* build: arm compilation support
+* catch: add boost software license for catch.hpp
+* detection: adjust built-in GID range to 40-999
+* detection: collect matched buffers on IpsContext
+* flow: add tenant ID to FlowKey
+* host_cache: fix race condition on peg counts
+* http_inspect: publish HTTP/1 request bodies, track MIME boundary
+* main: fix reload_id data race
+* parser: add CWD to conf search order
+* profiler: change time tracking for "rule_time (%)" field in rule_profiler output
+* profiler: dump memory profiler stats at frequent interval
+* pub_sub: add get_client_body and is_mime methods
+* ssl: stopping inspection once client or server app packet is found
+* utils: add get_file_size
+
+2023-12-03: 3.1.76.0
+
+* appid: added missed cppcheck warning
+* appid: adding support for memory profiling of third party lib
+* appid: additional check for lua logging
+* appid: fixing coverity issues
+* dns: fix parsing 'additionals' section in dns response
+* flow_cache: added new protocol base counters
+* pegs: make add_peg_count and set_peg_count protected to be available for the derived class
+* perf_mon: fix variable name issue reported by cppcheck
+
+2023-11-19: 3.1.75.0
+
+* appid: add appId for DNS over QUIC and DNS over HTTP/3 to application_ids.h
+* decompress: use list for OLE file entries to guarantee their order in file_data
+* detection: setting flag for flows with affected logging due to event filter
+
+2023-11-07: 3.1.74.0
+
+* actions, detection, file_api, flow, stream: coverity fixes
+* appid: clean up main thread appid debug and make appid on, off, on work
+* appid: lua log function with appiddebug check
+* build: address miscellaneous cppcheck warnings
+* build: fix up 32-bit compilation
+* build: fix coverity and cppcheck issues
+* build: remove unused functions reported by cppcheck
+* codecs: fix bad checksum when auth(51) protocol header is present between IP and TCP layer.
+* dce_rpc: added SMB Redesigned Multichannel enabled code
+* http_inspect: add correct handling of configuration error
+* ips_options: fix ack option
+* ips_options: fix flow bits
+* packet_io: fix incorrect counters caused by data plane counters reset
+* search_tool: allow an override of the search method
+* search_tool: fall back to normal mpse if no snort config
+
+2023-10-23: 3.1.73.0
+
+* appid: added support for appid trace logs with multiple logging levels
+* appid: fixing cppcheck issue
+* control: code refactor to support all unix flavors
+* detection: fix cleaning of rule profiling stats when profiling starts
+* host_cache: added segmented cache
+* http_inspect: handle reserved gzip flags
+* http_inspect: response to 0.9 isn't necessarily 0.9
+* profiler: extend field length to support uint64
+* stream: skip duplicated alerts in TcpReassemblerState's list. Thanks wenhao-in-chengdu for reporting the issue and suggesting a fix.
+* stream_tcp: ignore normalization checks when in midstream state
+
+2023-10-10: 3.1.72.0
+
+* active: added API for printing delayed action string
+* appid: support to get correct http session based on stream_id
+* control: allow one command at a time
+* dce_rpc: using  reset_using_rpkt() inline to what is there in eval() of SMB inspector code as well
+* flow_cache: added protocol base LRU caches
+* helpers: increase buffer space for function names, allow printing truncated names
+* http_inspect: clear fake headers snapshot for 0.9 response
+* http_inspect: run detection on failed utf decoding
+* memory: change NOW type counts to SUM type, where necessary
+* packet_io: fix daq stats
+* stream_tcp: accept 1 byte of trimmed probe data after zero window
+* stream_tcp: update rcv_nxt appropriately for each segment
+* tcp: timeout for embryonic and idle session
+
+2023-09-25: 3.1.71.0
+
+* appid, http_inspect, http2_inspect: create appid session if not present in decrypt event handler, add message section as part of StreamFlowIntf for httpx
+* codecs: Add IPv6 Reserved Address to GID:116 Rules
+* detection: avoid multiple fixups of duplicated trees
+* detection: fix of default ips policy switching
+* flow: allow reinspection for blocked icmp flows after reload
+* flow: generate flow setup and established events for ha flows
+* host_cache: cppcheck fix
+* http2_inspect: fix http2 frame length for logging
+* main: fix signals handling after failed started instances
+* main: reset_stats argument type improvement
+* parser: add file_id rule syntax evaluation
+* smtp: add alert for mixed LF and CRLF
+* smtp: process DATA\n (no \r)
+* stream: extend list of arguments for extra data logging
+* stream_tcp: ensure all data segments after a zero window are blocked when NAP is inline
+* stream_tcp: examine whether a segment plugs a hole before blocking due to exceeding queue_limit
+
+2023-09-10: 3.1.70.0
+
+* appid: makes regex error more of a warning
+* detection: fix assert expression
+* helpers: improve hyperscan_search error message
+* host_cache: added segmented host cache
+* main: prevent reloading unprepared thread
+* search_engines: allow a snort config to be passed to find_all
+
+2023-08-27: 3.1.69.0
+
+* appid: mark ssl appid lookup successful if a service id is available
+* appid: prefer eve client over appid detected client after decryption and use appid detected client version if eve client equals appid client
+* dce_rpc: fix stats for client/server segments reassembled. Thanks to Bader-eddine Ouaich for addressing the issue.
+* dns: updates to allow DNS to be compiled dynamically.
+* framework: add virtual for inspectors that publish data when no ips policy is enabled.
+* http2_inspect: add frame when logging a packet
+* http2_inspect: handle empty header name
+* http2_inspect: update connection settings on ack
+* http2_inspect: update test tool configurations
+* http_inspect: adjust formatting
+* inspector: export get_service_inspector_by_service method
+* mime: fix boundary search
+* mime: postpone boundary-look-alike data till the next PDU arrives
+* mime: support transport padding in boundary strings
+
+2023-08-14: 3.1.68.0
+
+* appid, cip: parsing cip safety segments
+* dns: parse and publish dns response with ip, fqdn/ttl data
+* doc: udpate tutorial
+* http_inspect: disable rule evaluation caching for MIME attachments
+* managers: fix get_inspector to use the passed in snort config for context and inspection inspectors
+* sfip: Add < operator so SfIp can be used in std::map and std::set.
+* src: remove ips option asn1
+* stream: init meta ack packet action field
+* wizard: refactoring - split curses to multiple files by protocol
+
 2023-07-30: 3.1.67.0
 
 * appid: do not raise SMTP response overflow IPS alert on SSL traffic

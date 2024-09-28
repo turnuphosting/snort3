@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2003-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -88,10 +88,8 @@ HostCacheIp::Data RnaPnd::find_or_create_host_tracker(const SfIp& ip, bool& new_
 }
 
 RnaPnd::RnaPnd(const bool en, const std::string& cp, RnaConfig* rc) :
-    logger(RnaLogger(en)), filter(DiscoveryFilter(cp)), conf(rc)
-{
-    update_timeout = (rc ? rc->update_timeout : 0);
-}
+    logger(RnaLogger(en)), filter(DiscoveryFilter(cp)), conf(rc), update_timeout(rc ? rc->update_timeout : 0)
+{ }
 
 RnaPnd::~RnaPnd() = default;
 

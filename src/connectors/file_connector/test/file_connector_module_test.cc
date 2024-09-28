@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,6 +24,7 @@
 #endif
 
 #include "connectors/file_connector/file_connector_module.h"
+#include "main/thread_config.h"
 #include "profiler/profiler.h"
 
 #include <CppUTest/CommandLineTestRunner.h>
@@ -31,16 +32,20 @@
 
 using namespace snort;
 
+
 THREAD_LOCAL SimpleStats file_connector_stats;
 THREAD_LOCAL ProfileStats file_connector_perfstats;
 
 void show_stats(PegCount*, const PegInfo*, unsigned, const char*) { }
-void show_stats(PegCount*, const PegInfo*, const IndexVec&, const char*, FILE*) { }
+void show_stats(PegCount*, const PegInfo*, const std::vector<unsigned>&, const char*, FILE*) { }
 
 namespace snort
 {
 char* snort_strdup(const char* s)
 { return strdup(s); }
+unsigned get_instance_id()
+{ return 0; }
+unsigned ThreadConfig::get_instance_max() { return 1; }
 }
 
 TEST_GROUP(file_connector_module)

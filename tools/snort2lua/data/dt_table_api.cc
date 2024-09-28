@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -57,8 +57,8 @@ bool TableApi::should_delegate(const std::string& table_name) const
 void TableApi::reset_state()
 {
     // DO NOT RESET DELEGATE STATE. IT HAS ITS OWN LIFECYCLE.
-    std::stack<Table*> empty;
-    open_tables.swap(empty);
+    std::stack<Table*> empty_table;
+    open_tables.swap(empty_table);
     std::stack<unsigned> empty_two;
     top_level_tables.swap(empty_two);
     curr_data_bad = false;
@@ -422,7 +422,7 @@ void TableApi::print_tables(std::ostream& out) const
     if ( empty() )
         return;
 
-    for (Table* t : tables)
+    for (const Table* t : tables)
         out << (*t) << "\n\n";
 }
 
@@ -454,9 +454,7 @@ void TableApi::run_when_exists(const char* table_name, PendingFunction action)
         action(*this);
     else
     {
-        if ( pending.find(table_name) == pending.end() )
-            pending[table_name] = std::queue<PendingFunction>();
-
+        pending.emplace(table_name, std::queue<PendingFunction>());
         pending[table_name].push(action);
     }
 }

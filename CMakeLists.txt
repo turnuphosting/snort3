@@ -2,8 +2,8 @@ cmake_minimum_required (VERSION 3.4.3)
 project (snort CXX C)
 
 set (VERSION_MAJOR 3)
-set (VERSION_MINOR 1)
-set (VERSION_PATCH 67)
+set (VERSION_MINOR 3)
+set (VERSION_PATCH 6)
 set (VERSION_SUBLEVEL 0)
 set (VERSION "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}.${VERSION_SUBLEVEL}")
 
@@ -11,7 +11,7 @@ if (DEFINED VERSION_BUILD)
     set (BUILD "${VERSION_BUILD}")
 endif ()
 
-set (CMAKE_CXX_STANDARD 14)
+set (CMAKE_CXX_STANDARD 17)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 set (CMAKE_CXX_EXTENSIONS OFF)
 
@@ -202,6 +202,14 @@ if (HAVE_NUMA)
 else ()
     message("\
     NUMA:           OFF")
+endif ()
+
+if (HAVE_LIBML)
+    message("\
+    LibML:          ON")
+else ()
+    message("\
+    LibML:          OFF")
 endif ()
 
 message("-------------------------------------------------------\n")

@@ -1,5 +1,5 @@
 ////--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -29,9 +29,6 @@
 #include "framework/mpse_batch.h"
 #include "main/snort_config.h"
 #include "managers/mpse_manager.h"
-#include "utils/stats.h"
-
-#include "search_engines/pat_stats.h"
 
 extern std::vector<void *> s_state;
 extern snort::ScratchAllocator* scratcher;
@@ -41,7 +38,6 @@ namespace snort
 extern SnortConfig s_conf;
 
 extern THREAD_LOCAL SnortConfig* snort_conf;
-extern THREAD_LOCAL PatMatQStat pmqs;
 
 extern unsigned parse_errors;
 } // namespace snort

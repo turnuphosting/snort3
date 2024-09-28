@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -21,8 +21,8 @@
 
 #include <functional>
 
-#include "framework/bits.h"
 #include "framework/connector.h"
+#include "utils/bits.h"
 
 #define MAXIMUM_SC_MESSAGE_CONTENT 1024
 #define DISPATCH_ALL_RECEIVE 0
@@ -58,7 +58,7 @@ typedef std::function<void(SCMessage*)> SCProcessMsgFunc;
 class SideChannel
 {
 public:
-    SideChannel();
+    SideChannel() = default;
 
     void register_receive_handler(const SCProcessMsgFunc& handler);
     void unregister_receive_handler();
@@ -71,12 +71,12 @@ public:
     void set_default_port(SCPort port);
     snort::Connector::Direction get_direction();
 
-    snort::Connector* connector_receive;
-    snort::Connector* connector_transmit;
+    snort::Connector* connector_receive = nullptr;
+    snort::Connector* connector_transmit = nullptr;
 
 private:
-    SCSequence sequence;
-    SCPort default_port;
+    SCSequence sequence = 0;
+    SCPort default_port = 0;
     SCProcessMsgFunc receive_handler = nullptr;
 };
 

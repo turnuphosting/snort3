@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 // Copyright (C) 2002 Martin Roesch <roesch@sourcefire.com>
 //
@@ -45,13 +45,6 @@ enum WarningGroup
     WARN_MAX
 };
 
-void reset_parse_errors();
-unsigned get_parse_errors();
-unsigned get_parse_warnings();
-void reset_reload_errors();
-unsigned get_reload_errors();
-std::string& get_reload_errors_description();
-
 namespace snort
 {
 SO_PUBLIC void ParseWarning(WarningGroup, const char*, ...) __attribute__((format (printf, 2, 3)));
@@ -63,7 +56,9 @@ SO_PUBLIC void LogMessage(const char*, va_list& ap);
 SO_PUBLIC void LogMessage(const char*, ...) __attribute__((format (printf, 1, 2)));
 SO_PUBLIC void LogMessage(FILE*, const char*, ...) __attribute__((format (printf, 2, 3)));
 SO_PUBLIC void WarningMessage(const char*, ...) __attribute__((format (printf, 1, 2)));
+SO_PUBLIC void WarningMessage(const char*, va_list& ap);
 SO_PUBLIC void ErrorMessage(const char*, ...) __attribute__((format (printf, 1, 2)));
+SO_PUBLIC void ErrorMessage(const char*, va_list& ap);
 
 class SO_PUBLIC ConfigLogger final
 {

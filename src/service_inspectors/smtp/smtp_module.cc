@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -32,20 +32,11 @@
 using namespace snort;
 using namespace std;
 
-SmtpCmd::SmtpCmd(const std::string& key, uint32_t flg, int num)
+SmtpCmd::SmtpCmd(const std::string& key, uint32_t flg, int num) : name(key), flags(flg), number(num)
+{ }
+
+SmtpCmd::SmtpCmd(const std::string& key, int num) : name(key), flags(PCMD_ALT), number(0)
 {
-    name = key;
-    flags = flg;
-    number = num;
-}
-
-SmtpCmd::SmtpCmd(const std::string& key, int num)
-{
-    name = key;
-
-    flags = PCMD_ALT;
-    number = 0;
-
     if ( num >= 0 )
     {
         number = num;
@@ -171,7 +162,7 @@ static const RuleMap smtp_rules[] =
     { SMTP_AUTH_COMMAND_OVERFLOW, "attempted authentication command buffer overflow" },
     { SMTP_FILE_DECOMP_FAILED, "file decompression failed" },
     { SMTP_STARTTLS_INJECTION_ATTEMPT, "STARTTLS command injection attempt"},
-
+    { SMTP_LF_CRLF_MIX, "mix of LF and CRLF as end of line" },
 
     { 0, nullptr }
 };
@@ -181,9 +172,7 @@ static const RuleMap smtp_rules[] =
 //-------------------------------------------------------------------------
 
 SmtpModule::SmtpModule() : Module(SMTP_NAME, SMTP_HELP, s_params)
-{
-    config = nullptr;
-}
+{ }
 
 SmtpModule::~SmtpModule()
 {

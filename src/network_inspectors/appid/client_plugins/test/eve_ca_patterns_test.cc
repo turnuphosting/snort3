@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -35,7 +35,7 @@ EveCaPattern eve_ca(APPID_UT_ID, "firefox", 90);
 
 namespace snort
 {
-int SearchTool::find_all(const char* pattern, unsigned, MpseMatch, bool, void* data)
+int SearchTool::find_all(const char* pattern, unsigned, MpseMatch, bool, void* data, const SnortConfig*)
 {
     if (strcmp(pattern, "firefox") == 0)
         eve_ca_pattern_match(&eve_ca, nullptr, 0, data, nullptr);
@@ -48,8 +48,7 @@ Inspector* InspectorManager::get_inspector(char const*, bool, const snort::Snort
     return nullptr;
 }
 
-AppIdContext* ctxt;
-AppIdContext& AppIdInspector::get_ctxt() const { return *ctxt; }
+void appid_log(const snort::Packet*, unsigned char, char const*, ...) { }
 
 TEST_GROUP(eve_ca_patterns_tests)
 {

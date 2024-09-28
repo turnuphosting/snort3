@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2011-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -109,6 +109,7 @@ bool AppIdIpsOption::match_id_against_rule(OdpContext& odp_ctxt, int32_t id)
 // first match wins...
 IpsOption::EvalStatus AppIdIpsOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(ips_appid_perf_stats);
 
     if ( !p->flow )
@@ -236,7 +237,7 @@ static void appid_option_mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* appid_option_ips_ctor(Module* p, OptTreeNode*)
+static IpsOption* appid_option_ips_ctor(Module* p, IpsInfo&)
 {
     AppIdOptionModule* m = (AppIdOptionModule*)p;
     return new AppIdIpsOption(m->appid_table);

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,29 +28,29 @@
 using namespace snort;
 
 #ifdef STATIC_IPS_ACTIONS
-extern const BaseApi* act_react[];
-#endif
 extern const BaseApi* act_alert[];
 extern const BaseApi* act_block[];
 extern const BaseApi* act_drop[];
 extern const BaseApi* act_file_id[];
 extern const BaseApi* act_log[];
 extern const BaseApi* act_pass[];
+extern const BaseApi* act_react[];
 extern const BaseApi* act_reject[];
 extern const BaseApi* act_replace[];
+#endif
 
 void load_actions()
 {
 #ifdef STATIC_IPS_ACTIONS
-    PluginManager::load_plugins(act_react);
-#endif
     PluginManager::load_plugins(act_alert);
     PluginManager::load_plugins(act_block);
     PluginManager::load_plugins(act_drop);
     PluginManager::load_plugins(act_file_id);
     PluginManager::load_plugins(act_log);
     PluginManager::load_plugins(act_pass);
+    PluginManager::load_plugins(act_react);
     PluginManager::load_plugins(act_reject);
     PluginManager::load_plugins(act_replace);
+#endif
 }
 

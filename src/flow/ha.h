@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,8 +24,8 @@
 
 #include <cassert>
 
-#include "framework/bits.h"
-#include "main/thread.h"
+#include "main/snort_types.h"
+#include "utils/bits.h"
 
 //-------------------------------------------------------------------------
 
@@ -83,8 +83,8 @@ private:
     static struct timeval min_sync_interval;
 
     struct timeval next_update;
-    uint16_t pending;
-    uint8_t state;
+    uint16_t pending = NONE_PENDING;
+    uint8_t state = NEW | NEW_SESSION;
 };
 
 // Describe the message being produced or consumed.
@@ -130,8 +130,8 @@ public:
     virtual bool is_update_required(snort::Flow*) { return false; }
     virtual uint8_t get_message_size(Flow&) { return max_length; }
 
-    FlowHAClientHandle handle;  // Actual handle for the instance
-    uint8_t index;
+    FlowHAClientHandle handle = 0;  // Actual handle for the instance
+    uint8_t index = 0;
     uint8_t max_length;
 
 protected:

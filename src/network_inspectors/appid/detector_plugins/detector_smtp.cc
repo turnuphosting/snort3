@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -526,7 +526,7 @@ int SmtpClientDetector::validate(AppIdDiscoveryArgs& args)
             if (*args.data == '.')
             {
                 if (len == 0 ||
-                    (len >= 1 && args.data[1] == '\n') ||
+                    args.data[1] == '\n' ||
                     (len >= 2 && args.data[1] == '\r' && args.data[2] == '\n'))
                 {
                     add_app(args.asd, APP_ID_SMTP, APP_ID_SMTP, nullptr, args.change_bits);

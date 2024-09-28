@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -235,7 +235,8 @@ int Converter::parse_file(
         std::size_t first_non_white_char = tmp.find_first_not_of(" \f\n\r\t\v");
         std::size_t last_non_space = tmp.find_last_not_of(' ');
 
-        bool comment = (tmp[first_non_white_char] == '#') or (tmp[first_non_white_char] == ';');
+        bool comment = (first_non_white_char != std::string::npos) and ((tmp[first_non_white_char] == '#') or
+            (tmp[first_non_white_char] == ';'));
         bool commented_rule = tmp.substr(0, 7) == "# alert";
 
         if ( !commented_rule && ((first_non_white_char == std::string::npos) || comment) )
@@ -377,7 +378,7 @@ Binder& Converter::make_binder()
 void Converter::add_bindings()
 {
     std::unordered_map<int, std::shared_ptr<Binder>> policy_map;
-    for ( auto& b : binders )
+    for ( const auto& b : binders )
     {
         if ( b->has_ips_policy_id() && b->get_use_file().second == Binder::IT_FILE )
             policy_map[b->get_when_ips_policy_id()] = b;

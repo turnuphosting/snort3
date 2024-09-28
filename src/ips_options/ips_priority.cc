@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -55,7 +55,7 @@ public:
     { return DETECT; }
 
 public:
-    int priority = 0;
+    uint32_t priority = 0;
 };
 
 bool PriorityModule::set(const char*, Value& v, SnortConfig*)
@@ -79,10 +79,10 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* priority_ctor(Module* p, OptTreeNode* otn)
+static IpsOption* priority_ctor(Module* p, IpsInfo& info)
 {
     PriorityModule* m = (PriorityModule*)p;
-    otn->sigInfo.priority = m->priority;
+    IpsOption::set_priority(info, m->priority);
     return nullptr;
 }
 

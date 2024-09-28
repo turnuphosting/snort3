@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -356,7 +356,7 @@ protected:
                 // found an option without a colon, so set stream to semi-colon
                 std::streamoff off = 1 + (std::streamoff)(pos) + (std::streamoff)(semi_colon_pos);
                 stream.seekg(off);
-                keyword = keyword.substr(0, semi_colon_pos);
+                keyword.resize(semi_colon_pos);
             }
 
             // now, lets get the next option.

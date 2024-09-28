@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -73,7 +73,7 @@ public:
     EvalStatus eval(Cursor&, snort::Packet*) override;
     uint32_t hash() const override;
     bool operator==(const snort::IpsOption& ips) const override;
-    static snort::IpsOption* opt_ctor(snort::Module* m, OptTreeNode*)
+    static snort::IpsOption* opt_ctor(snort::Module* m, IpsInfo&)
         { return new Http2IpsOption((Http2CursorModule*)m); }
     static void opt_dtor(IpsOption* p) { delete p; }
 private:

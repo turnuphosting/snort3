@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,6 +26,7 @@
 
 #include "helpers/discovery_filter.h"
 #include "host_tracker/host_cache.h"
+#include "host_tracker/host_cache_segmented.h"
 #include "protocols/packet.h"
 
 #ifdef UNIT_TEST
@@ -102,14 +103,14 @@ RnaTracker RNAFlow::get_tracker(const Packet* p, DiscoveryFilter& filter)
     return rt;
 }
 
-void RNAFlow::set_server(RnaTracker& ht)
+void RNAFlow::set_server(const RnaTracker& ht)
 {
     rna_mutex.lock();
     serverht = ht;
     rna_mutex.unlock();
 }
 
-void RNAFlow::set_client(RnaTracker& ht)
+void RNAFlow::set_client(const RnaTracker& ht)
 {
     rna_mutex.lock();
     clientht = ht;

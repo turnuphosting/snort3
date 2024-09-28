@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -30,12 +30,14 @@
 
 #include "perf_monitor.h"
 
+#include <appid/appid_api.h>
+#include "flow/stream_flow.h"
 #include "framework/data_bus.h"
+#include "framework/pig_pen.h"
 #include "hash/hash_defs.h"
 #include "hash/xhash.h"
 #include "log/messages.h"
 #include "main/analyzer_command.h"
-#include "main/thread.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
 #include "pub_sub/intrinsic_event_ids.h"
@@ -94,7 +96,7 @@ public:
     {
         FlowIPTracker* tracker = perf_monitor.get_flow_ip();
 
-        if (!tracker)
+        if (!tracker or !flow)
             return;
 
         FlowState state = SFS_STATE_MAX;
@@ -114,7 +116,36 @@ public:
         if ( state == SFS_STATE_MAX )
             return;
 
-        tracker->update_state(&flow->client_ip, &flow->server_ip, state);
+        char appid_name[40] = {};
+        uint16_t src_port = 0;
+        uint16_t dst_port = 0;
+        uint8_t ip_protocol = 0;
+        uint64_t flow_latency = 0;
+        uint64_t rule_latency = 0;
+
+        if ( perf_monitor.get_constraints()->flow_ip_all )
+        {
+            const AppIdSessionApi* appid_session_api = appid_api.get_appid_session_api(*flow);
+            if ( appid_session_api )
+            {
+                AppId service_id = APP_ID_NONE;
+                appid_session_api->get_app_id(&service_id, nullptr, nullptr, nullptr, nullptr);
+                const char* app_name = appid_api.get_application_name(service_id, *flow);
+                if ( app_name )
+                {
+                    strncpy(appid_name, app_name, sizeof(appid_name) - 1);
+                    appid_name[sizeof(appid_name) - 1] = '\0';
+                }
+            }
+            src_port = flow->client_port;
+            dst_port = flow->server_port;
+            ip_protocol = flow->ip_proto;
+            flow_latency = flow->flowstats.total_flow_latency;
+            rule_latency = flow->flowstats.total_rule_latency;
+        }
+
+        tracker->update_state(&flow->client_ip, &flow->server_ip, state, appid_name,
+            src_port, dst_port, ip_protocol, flow_latency, rule_latency);
     }
 
 private:
@@ -128,10 +159,10 @@ static const char* to_string(const PerfOutput& po)
 {
     switch (po)
     {
-    case PerfOutput::TO_CONSOLE:
-        return "console";
-    case PerfOutput::TO_FILE:
-        return "file";
+        case PerfOutput::TO_CONSOLE:
+            return "console";
+        case PerfOutput::TO_FILE:
+            return "file";
     }
 
     return "";
@@ -141,14 +172,14 @@ static const char* to_string(const PerfFormat& pf)
 {
     switch (pf)
     {
-    case PerfFormat::TEXT:
-        return "text";
-    case PerfFormat::CSV:
-        return "csv";
-    case PerfFormat::JSON:
-        return "json";
-    case PerfFormat::MOCK:
-        return "mock";
+        case PerfFormat::TEXT:
+            return "text";
+        case PerfFormat::CSV:
+            return "csv";
+        case PerfFormat::JSON:
+            return "json";
+        case PerfFormat::MOCK:
+            return "mock";
     }
 
     return "";
@@ -164,7 +195,10 @@ void PerfMonitor::show(const SnortConfig*) const
         ConfigLogger::log_value("flow_ports", config->flow_max_port_to_track);
 
     if ( ConfigLogger::log_flag("flow_ip", config->perf_flags & PERF_FLOWIP) )
+    {
         ConfigLogger::log_value("flow_ip_memcap", config->flowip_memcap);
+        ConfigLogger::log_value("flow_ip_all", config->flow_ip_all);
+    }
 
     ConfigLogger::log_value("packets", config->pkt_cnt);
     ConfigLogger::log_value("seconds", config->sample_interval);
@@ -231,7 +265,7 @@ void PerfMonitor::tinit()
 
 bool PerfMonReloadTuner::tinit()
 {
-    PerfMonitor* pm = (PerfMonitor*)InspectorManager::get_inspector(PERF_NAME, true);
+    PerfMonitor* pm = (PerfMonitor*)PigPen::get_inspector(PERF_NAME, true);
     auto* new_constraints = pm->get_constraints();
 
     if (new_constraints->flow_ip_enabled)
@@ -299,7 +333,7 @@ void PerfMonitor::swap_constraints(PerfConstraints* constraints)
 PerfConstraints* PerfMonitor::get_original_constraints()
 {
     auto* new_constraints = new PerfConstraints(false, config->sample_interval,
-        config->pkt_cnt);
+        config->pkt_cnt, config->flow_ip_all);
 
     return new_constraints;
 }
@@ -334,6 +368,7 @@ void PerfMonitor::disable_profiling(PerfConstraints* constraints)
 
 void PerfMonitor::eval(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(perfmonStats);
 
     if (p)
@@ -349,6 +384,9 @@ void PerfMonitor::eval(Packet* p)
     {
         if (ready_to_process(p))
         {
+#ifdef ENABLE_MEMORY_PROFILER
+            PigPen::show_runtime_memory_stats();
+#endif
             for (unsigned i = 0; i < trackers->size(); i++)
             {
                 (*trackers)[i]->process(false);

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -63,7 +63,7 @@ public:
     DeferredTrust() = default;
     ~DeferredTrust() = default;
     SO_PUBLIC void set_deferred_trust(unsigned module_id, bool on);
-    bool is_active()
+    bool is_active() const
     { return TRUST_DEFER_ON == deferred_trust || TRUST_DEFER_DEFERRING == deferred_trust; }
     bool try_trust()
     {
@@ -71,7 +71,7 @@ public:
             deferred_trust = TRUST_DEFER_DEFERRING;
         return TRUST_DEFER_DEFERRING != deferred_trust;
     }
-    bool is_deferred()
+    bool is_deferred() const
     { return TRUST_DEFER_DEFERRING == deferred_trust; }
     void clear()
     {

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -32,13 +32,14 @@
 
 namespace snort
 {
-SearchTool::SearchTool(bool multi)
+SearchTool::SearchTool(bool multi, const char* override_method)
 {
     const SnortConfig* sc = SnortConfig::get_conf();
     assert(sc and sc->fast_pattern_config);
-    const char* method = sc->fast_pattern_config->get_search_method();
+    assert(!override_method || strcmp(override_method, "hyperscan"));
+    const char* method = override_method ? override_method : sc->fast_pattern_config->get_search_method();
 
-    if ( strcmp(method, "hyperscan") )
+    if ( !method or strcmp(method, "hyperscan") )
         method = "ac_full";
 
     mpsegrp = new MpseGroup;
@@ -53,6 +54,9 @@ SearchTool::~SearchTool()
 {
     delete mpsegrp;
 }
+
+const char* SearchTool::get_method() const
+{ return mpsegrp->get_normal_mpse()->get_method(); }
 
 void SearchTool::add(const char* pat, unsigned len, int id, bool no_case, bool literal)
 { add((const uint8_t*)pat, len, id, no_case, literal); }
@@ -134,11 +138,12 @@ int SearchTool::find(
 }
 
 int SearchTool::find_all(
-    const char* str, unsigned len, MpseMatch mf, bool confine, void* user_data)
+    const char* str, unsigned len, MpseMatch mf, bool confine, void* user_data, const SnortConfig* sc)
 {
     int num = 0;
-    const SnortConfig* sc = SnortConfig::get_conf();
-    const FastPatternConfig* fp = sc->fast_pattern_config;
+    if (!sc)
+        sc = SnortConfig::get_conf();
+    const FastPatternConfig* fp = sc ? sc->fast_pattern_config : nullptr;
 
     if ( confine && max_len > 0 )
     {

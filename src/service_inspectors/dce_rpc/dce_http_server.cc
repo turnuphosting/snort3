@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,7 +26,7 @@
 #include "dce_http_server_module.h"
 
 #include "managers/inspector_manager.h"
-#include "stream/tcp/tcp_stream_session.h"
+#include "stream/tcp/tcp_session.h"
 
 #include "dce_http_server_splitter.h"
 
@@ -41,7 +41,9 @@ THREAD_LOCAL DceHttpServerStats dce_http_server_stats;
 class DceHttpServer : public Inspector
 {
 public:
-    void eval(Packet*) override { }
+    void eval(Packet*) override {
+        reset_using_rpkt();
+    }
     void clear(Packet*) override;
     StreamSplitter* get_splitter(bool c2s) override
     {
@@ -57,7 +59,7 @@ void DceHttpServer::clear(Packet* p)
     {
         if ( !p->test_session_flags(SSNFLAG_ABORT_SERVER) )
         {
-            TcpStreamSession* tcp_session = (TcpStreamSession*)flow->session;
+            TcpSession* tcp_session = (TcpSession*)flow->session;
             DceHttpServerSplitter* splitter =
                 (DceHttpServerSplitter*)(tcp_session->get_splitter(false));
 

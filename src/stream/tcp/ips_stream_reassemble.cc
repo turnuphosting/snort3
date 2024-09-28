@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -53,9 +53,8 @@ struct StreamReassembleRuleOptionData
 class ReassembleOption : public IpsOption
 {
 public:
-    ReassembleOption(const StreamReassembleRuleOptionData& c) :
-        IpsOption(s_name)
-    { srod = c; }
+    ReassembleOption(const StreamReassembleRuleOptionData& c) : IpsOption(s_name), srod(c)
+    { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -104,54 +103,39 @@ bool ReassembleOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus ReassembleOption::eval(Cursor&, Packet* pkt)
 {
-    RuleProfile profile(streamReassembleRuleOptionPerfStats);
+    RuleProfile profile(streamReassembleRuleOptionPerfStats);   // cppcheck-suppress unreadVariable
 
     if (!pkt->flow || !pkt->ptrs.tcph)
         return NO_MATCH;
 
+    Flow* flow = (Flow*)pkt->flow;
+
+    if ( !srod.enable ) /* Turn it off */
     {
-        Flow* lwssn = (Flow*)pkt->flow;
-        TcpSession* tcpssn = (TcpSession*)lwssn->session;
+        if ( srod.direction & SSN_DIR_FROM_SERVER )
+            Stream::set_splitter(flow, true);
 
-        if ( !srod.enable ) /* Turn it off */
-        {
-            if ( srod.direction & SSN_DIR_FROM_SERVER )
-            {
-                tcpssn->server.set_flush_policy(STREAM_FLPOLICY_IGNORE);
-                Stream::set_splitter(lwssn, true);
-            }
+        if ( srod.direction & SSN_DIR_FROM_CLIENT )
+            Stream::set_splitter(flow, false);
+    }
+    else
+    {
+        // FIXIT-M PAF need to instantiate service splitter?
+        // FIXIT-M PAF need to check for ips / on-data
+        if ( srod.direction & SSN_DIR_FROM_SERVER )
+            Stream::set_splitter(flow, true, new AtomSplitter(true));
 
-            if ( srod.direction & SSN_DIR_FROM_CLIENT )
-            {
-                tcpssn->client.set_flush_policy(STREAM_FLPOLICY_IGNORE);
-                Stream::set_splitter(lwssn, false);
-            }
-        }
-        else
-        {
-            // FIXIT-M PAF need to instantiate service splitter?
-            // FIXIT-M PAF need to check for ips / on-data
-            if ( srod.direction & SSN_DIR_FROM_SERVER )
-            {
-                tcpssn->server.set_flush_policy(STREAM_FLPOLICY_ON_ACK);
-                Stream::set_splitter(lwssn, true, new AtomSplitter(true));
-            }
+        if ( srod.direction & SSN_DIR_FROM_CLIENT )
+            Stream::set_splitter(flow, false, new AtomSplitter(false));
+    }
 
-            if ( srod.direction & SSN_DIR_FROM_CLIENT )
-            {
-                tcpssn->client.set_flush_policy(STREAM_FLPOLICY_ON_ACK);
-                Stream::set_splitter(lwssn, false, new AtomSplitter(false));
-            }
-        }
+    if (srod.fastpath)
+    {
+        /* Turn off inspection */
+        flow->ssn_state.ignore_direction |= srod.direction;
+        DetectionEngine::disable_all(pkt);
 
-        if (srod.fastpath)
-        {
-            /* Turn off inspection */
-            lwssn->ssn_state.ignore_direction |= srod.direction;
-            DetectionEngine::disable_all(pkt);
-
-            /* TBD: Set TF_FORCE_FLUSH ? */
-        }
+        /* TBD: Set TF_FORCE_FLUSH ? */
     }
 
     if (srod.alert)
@@ -196,7 +180,7 @@ public:
     { return DETECT; }
 
 public:
-    StreamReassembleRuleOptionData srod;
+    StreamReassembleRuleOptionData srod = {};
 };
 
 bool ReassembleModule::begin(const char*, int, SnortConfig*)
@@ -239,7 +223,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* reassemble_ctor(Module* p, OptTreeNode*)
+static IpsOption* reassemble_ctor(Module* p, IpsInfo&)
 {
     ReassembleModule* m = (ReassembleModule*)p;
     return new ReassembleOption(m->srod);
@@ -287,10 +271,11 @@ const BaseApi* ips_stream_reassemble = &reassemble_api.base;
 TEST_CASE("IPS Stream Reassemble", "[ips_stream_reassemble][stream_tcp]")
 {
     // initialization code here
-    REQUIRE( ( ips_stream_reassemble->api_version == ((BASE_API_VERSION << 16) | 0) ) );
     REQUIRE( ( strcmp(ips_stream_reassemble->name, s_name) == 0 ) );
     ReassembleModule* reassembler = ( ReassembleModule* )ips_stream_reassemble->mod_ctor();
     REQUIRE( reassembler != nullptr );
+
+    TcpNormalizerFactory::initialize();
 
     Flow* flow = new Flow;
     Packet* pkt = get_syn_packet(flow);
@@ -321,6 +306,7 @@ TEST_CASE("IPS Stream Reassemble", "[ips_stream_reassemble][stream_tcp]")
     }
 #endif
     release_packet(pkt);
+    TcpNormalizerFactory::term();
     delete flow;
     ips_stream_reassemble->mod_dtor(reassembler);
 }

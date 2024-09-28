@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -32,6 +32,7 @@
 #include "log/messages.h"
 #include "managers/module_manager.h"
 #include "utils/util.h"
+#include "host_cache_segmented.h"
 
 using namespace snort;
 using namespace std;
@@ -57,6 +58,20 @@ static int host_cache_get_stats(lua_State* L)
     {
         ControlConn* ctrlcon = ControlConn::query_from_lua(L);
         string outstr = mod->get_host_cache_stats();
+        ctrlcon->respond("%s", outstr.c_str());
+    }
+    return 0;
+}
+
+static int host_cache_get_segment_stats(lua_State* L)
+{
+    HostCacheModule* mod = (HostCacheModule*) ModuleManager::get_module(HOST_CACHE_NAME);
+
+    if ( mod )
+    {
+        int seg_idx = luaL_optint(L, 1, -1);
+        ControlConn* ctrlcon = ControlConn::query_from_lua(L);
+        string outstr = mod->get_host_cache_segment_stats(seg_idx);
         ctrlcon->respond("%s", outstr.c_str());
     }
     return 0;
@@ -274,6 +289,12 @@ static const Parameter host_cache_stats_params[] =
     { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
 };
 
+static const Parameter host_cache_segment_stats_params[] =
+{
+    { "segment", Parameter::PT_INT, nullptr, nullptr, "segment number for stats" },
+    { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
+};
+
 static const Parameter host_cache_delete_host_params[] =
 {
     { "host_ip", Parameter::PT_STRING, nullptr, nullptr, "ip address to delete" },
@@ -324,6 +345,7 @@ static const Command host_cache_cmds[] =
     { "delete_client", host_cache_delete_client,
       host_cache_delete_client_params, "delete client from host"},
     { "get_stats", host_cache_get_stats, host_cache_stats_params, "get current host cache usage and pegs"},
+    { "get_segment_stats", host_cache_get_segment_stats, host_cache_segment_stats_params, "get usage and pegs for cache segment(s)"},
     { nullptr, nullptr, nullptr, nullptr }
 };
 
@@ -344,6 +366,9 @@ static const Parameter host_cache_params[] =
     { "memcap", Parameter::PT_INT, "512:maxSZ", "8388608",
       "maximum host cache size in bytes" },
 
+    { "segments", Parameter::PT_INT, "1:32", "4",
+      "number of host cache segments. It must be power of 2."},
+
     { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
 };
 
@@ -354,8 +379,25 @@ bool HostCacheModule::set(const char*, Value& v, SnortConfig*)
         dump_file = v.get_string();
     }
     else if ( v.is("memcap") )
+    {
         memcap = v.get_size();
+    }
+    else if ( v.is("segments"))
+    {
+        segments = v.get_uint8();
 
+        if(segments > 32)
+            segments = 32;
+
+        if (segments == 0 || (segments & (segments - 1)) != 0)
+        {
+            uint8_t highestBitSet = 0;
+            while (segments >>= 1)
+                highestBitSet++;
+            segments = 1 << highestBitSet;
+            LogMessage("== WARNING: host_cache segments is not the power of 2. setting to %d\n", segments);
+        }
+    }
     return true;
 }
 
@@ -367,7 +409,7 @@ bool HostCacheModule::end(const char* fqn, int, SnortConfig* sc)
             sc->register_reload_handler(new HostCacheReloadTuner(memcap));
         else
         {
-            host_cache.set_max_size(memcap);
+            host_cache.setup(segments, memcap);
             ControlConn::log_command("host_cache.delete_host",false);
         }
     }
@@ -438,19 +480,76 @@ void HostCacheModule::log_host_cache(const char* file_name, bool verbose)
 }
 
 
+string HostCacheModule::get_host_cache_segment_stats(int seg_idx)
+{
+
+    if(seg_idx >= host_cache.get_segments())
+        return "Invalid segment index\nTry host_cache.get_segment_stats() to get all stats\n";
+
+    string str;
+    const PegInfo* pegs = host_cache.get_pegs();
+
+    if(seg_idx == -1)
+    {
+        const auto&& lru_data = host_cache.get_all_data();
+        str = "Total host cache size: " + to_string(host_cache.mem_size()) + " bytes, "
+            + to_string(lru_data.size()) + " trackers, memcap: " + to_string(host_cache.get_max_size())
+            + " bytes\n";
+
+        PegCount* counts = (PegCount*) host_cache.get_counts();
+        for ( int i = 0; pegs[i].type != CountType::END; i++ )
+        {
+            if ( counts[i] )
+            {
+                str += pegs[i].name;
+                str += ": " + to_string(counts[i]) + "\n" ;
+            }
+        }
+    }
+
+
+    str += "\n";
+    str += "total cache segments: " + to_string(host_cache.seg_list.size()) + "\n";
+    int idx = -1;
+    for( auto cache : host_cache.seg_list)
+    {
+        idx++;
+        if(seg_idx != -1 && seg_idx != idx)
+            continue;
+
+        str += "Segment " + to_string(idx) + ":\n";
+        const auto&& lru_data = cache->get_all_data();
+        str += "Current host cache size: " + to_string(cache->mem_size()) + " bytes, "
+            + to_string(lru_data.size()) + " trackers, memcap: " + to_string(cache->get_max_size())
+            + " bytes\n";
+
+        cache->lock();
+        cache->stats.bytes_in_use = cache->current_size;
+        cache->stats.items_in_use = cache->list.size();
+        cache->unlock();
+
+        const PegCount* count = cache->get_counts();
+        for ( int i = 0; pegs[i].type != CountType::END; i++ )
+        {
+            if ( count[i] )
+            {
+                str += pegs[i].name;
+                str += ": " + to_string(count[i]) + "\n" ;
+            }
+        }
+        str += "\n";
+    }
+    return str;
+}
+
 string HostCacheModule::get_host_cache_stats()
 {
     string str;
 
     const auto&& lru_data = host_cache.get_all_data();
     str = "Current host cache size: " + to_string(host_cache.mem_size()) + " bytes, "
-        + to_string(lru_data.size()) + " trackers, memcap: " + to_string(host_cache.max_size)
+        + to_string(lru_data.size()) + " trackers, memcap: " + to_string(host_cache.get_max_size())
         + " bytes\n";
-
-    host_cache.lock();
-
-    host_cache.stats.bytes_in_use = host_cache.current_size;
-    host_cache.stats.items_in_use = host_cache.list.size();
 
     PegCount* counts = (PegCount*) host_cache.get_counts();
     const PegInfo* pegs = host_cache.get_pegs();
@@ -464,9 +563,6 @@ string HostCacheModule::get_host_cache_stats()
         }
 
     }
-
-    host_cache.unlock();
-
     return str;
 }
 
@@ -476,16 +572,18 @@ const PegInfo* HostCacheModule::get_pegs() const
 PegCount* HostCacheModule::get_counts() const
 { return (PegCount*)host_cache.get_counts(); }
 
+void HostCacheModule::prep_counts(bool)
+{ host_cache.update_counts(); }
+
 void HostCacheModule::sum_stats(bool dump_stats)
 {
-    host_cache.lock();
-    // These could be set in prep_counts but we set them here
-    // to save an extra cache lock.
-    host_cache.stats.bytes_in_use = host_cache.current_size;
-    host_cache.stats.items_in_use = host_cache.list.size();
-
     Module::sum_stats(dump_stats);
-    host_cache.unlock();
+}
+
+void HostCacheModule::reset_stats()
+{
+    host_cache.reset_counts();
+    Module::reset_stats();
 }
 
 void HostCacheModule::set_trace(const Trace* trace) const

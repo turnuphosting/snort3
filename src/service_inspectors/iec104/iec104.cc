@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,7 +27,6 @@
 #include "iec104.h"
 
 #include "detection/detection_engine.h"
-#include "events/event_queue.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
 
@@ -87,6 +86,7 @@ public:
 
 void Iec104::eval(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(iec104_prof);
 
     // preconditions - what we registered for

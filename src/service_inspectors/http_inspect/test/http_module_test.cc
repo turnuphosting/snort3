@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,6 +26,7 @@
 #include "helpers/literal_search.h"
 #include "log/messages.h"
 
+#include "main/thread_config.h"
 #include "service_inspectors/http_inspect/http_js_norm.h"
 #include "service_inspectors/http_inspect/http_module.h"
 #include "service_inspectors/http_inspect/http_str_to_code.h"
@@ -60,10 +61,13 @@ void DecodeConfig::set_decompress_zip(bool) {}
 void DecodeConfig::set_decompress_vba(bool) {}
 
 SearchTool::~SearchTool() {}
+unsigned get_instance_id()
+{ return 0; }
+unsigned ThreadConfig::get_instance_max() { return 1; }
 }
 
 void show_stats(PegCount*, const PegInfo*, unsigned, const char*) { }
-void show_stats(PegCount*, const PegInfo*, const IndexVec&, const char*, FILE*) { }
+void show_stats(PegCount*, const PegInfo*, const std::vector<unsigned>&, const char*, FILE*) { }
 
 int32_t str_to_code(const char*, const StrCode []) { return 0; }
 int32_t str_to_code(const uint8_t*, const int32_t, const StrCode []) { return 0; }

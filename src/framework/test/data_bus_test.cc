@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -23,7 +23,6 @@
 
 #include "framework/data_bus.h"
 #include "main/snort_config.h"
-#include "main/thread.h"
 #include "utils/stats.h"
 
 #include <CppUTest/CommandLineTestRunner.h>
@@ -35,7 +34,7 @@ using namespace snort;
 //--------------------------------------------------------------------------
 // mocks
 //--------------------------------------------------------------------------
-InspectionPolicy::InspectionPolicy(unsigned int) {}
+InspectionPolicy::InspectionPolicy(unsigned int) : framework_policy(nullptr), cloned(false) {}
 InspectionPolicy::~InspectionPolicy() = default;
 NetworkPolicy::NetworkPolicy(unsigned int, unsigned int) {}
 NetworkPolicy::~NetworkPolicy() = default;
@@ -68,6 +67,10 @@ InspectionPolicy* get_inspection_policy()
         (InspectionPolicy*)mock().getData("my_inspection_policy").getObjectPointer();
     return my_inspection_policy;
 }
+void set_network_policy(NetworkPolicy*)
+{ }
+void set_inspection_policy(InspectionPolicy*)
+{ }
 
 THREAD_LOCAL PacketCount pc;
 }

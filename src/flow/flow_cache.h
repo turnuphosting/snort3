@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -26,19 +26,54 @@
 // Flows are stored in a ZHash instance by FlowKey.
 
 #include <ctime>
+#include <fstream>
+#include <mutex>
 #include <type_traits>
+#include <vector>
+#include <memory>
 
 #include "framework/counts.h"
-#include "main/thread.h"
-
 #include "flow_config.h"
+#include "main/analyzer_command.h"
 #include "prune_stats.h"
+#include "filter_flow_critera.h"
 
 namespace snort
 {
 class Flow;
 struct FlowKey;
 }
+
+class DumpFlows : public snort::AnalyzerCommand
+{
+public:
+#ifndef REG_TEST
+    DumpFlows(unsigned count, ControlConn*);
+#else
+    DumpFlows(unsigned count, ControlConn*, int resume);
+#endif
+    ~DumpFlows() override = default;
+    bool open_files(const std::string& base_name);
+    void cidr2mask(const uint32_t cidr, uint32_t* mask) const;
+    bool set_ip(std::string filter_ip, snort::SfIp& ip, snort::SfIp& subnet) const;
+    bool execute(Analyzer&, void**) override;
+    const char* stringify() override
+    { return "DumpFlows"; }
+    void set_filter_criteria(const FilterFlowCriteria& filter_criteria)
+    {ffc = filter_criteria;}
+
+private:
+    //dump_code is to track if the flow is dumped only once per dump_flow command.
+    static uint8_t dump_code;
+    std::vector<std::fstream> dump_stream;
+    std::vector<unsigned> next;
+    unsigned dump_count;
+    FilterFlowCriteria ffc;
+#ifdef REG_TEST
+    int resume = -1;
+#endif
+};
+
 
 class FlowUniList;
 
@@ -58,10 +93,11 @@ public:
 
     unsigned prune_idle(uint32_t thetime, const snort::Flow* save_me);
     unsigned prune_excess(const snort::Flow* save_me);
-    bool prune_one(PruneReason, bool do_cleanup);
+    bool prune_one(PruneReason, bool do_cleanup, uint8_t type = 0);
     unsigned timeout(unsigned num_flows, time_t cur_time);
     unsigned delete_flows(unsigned num_to_delete);
     unsigned prune_multiple(PruneReason, bool do_cleanup);
+    bool dump_flows(std::fstream&, unsigned count, const FilterFlowCriteria& ffc, bool first, uint8_t code) const;
 
     unsigned purge();
     unsigned get_count();
@@ -74,6 +110,9 @@ public:
 
     PegCount get_prunes(PruneReason reason) const
     { return prune_stats.get(reason); }
+
+    PegCount get_proto_prune_count(PruneReason reason, PktType type) const
+    { return prune_stats.get_proto_prune_count(reason,type); }
 
     PegCount get_total_deletes() const
     { return delete_stats.get_total(); }
@@ -108,10 +147,14 @@ private:
     void remove(snort::Flow*);
     void retire(snort::Flow*);
     unsigned prune_unis(PktType);
-    unsigned delete_active_flows
-        (unsigned mode, unsigned num_to_delete, unsigned &deleted);
+    unsigned delete_active_flows(unsigned mode, unsigned num_to_delete, unsigned &deleted);
+    static std::string timeout_to_str(time_t);
+    bool is_ip_match(const snort::SfIp& flow_ip, const snort::SfIp& filter_ip, const snort::SfIp& subnet) const;
+    bool filter_flows(const snort::Flow&, const FilterFlowCriteria&) const;
+    void output_flow(std::fstream&, const snort::Flow&, const struct timeval&) const;
 
 private:
+    uint8_t timeout_idx;
     static const unsigned cleanup_flows = 1;
     FlowCacheConfig config;
     uint32_t flags;
@@ -122,6 +165,7 @@ private:
 
     PruneStats prune_stats;
     FlowDeleteStats delete_stats;
+    uint64_t empty_proto;
 };
 #endif
 

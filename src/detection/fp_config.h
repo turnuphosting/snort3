@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -88,12 +88,6 @@ public:
     int get_debug_print_rule_groups_uncompiled() const
     { return portlists_flags & PL_DEBUG_PRINT_RULEGROUPS_UNCOMPILED; }
 
-    void set_debug_print_fast_patterns(bool b)
-    { debug_print_fast_pattern = b; }
-
-    bool get_debug_print_fast_patterns() const
-    { return debug_print_fast_pattern; }
-
     void set_split_any_any(bool enable)
     { split_any_any = enable; }
 
@@ -125,7 +119,7 @@ public:
     { return rule_db_dir; }
 
     bool set_search_method(const char*);
-    const char* get_search_method();
+    const char* get_search_method() const;
 
     bool set_offload_search_method(const char*);
     void set_max_pattern_len(unsigned);
@@ -154,7 +148,6 @@ private:
 
     bool inspect_stream_insert = true;
     bool split_any_any = false;
-    bool debug_print_fast_pattern = false;
     bool debug = false;
     bool dedup = true;
 

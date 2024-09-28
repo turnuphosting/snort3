@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -83,9 +83,10 @@ bool TcpStateMidStreamSent::data_seg_sent(TcpSegmentDescriptor& tsd, TcpStreamTr
 bool TcpStateMidStreamSent::data_seg_recv(TcpSegmentDescriptor& tsd, TcpStreamTracker& trk)
 {
     trk.update_tracker_ack_recv(tsd);
+    trk.seglist.set_seglist_base_seq(tsd.get_seq());
+    trk.session->handle_data_segment(tsd);
     trk.session->set_established(tsd);
     trk.set_tcp_state(TcpStreamTracker::TCP_ESTABLISHED);
-    trk.session->handle_data_segment(tsd);
     return true;
  }
 

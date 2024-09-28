@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -38,8 +38,11 @@ enum class PppoepktType
 /* PPPoEHdr Header; eth::EtherHdr plus the PPPoE Header */
 struct PPPoEHdr
 {
+    // cppcheck-suppress unusedStructMember
     uint8_t ver_type;     /* pppoe version/type */
+    // cppcheck-suppress unusedStructMember
     uint8_t code;         /* pppoe code CODE_* */
+    // cppcheck-suppress unusedStructMember
     uint16_t session;     /* session id */
     uint16_t length;      /* payload length */
     /* payload follows */

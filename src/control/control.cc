@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2017-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2017-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -35,6 +35,7 @@
 using namespace snort;
 
 std::vector<std::string> ControlConn::log_exclusion_list;
+unsigned ControlConn::pending_cmds_count = 0;
 
 ControlConn* ControlConn::query_from_lua(const lua_State* L)
 {
@@ -168,6 +169,8 @@ int ControlConn::execute_commands()
     while (!is_closed() && !blocked && !pending_commands.empty())
     {
         const std::string& command = pending_commands.front();
+        if (pending_cmds_count && !ModuleManager::is_parallel_cmd(command))
+            break;
         std::string rsp;
         shell->execute(command.c_str(), rsp);
         if (!rsp.empty())
@@ -183,7 +186,7 @@ int ControlConn::execute_commands()
 
 void ControlConn::block()
 {
-    blocked = true;
+    blocked++;
 }
 
 void ControlConn::remove()
@@ -205,7 +208,7 @@ void ControlConn::unblock()
 {
     if (blocked)
     {
-        blocked = false;
+        blocked--;
         execute_commands();
         if (!blocked && !show_prompt())
             shutdown();
@@ -237,6 +240,7 @@ bool ControlConn::respond(const char* format, va_list& ap)
             if (errno != EAGAIN && errno != EINTR)
             {
                 shutdown();
+                ErrorMessage("ControlConn: Error in writing response, closing the connection: %s\n", get_error(errno));
                 return false;
             }
         }
@@ -245,7 +249,6 @@ bool ControlConn::respond(const char* format, va_list& ap)
     }
 
     touch();
-
     return true;
 }
 

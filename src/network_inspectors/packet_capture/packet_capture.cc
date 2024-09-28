@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,7 +28,9 @@
 
 #include "framework/inspector.h"
 #include "log/messages.h"
+#include "packet_io/sfdaq.h"
 #include "protocols/packet.h"
+#include "utils/util.h"
 
 #ifdef UNIT_TEST
 #include "catch/snort_catch.h"
@@ -74,11 +76,33 @@ static void _capture_term()
     pcap_freecode(&bpf);
 }
 
+static int get_dlt()
+{
+    int dlt = SFDAQ::get_base_protocol();
+    if (dlt == DLT_USER1)
+        return DLT_EN10MB;
+    return dlt;
+}
+
+static int _pcap_compile_nopcap(int snaplen_arg, int linktype_arg,
+		    struct bpf_program *program,
+		    const char *buf, int optimize, bpf_u_int32 mask)
+{
+	pcap_t *p;
+	int ret;
+
+	p = pcap_open_dead(linktype_arg, snaplen_arg);
+	if (p == NULL)
+		return (PCAP_ERROR);
+	ret = pcap_compile(p, program, buf, optimize, mask);
+	pcap_close(p);
+	return (ret);
+}
+
 static bool bpf_compile_and_validate()
 {
     // FIXIT-M This BPF compilation is not thread-safe and should be handled by the main thread
-    // and this call should use DLT from DAQ rather then hard coding DLT_EN10MB
-    if ( pcap_compile_nopcap(SNAP_LEN, DLT_EN10MB, &bpf,
+    if ( _pcap_compile_nopcap(SNAP_LEN, get_dlt(), &bpf,
         config.filter.c_str(), 1, 0) >= 0 )
     {
         if (bpf_validate(bpf.bf_insns, bpf.bf_len))
@@ -96,7 +120,7 @@ static bool open_pcap_dumper()
     string fname;
     get_instance_file(fname, FILE_NAME);
 
-    pcap = pcap_open_dead(DLT_EN10MB, SNAP_LEN);
+    pcap = pcap_open_dead(get_dlt(), SNAP_LEN);
     dumper = pcap ? pcap_dump_open(pcap, fname.c_str()) : nullptr;
 
     if (dumper)
@@ -108,13 +132,14 @@ static bool open_pcap_dumper()
 }
 
 // for unit test
-static void _packet_capture_enable(const string& f, const int16_t g = -1)
+static void _packet_capture_enable(const string& f, const int16_t g = -1, const string& t = "")
 {
     if ( !config.enabled )
     {
         config.filter = f;
         config.enabled = true;
         config.group = g;
+        str_to_int_vector(t, ',', config.tenants);
     }
 }
 
@@ -123,6 +148,7 @@ static void _packet_capture_disable()
 {
     config.enabled = false;
     config.group = -1;
+    config.tenants.clear();
     LogMessage("Packet capture disabled\n");
 }
 
@@ -130,10 +156,10 @@ static void _packet_capture_disable()
 // non-static functions
 // -----------------------------------------------------------------------------
 
-void packet_capture_enable(const string& f, const int16_t g)
+void packet_capture_enable(const string& f, const int16_t g, const string& t)
 {
 
-    _packet_capture_enable(f, g);
+    _packet_capture_enable(f, g, t);
 
     if ( !capture_initialized() )
     {
@@ -202,8 +228,11 @@ bool PacketCapture::capture_init()
 void PacketCapture::show(const SnortConfig*) const
 {
     ConfigLogger::log_flag("enable", config.enabled);
-    if ( config.enabled )
+    if (config.enabled) 
+    {
         ConfigLogger::log_value("filter", config.filter.c_str());
+        ConfigLogger::log_value("tenants", int_vector_to_str(config.tenants).c_str());
+    }
 }
 
 void PacketCapture::eval(Packet* p)
@@ -222,6 +251,17 @@ void PacketCapture::eval(Packet* p)
 
         if ( p->is_cooked() )
             return;
+
+        if (!config.tenants.empty())
+        {
+            if (!std::any_of(config.tenants.begin(), config.tenants.end(),[&p](uint32_t tenant_id){
+            return p->pkth->tenant_id == tenant_id;
+            }))
+            {
+                cap_count_stats.checked++;
+                return;
+            }
+        }
 
         if ( !bpf.bf_insns || bpf_filter(bpf.bf_insns, p->pkt,
                 p->pktlen, p->pkth->pktlen) )
@@ -276,7 +316,7 @@ static const InspectApi pc_api =
         mod_ctor,
         mod_dtor
     },
-    IT_PROBE,
+    IT_PROBE_FIRST,
     PROTO_BIT__ANY_IP | PROTO_BIT__ETH,
     nullptr, // buffers
     nullptr, // service
@@ -305,10 +345,41 @@ const BaseApi* nin_packet_capture[] =
 // --------------------------------------------------------------------------
 
 #ifdef UNIT_TEST
+
+static bool bpf_compile_and_validate_test()
+{
+    if (_pcap_compile_nopcap(SNAP_LEN, DLT_EN10MB, &bpf,
+        config.filter.c_str(), 1, 0) >= 0)
+    {
+        if (bpf_validate(bpf.bf_insns, bpf.bf_len))
+            return true;
+        else
+            WarningMessage("Unable to validate BPF filter\n");
+    }
+    else
+        WarningMessage("Unable to compile BPF filter\n");
+    return false;
+}
+
 static Packet* init_null_packet()
 {
     static Packet p(false);
     static DAQ_PktHdr_t h;
+
+    p.pkth = &h;
+    p.pkt = nullptr;
+    p.pktlen = 0;
+    h.pktlen = 0;
+
+    return &p;
+}
+
+static Packet* init_packet_with_tenant(uint32_t tenant_id)
+{
+    static Packet p(false);
+    static DAQ_PktHdr_t h;
+
+    h.tenant_id = tenant_id;
 
     p.pkth = &h;
     p.pkt = nullptr;
@@ -335,7 +406,7 @@ protected:
 
     bool capture_init() override
     {
-        if (bpf_compile_and_validate())
+        if (bpf_compile_and_validate_test())
         {
             dumper = (pcap_dumper_t*)1;
             return true;
@@ -402,6 +473,38 @@ TEST_CASE("lazy init", "[PacketCapture]")
     cap.eval(null_packet);
     CHECK ( (capture_initialized() == false) );
 
+    mod_dtor(mod);
+}
+
+TEST_CASE("filter tenants", "[PacketCapture]")
+{
+    auto mod = (CaptureModule*)mod_ctor();
+    auto real_cap = (PacketCapture*)pc_ctor(mod);
+
+    CHECK ( (capture_initialized() == false) );
+
+    pc_dtor(real_cap);
+    MockPacketCapture cap(mod);
+
+    _packet_capture_enable("",-1,"11,13");
+    CHECK ( (capture_initialized() == false) );
+
+    auto packet_tenants_11 = init_packet_with_tenant(11);
+    cap.write_packet_called = false;
+    cap.eval(packet_tenants_11);
+    CHECK ( cap.write_packet_called );
+
+    auto packet_tenants_13 = init_packet_with_tenant(13);
+    cap.write_packet_called = false;
+    cap.eval(packet_tenants_13);
+    CHECK ( cap.write_packet_called );
+
+    auto packet_tenants_22 = init_packet_with_tenant(22);
+    cap.write_packet_called = false;
+    cap.eval(packet_tenants_22);
+    CHECK ( !cap.write_packet_called );
+
+    _packet_capture_disable();
     mod_dtor(mod);
 }
 

@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,6 +25,7 @@
 #include "daq_user.h"
 
 #include <arpa/inet.h>
+#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>
@@ -373,7 +374,10 @@ static void parse_string(HextContext* hc, char* s, HextMsgDesc *desc)
     while (*s && *s != '"' && desc->msg.data_len < hc->snaplen)
     {
         if (unescape(*s++, &t))
+        {
+            assert(desc->data);
             desc->data[desc->msg.data_len++] = t;
+        }
     }
     desc->pkthdr.pktlen = desc->msg.data_len;
 }

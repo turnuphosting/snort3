@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -141,10 +141,25 @@ bool AppIdApi::ssl_app_group_id_lookup(Flow* flow, const char* server_name,
         if (!asd->tsession)
             asd->tsession = new TlsSession();
         else if (sni_mismatch)
-            asd->tsession->set_tls_host(nullptr, 0, change_bits);
+        {
+            asd->tsession->process_sni_mismatch();
+        }
+            
 
         if (sni_mismatch)
             asd->scan_flags |= SCAN_SPOOFED_SNI_FLAG;
+
+        if (org_unit)
+        {
+            asd->tsession->set_tls_org_unit(org_unit, strlen(org_unit));
+            if (client_id == APP_ID_NONE and payload_id == APP_ID_NONE)
+            {
+                ssl_matchers.scan_cname((const uint8_t*)org_unit, strlen(org_unit),
+                    client_id, payload_id);
+                if (client_id != APP_ID_NONE or payload_id != APP_ID_NONE)
+                    asd->tsession->set_matched_tls_type(MatchedTlsType::MATCHED_TLS_ORG_UNIT);
+            }
+        }
 
         if (server_name and !sni_mismatch)
         {
@@ -176,18 +191,6 @@ bool AppIdApi::ssl_app_group_id_lookup(Flow* flow, const char* server_name,
                     client_id, payload_id);
                 if (client_id != APP_ID_NONE or payload_id != APP_ID_NONE)
                     asd->tsession->set_matched_tls_type(MatchedTlsType::MATCHED_TLS_CNAME);
-            }
-        }
-
-        if (org_unit)
-        {
-            asd->tsession->set_tls_org_unit(org_unit, strlen(org_unit));
-            if (client_id == APP_ID_NONE and payload_id == APP_ID_NONE)
-            {
-                ssl_matchers.scan_cname((const uint8_t*)org_unit, strlen(org_unit),
-                    client_id, payload_id);
-                if (client_id != APP_ID_NONE or payload_id != APP_ID_NONE)
-                    asd->tsession->set_matched_tls_type(MatchedTlsType::MATCHED_TLS_ORG_UNIT);
             }
         }
 
@@ -232,7 +235,7 @@ bool AppIdApi::ssl_app_group_id_lookup(Flow* flow, const char* server_name,
                 payload_id);
     }
 
-    if (client_id != APP_ID_NONE or payload_id != APP_ID_NONE)
+    if (service_id != APP_ID_NONE or client_id != APP_ID_NONE or payload_id != APP_ID_NONE)
     {
         return true;
     }
@@ -252,14 +255,13 @@ const AppIdSessionApi* AppIdApi::get_appid_session_api(const Flow& flow) const
 
 bool AppIdApi::is_inspection_needed(const Inspector& inspector) const
 {
-    AppIdInspector* appid_inspector = (AppIdInspector*) InspectorManager::get_inspector(MOD_NAME,
-        true);
+    AppIdInspector* appid_inspector = (AppIdInspector*)InspectorManager::get_inspector(MOD_NAME, true);
 
     if (!appid_inspector)
         return false;
 
     SnortProtocolId id = inspector.get_service();
-    const AppIdConfig& config = appid_inspector->get_ctxt().config;
+    const AppIdConfig& config = appid_inspector->get_config();
     if (id == config.snort_proto_ids[PROTO_INDEX_HTTP2] or id == config.snort_proto_ids[PROTO_INDEX_SSH]
 	    or id == config.snort_proto_ids[PROTO_INDEX_CIP])
         return true;
@@ -269,9 +271,19 @@ bool AppIdApi::is_inspection_needed(const Inspector& inspector) const
 
 const char* AppIdApi::get_appid_detector_directory() const
 {
-    AppIdInspector* inspector = (AppIdInspector*) InspectorManager::get_inspector(MOD_NAME, true);
+    AppIdInspector* inspector = (AppIdInspector*)InspectorManager::get_inspector(MOD_NAME, true);
     if (!inspector)
         return "";
 
     return inspector->get_config().app_detector_dir;
+}
+
+void AppIdApi::reset_appid_cpu_profiler_stats()
+{
+    AppIdInspector* inspector = (AppIdInspector*) InspectorManager::get_inspector(MOD_NAME);
+    if (!inspector)
+        return;
+    const AppIdContext& ctxt = inspector->get_ctxt();
+    OdpContext& odp_ctxt = ctxt.get_odp_ctxt();
+    odp_ctxt.get_appid_cpu_profiler_mgr().cleanup_appid_cpu_profiler_table();
 }

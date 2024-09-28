@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -189,6 +189,7 @@ bool Iec104AsduFuncOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus Iec104AsduFuncOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(iec104_asdu_func_prof);
 
     if (!p->flow)
@@ -284,7 +285,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* opt_ctor(Module* m, OptTreeNode*)
+static IpsOption* opt_ctor(Module* m, IpsInfo&)
 {
     Iec104AsduFuncModule* mod = (Iec104AsduFuncModule*) m;
     return new Iec104AsduFuncOption(mod->func);

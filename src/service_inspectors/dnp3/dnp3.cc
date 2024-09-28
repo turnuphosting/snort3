@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,7 +26,6 @@
 #include "dnp3.h"
 
 #include "detection/detection_engine.h"
-#include "events/event_queue.h"
 #include "log/messages.h"
 #include "protocols/packet.h"
 
@@ -35,8 +34,37 @@
 
 using namespace snort;
 
+// Indices in the buffer array exposed by InspectApi
+// Must remain synchronized with dnp3_bufs
+enum Dnp3BufId
+{
+    DNP3_DATA_BUFID = 1
+};
+
 THREAD_LOCAL Dnp3Stats dnp3_stats;
 THREAD_LOCAL ProfileStats dnp3_perf_stats;
+
+bool get_buf_dnp3_data(snort::Packet* p, snort::InspectionBuffer& b)
+{
+    if ((p->has_tcp_data() && !p->is_full_pdu()) || !p->flow || !p->dsize)
+        return false;
+
+    Dnp3FlowData* fd = (Dnp3FlowData*)p->flow->get_flow_data(Dnp3FlowData::inspector_id);
+    if (!fd)
+        return false;
+
+    const dnp3_session_data_t& sd = fd->dnp3_session;
+    const dnp3_reassembly_data_t& rdata = (sd.direction == DNP3_CLIENT) ? sd.client_rdata : sd.server_rdata;
+
+    /* Return a buffer only for complete application-layer fragments */
+    if (rdata.state != DNP3_REASSEMBLY_STATE__DONE)
+        return false;
+
+    b.data = rdata.buffer;
+    b.len = rdata.buflen;
+    b.is_accumulated = false;
+    return true;
+}
 
 Dnp3FlowData::Dnp3FlowData() : FlowData(inspector_id)
 {
@@ -201,6 +229,9 @@ public:
     StreamSplitter* get_splitter(bool c2s) override
     { return new Dnp3Splitter(c2s); }
 
+    bool get_buf(unsigned id, snort::Packet* p, snort::InspectionBuffer& b) override
+    { return (id == DNP3_DATA_BUFID) ? get_buf_dnp3_data(p, b) : false; }
+
 private:
     dnp3ProtoConf config;
 };
@@ -218,6 +249,7 @@ void Dnp3::show(const SnortConfig*) const
 
 void Dnp3::eval(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(dnp3_perf_stats);
 
     assert (p->has_tcp_data() || p->has_udp_data());

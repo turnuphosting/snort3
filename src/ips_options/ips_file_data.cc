@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 1998-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -54,6 +54,7 @@ public:
 
 IpsOption::EvalStatus FileDataOption::eval(Cursor& c, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(fileDataPerfStats);
 
     uint64_t sid;
@@ -104,7 +105,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* file_data_ctor(Module*, OptTreeNode*)
+static IpsOption* file_data_ctor(Module*, IpsInfo&)
 {
     return new FileDataOption;
 }

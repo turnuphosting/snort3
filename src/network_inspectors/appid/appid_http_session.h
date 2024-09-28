@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2017-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2017-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -50,6 +50,7 @@ struct TunnelDest
     uint16_t port = 0;
     TunnelDest(const char* string_srcip, uint16_t tun_port)
     {
+        ip.clear();
         if ( ip.set(string_srcip) == SFIP_SUCCESS )
             port = tun_port;
     }
@@ -200,4 +201,3 @@ protected:
 };
 
 #endif
-

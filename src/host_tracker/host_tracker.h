@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -29,26 +29,18 @@
 #include <mutex>
 #include <list>
 #include <set>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
 #include "framework/counts.h"
 #include "main/snort_types.h"
-#include "main/thread.h"
 #include "network_inspectors/appid/application_ids.h"
 #include "protocols/protocol_ids.h"
 #include "protocols/vlan.h"
 #include "time/packet_time.h"
 
 #include "cache_allocator.h"
-
-struct HostTrackerStats
-{
-    PegCount service_adds;
-    PegCount service_finds;
-};
-
-extern THREAD_LOCAL struct HostTrackerStats host_tracker_stats;
 
 class RNAFlow;
 
@@ -113,11 +105,13 @@ struct HostApplication
         visibility = ha.visibility;
         banner_updated = ha.banner_updated;
         num_visible_payloads = ha.num_visible_payloads;
+        memcpy(user, ha.user, sizeof(user));
+        user_login = ha.user_login;
         return *this;
     }
 
     Port port = 0;
-    IpProtocol proto;
+    IpProtocol proto = IpProtocol::PROTO_NOT_SET;
     AppId appid = APP_ID_NONE;
     bool inferred_appid = false;
     uint32_t hits = 0;
@@ -144,9 +138,9 @@ struct HostClient
 {
     HostClient() = default;
     HostClient(AppId clientid, const char *ver, AppId ser);
-    AppId id;
+    AppId id = APP_ID_NONE;
     char version[INFO_SIZE] = { '\0' };
-    AppId service;
+    AppId service = APP_ID_NONE;
     PayloadVector payloads;
     size_t num_visible_payloads = 0;
 
@@ -385,9 +379,28 @@ public:
         return ++nat_count;
     }
 
+    void set_cache_idx(uint8_t idx)
+    {
+        std::lock_guard<std::mutex> lck(host_tracker_lock);
+        cache_idx = idx;
+    }
+
+    void init_visibility(size_t v)
+    {
+        std::lock_guard<std::mutex> lck(host_tracker_lock);
+        visibility = v;
+    }
+
+    uint8_t get_cache_idx() const
+    {
+        return cache_idx;
+    }
+
     bool set_netbios_name(const char*);
 
     bool set_visibility(bool v = true);
+    size_t get_visibility() const {return visibility;}
+
 
     bool is_visible() const;
 
@@ -418,13 +431,16 @@ public:
     void remove_flows();
     void remove_flow(RNAFlow*);
 
+    void update_cache_interface( uint8_t idx );
+    CacheInterface * get_cache_interface() { return cache_interface; }
+
 private:
 
     mutable std::mutex host_tracker_lock; // ensure that updates to a shared object are safe
     mutable std::mutex flows_lock;        // protect the flows set separately
-    uint8_t hops;                 // hops from the snort inspector, e.g., zero for ARP
+    uint8_t hops = ~0;                 // hops from the snort inspector, e.g., zero for ARP
     uint32_t last_seen;           // the last time this host was seen
-    uint32_t last_event;          // the last time an event was generated
+    uint32_t last_event = ~0;          // the last time an event was generated
 
     // list guarantees iterator validity on insertion
     std::list<HostMac_t, HostCacheAllocIp<HostMac_t>> macs;
@@ -443,17 +459,20 @@ private:
     std::unordered_set<RNAFlow*> flows;
 
     bool vlan_tag_present = false;
-    vlan::VlanTagHdr vlan_tag;
+    vlan::VlanTagHdr vlan_tag = {};
     HostType host_type = HOST_TYPE_HOST;
     uint8_t ip_ttl = 0;
     uint32_t nat_count = 0;
     uint32_t nat_count_start;     // the time nat counting starts for this host
 
     size_t visibility;
+    uint8_t cache_idx = 0;
 
     uint32_t num_visible_services = 0;
     uint32_t num_visible_clients = 0;
     uint32_t num_visible_macs = 0;
+
+    CacheInterface * cache_interface = nullptr;
 
     // These three do not lock independently; they are used by payload discovery and called
     // from add_payload(HostApplication&, Port, IpProtocol, AppId, AppId, size_t); where the

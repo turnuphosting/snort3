@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -60,12 +60,8 @@ void AppIdServiceEventHandler::handle(DataEvent&, Flow* flow)
         asd = AppIdSession::allocate_session(p, p->get_ip_proto_next(), dir,
             inspector, *pkt_thread_odp_ctxt);
         if (appidDebug->is_enabled())
-        {
             appidDebug->activate(flow, asd, inspector.get_ctxt().config.log_all_sessions);
-            if (appidDebug->is_active())
-                LogMessage("AppIdDbg %s New AppId session at service event\n",
-                    appidDebug->get_debug_session());
-        }
+        appid_log(p, TRACE_DEBUG_LEVEL, "New AppId session at service event\n");
     }
     else if (asd->get_odp_ctxt_version() != pkt_thread_odp_ctxt->get_version())
         return; // Skip detection for sessions using old odp context after odp reload
@@ -76,14 +72,11 @@ void AppIdServiceEventHandler::handle(DataEvent&, Flow* flow)
 
     if (!asd->has_no_service_candidate())
     {
-        if (appidDebug->is_active())
-            LogMessage("AppIdDbg %s No service inspector\n",
-                appidDebug->get_debug_session());
+        appid_log(p, TRACE_DEBUG_LEVEL, "No service inspector\n");
         return;
     }
 
-    if (appidDebug->is_active())
-        LogMessage("AppIdDbg %s No service candidate and no inspector\n", appidDebug->get_debug_session());
+    appid_log(p, TRACE_DEBUG_LEVEL, "No service candidate and no inspector\n");
 
     const SfIp* service_ip;
     uint16_t port;

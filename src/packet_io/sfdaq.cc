@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -286,14 +286,12 @@ bool SFDAQ::init(const SFDAQConfig* cfg, unsigned total_instances)
         }
     }
 
-    for (SFDAQModuleConfig* dmc : cfg->module_configs)
+    if (std::any_of(cfg->module_configs.cbegin(), cfg->module_configs.cend(),
+        [](const SFDAQModuleConfig* dmc){ return !AddDaqModuleConfig(dmc); }))
     {
-        if (!AddDaqModuleConfig(dmc))
-        {
-            daq_config_destroy(daqcfg);
-            daqcfg = nullptr;
-            return false;
-        }
+        daq_config_destroy(daqcfg);
+        daqcfg = nullptr;
+        return false;
     }
 
 /*

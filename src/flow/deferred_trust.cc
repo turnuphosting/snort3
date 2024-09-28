@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -39,8 +39,7 @@ void DeferredTrust::set_deferred_trust(unsigned module_id, bool on)
                 deferred_trust = TRUST_DEFER_ON;
         }
         auto element = deferred_trust_modules.begin();
-        for (; element != deferred_trust_modules.end() && *element != module_id;
-            ++element);
+        for (; element != deferred_trust_modules.end() && *element != module_id; ++element);
         if (element == deferred_trust_modules.end())
             deferred_trust_modules.emplace_front(module_id);
     }
@@ -62,7 +61,10 @@ void DeferredTrust::finalize(Active& active)
     if (active.session_was_blocked())
         clear();
     else if (TRUST_DEFER_DO_TRUST == deferred_trust && active.session_was_allowed())
+    {
         active.set_trust();
+        clear();
+    }
     else if ((TRUST_DEFER_ON == deferred_trust || TRUST_DEFER_DEFERRING == deferred_trust)
         && active.session_was_trusted())
     {

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -72,7 +72,7 @@ void ConnectorManager::dump_plugins()
 {
     Dumper d("Connectors");
 
-    for ( auto& sc : s_connector_commons )
+    for ( const auto& sc : s_connector_commons )
         d.dump(sc.api->base.name, sc.api->base.version);
 }
 
@@ -83,7 +83,7 @@ void ConnectorManager::release_plugins()
         if ( sc.api->dtor )
             sc.api->dtor(sc.connector_common);
 
-        for ( auto& conn : sc.connectors )
+        for ( const auto& conn : sc.connectors )
             delete conn.second;
 
         sc.connectors.clear();

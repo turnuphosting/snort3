@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -37,6 +37,7 @@
 #include "js_norm/pdf_tokenizer.h"
 #include "log/messages.h"
 #include "trace/trace_api.h"
+#include "utils/util_cstring.h"
 
 extern THREAD_LOCAL const snort::Trace* js_trace;
 
@@ -79,7 +80,9 @@ GRP_DELIMITER      [\(\)\<\>\[\]\{\}\/\%]
 GRP_REGULAR        [^\x00\x09\x0a\x0c\x0d\x20\(\)\<\>\[\]\{\}\/\%]
 
 /* 7.2.3 Comments */
-COMMENT            %{GRP_NOT_NEWLINE}*{EOL_MARKER}
+COMMENT_START      %
+COMMENT_CONTENT    {GRP_NOT_NEWLINE}{1,16}
+COMMENT_END        {EOL_MARKER}
 
 /* 7.3.2 Boolean Objects */
 OBJ_BOOLEAN        true|false
@@ -138,24 +141,27 @@ INDIRECT_OBJ_OPEN  {OBJ_INT_NUM}{GRP_WHITESPACE}+{OBJ_INT_NUM}{GRP_WHITESPACE}+o
 
 INDIRECT_OBJ_CLOSE endobj
 
-OBJ_REFERENCE        {OBJ_INT_NUM}{GRP_WHITESPACE}+{OBJ_INT_NUM}{GRP_WHITESPACE}+R
+OBJ_REFERENCE      {OBJ_INT_NUM}{GRP_WHITESPACE}+{OBJ_INT_NUM}{GRP_WHITESPACE}+R
 
 
 /* Not object start, not comments */
-SKIP              [^[:digit:]%]{1,16}|.
-WHITESPACE        {GRP_WHITESPACE}{1,16}
+SKIP               [^[:digit:]%]{1,16}|.
+WHITESPACE         {GRP_WHITESPACE}{1,16}
 
-/* Start conditions: INITIAL or inside dictionary, literal string, hexadecimal string, stream */
+/* Start conditions: structures: comment, indirect object, dictionary or array */
+%x comment
 %x indobj
-%x stream
 %x dictnr
+
+/* Start conditions: literals: regular, hexadecimal, stream */
 %x litstr
 %x hexstr
+%x stream
 %x jslstr
 %x jshstr
 %x jsstream
 
-/* Start conditions: UTF-16BE BOM, UTF-16BE literal string, UTF-16BE hexadecimal string, UTF-16BE stream */
+/* Start conditions: UTF-16BE: BOM, hex BOM, regular, hexadecimal, stream */
 %x u16
 %x u16hex
 %x jsstru16
@@ -164,13 +170,22 @@ WHITESPACE        {GRP_WHITESPACE}{1,16}
 
 %%
 
-{SKIP}                                            { }
-{COMMENT}                                         { }
+
+<INITIAL,indobj,dictnr>{COMMENT_START}            { PUSH(comment); }
+<comment>{COMMENT_CONTENT}                        { }
+<comment>{COMMENT_END}                            { POP(); }
 
 <INITIAL>{INDIRECT_OBJ_OPEN}                      { PUSH(indobj); h_ind_obj_open(); }
-<indobj>{COMMENT}                                 { }
 <indobj>{WHITESPACE}                              { }
-<indobj>{INDIRECT_OBJ_CLOSE}                      { POP(); h_ind_obj_close(); }
+<indobj>{INDIRECT_OBJ_CLOSE}                      { POP(); h_ind_obj_close(); EXEC(h_array_nesting()) }
+<indobj>{OBJ_ARRAY_OPEN}                          { ++obj_array.nesting_level; }
+<indobj>{OBJ_ARRAY_CLOSE}                         { --obj_array.nesting_level; }
+<indobj>{OBJ_REFERENCE}                           { indirect_obj.ref_met = true; }
+<indobj>{OBJ_BOOLEAN}                             { }
+<indobj>{OBJ_INT_NUM}                             { }
+<indobj>{OBJ_REL_NUM}                             { }
+<indobj>{OBJ_NULL}                                { }
+<indobj>{OBJ_NAME}                                { }
 
 <indobj>{OBJ_STREAM_OPEN}                         { EXEC(h_stream_open()) PUSH(obj_stream.is_js ? u16 : stream); }
 <stream>{OBJ_STREAM_SKIP}                         { EXEC(h_stream()) }
@@ -183,7 +198,6 @@ WHITESPACE        {GRP_WHITESPACE}{1,16}
 <dictnr>{OBJ_DICT_OPEN}                           { PUSH(dictnr); EXEC(h_dict_open()) }
 <indobj>{OBJ_DICT_OPEN}                           { PUSH(dictnr); EXEC(h_dict_open()) }
 <dictnr>{OBJ_DICT_CLOSE}                          { POP(); EXEC(h_dict_close()) }
-<dictnr>{COMMENT}                                 { }
 <dictnr>{WHITESPACE}                              { }
 <dictnr>{OBJ_REFERENCE}                           { EXEC(h_dict_other()) h_ref(); }
 <dictnr>{OBJ_BOOLEAN}                             { EXEC(h_dict_other()) }
@@ -196,6 +210,7 @@ WHITESPACE        {GRP_WHITESPACE}{1,16}
 <dictnr>{OBJ_LIT_STR_OPEN}                        { EXEC(h_dict_other()) if (h_lit_str()) PUSH(jslstr); else PUSH(litstr); yyless(0); }
 <dictnr>{OBJ_HEX_STR_OPEN}                        { EXEC(h_dict_other()) if (h_hex_str()) PUSH(jshstr); else PUSH(hexstr); yyless(0); }
 <dictnr>{OBJ_DICT_SKIP}                           { }
+<dictnr>{INDIRECT_OBJ_CLOSE}                      { return PDFRet::UNEXPECTED_SYMBOL; }
 
 <indobj>{OBJ_LIT_STR_OPEN}                        { if (h_lit_open()) PUSH(litstr); }
 <litstr>{OBJ_LIT_STR_OPEN}                        { h_lit_open(); }
@@ -238,6 +253,7 @@ WHITESPACE        {GRP_WHITESPACE}{1,16}
 
 <*><<EOF>>                                        { return PDFRet::EOS; }
 
+{SKIP}                                            { }
 <*>.|\n                                           { return PDFRet::UNEXPECTED_SYMBOL; }
 
 %%
@@ -255,12 +271,13 @@ PDFTokenizer::PDFRet PDFTokenizer::h_dict_open()
 
 PDFTokenizer::PDFRet PDFTokenizer::h_dict_close()
 {
-    obj_dictionary.clear();
-
     debug_logf(6, js_trace, TRACE_PDF_PROC, nullptr,
         "dictionary close, at array level %d\n", obj_array.nesting_level);
 
-    if (obj_dictionary.array_level != obj_array.nesting_level)
+    auto dict_arr_lvl = obj_dictionary.array_level;
+    obj_dictionary.clear();
+
+    if (dict_arr_lvl != obj_array.nesting_level)
         return PDFRet::INCOMPLETE_ARRAY_IN_DICTIONARY;
 
     return PDFRet::EOS;
@@ -427,10 +444,24 @@ PDFTokenizer::PDFRet PDFTokenizer::h_lit_u16_unescape()
     return PDFRet::EOS;
 }
 
+PDFTokenizer::PDFRet PDFTokenizer::h_array_nesting()
+{
+    if (obj_array.nesting_level)
+        return PDFRet::UNEXPECTED_SYMBOL;
+    else
+        return PDFRet::EOS;
+}
+
 PDFTokenizer::PDFRet PDFTokenizer::h_stream_open()
 {
-    if (obj_stream.rem_length < 0)
+    if (obj_stream.rem_length < 0 and !obj_stream.is_ref_len)
         return PDFRet::STREAM_NO_LENGTH;
+
+    if (indirect_obj.ref_met)
+    {
+        indirect_obj.clear();
+        return PDFRet::UNEXPECTED_SYMBOL; // indirect streams must have direct dictionaries
+    }
 
     debug_logf(6, js_trace, TRACE_PDF_PROC, nullptr,
         "Starting %s stream, length %d\n", obj_stream.is_js ? "JavaScript" : "skipping", obj_stream.rem_length);
@@ -447,6 +478,7 @@ PDFTokenizer::PDFRet PDFTokenizer::h_stream()
 bool PDFTokenizer::h_stream_close()
 {
     obj_stream.rem_length -= yyleng;
+
     if (obj_stream.rem_length <= 0)
     {
         if (YY_START == jsstream)
@@ -456,24 +488,29 @@ bool PDFTokenizer::h_stream_close()
 
     if (YY_START == jsstream)
         ECHO;
-    return false;
+    return obj_stream.is_ref_len;
 }
 
 void PDFTokenizer::h_stream_length()
 {
     if (!strcmp(obj_entry.key, "/Length"))
-        obj_stream.rem_length = atoi(yytext);
+        obj_stream.rem_length = snort::SnortStrtol(yytext, nullptr, 10);
 }
 
 void PDFTokenizer::h_ref()
 {
     if (!strcmp(obj_entry.key, "/JS"))
-        js_stream_refs.insert(atoi(yytext));
+        js_stream_refs.insert(snort::SnortStrtoul(yytext, nullptr, 10));
+    else if (!strcmp(obj_entry.key, "/Length"))
+    {
+        obj_stream.is_ref_len = true;
+        obj_stream.rem_length = -1;
+    }
 }
 
 void PDFTokenizer::h_ind_obj_open()
 {
-    int value = atoi(yytext);
+    unsigned int value = snort::SnortStrtoul(yytext, nullptr, 10);
     if (js_stream_refs.count(value) > 0)
         obj_stream.is_js = true;
 }
@@ -619,6 +656,16 @@ PDFTokenizer::~PDFTokenizer()
 
 PDFTokenizer::PDFRet PDFTokenizer::process()
 {
-    auto r = yylex();
-    return static_cast<PDFTokenizer::PDFRet>(r);
+    auto r = static_cast<PDFTokenizer::PDFRet>(yylex());
+
+    if (!yy_buffer_stack or !YY_CURRENT_BUFFER_LVALUE)
+        return r;
+
+    if (YY_CURRENT_BUFFER_LVALUE->yy_buf_size > YY_BUF_SIZE)
+        r = PDFTokenizer::TOKEN_TOO_LONG;
+
+    if (r != PDFTokenizer::EOS)
+        yy_flush_buffer(YY_CURRENT_BUFFER);
+
+    return r;
 }

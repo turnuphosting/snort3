@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -26,12 +26,14 @@
 // processed.  flows are pruned as needed to process new flows.
 
 #include <cstdint>
+#include <fstream>
 #include <vector>
 
 #include "flow/flow_config.h"
 #include "framework/counts.h"
 #include "framework/decode_data.h"
 #include "framework/inspector.h"
+#include "flow/flow_cache.h"
 
 namespace snort
 {
@@ -69,8 +71,9 @@ public:
     snort::Flow* stale_flow_cleanup(FlowCache*, snort::Flow*, snort::Packet*);
     void timeout_flows(unsigned int, time_t cur_time);
     void check_expected_flow(snort::Flow*, snort::Packet*);
-    bool is_expected(snort::Packet*);
     unsigned prune_multiple(PruneReason, bool do_cleanup);
+
+    bool dump_flows(std::fstream&, unsigned count, const FilterFlowCriteria& ffc, bool first, uint8_t code) const;
 
     int add_expected_ignore(
         const snort::Packet* ctrlPkt, PktType, IpProtocol,
@@ -91,6 +94,7 @@ public:
 
     PegCount get_total_prunes() const;
     PegCount get_prunes(PruneReason) const;
+    PegCount get_proto_prune_count(PruneReason, PktType) const;
     PegCount get_total_deletes() const;
     PegCount get_deletes(FlowDeleteState state) const;
     void clear_counts();
@@ -100,8 +104,8 @@ public:
     PegCount get_num_flows() const;
 
 private:
-    void set_key(snort::FlowKey*, snort::Packet*);
-    unsigned process(snort::Flow*, snort::Packet*);
+    bool set_key(snort::FlowKey*, snort::Packet*);
+    unsigned process(snort::Flow*, snort::Packet*, bool new_ha_flow);
     void update_stats(snort::Flow*, snort::Packet*);
 
 private:

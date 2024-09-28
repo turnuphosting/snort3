@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -31,12 +31,12 @@
 #include "time/periodic.h"
 #include "utils/util.h"
 
-#ifdef HAVE_NUMA
-#include "utils/util_numa.h"
-#endif
-
 #ifdef UNIT_TEST
 #include "catch/snort_catch.h"
+#endif
+
+#ifdef HAVE_NUMA
+#include "numa.h"
 #endif
 
 using namespace snort;
@@ -153,10 +153,10 @@ void ThreadConfig::term()
 
 ThreadConfig::~ThreadConfig()
 {
-    for (auto& iter : thread_affinity)
+    for (const auto& iter : thread_affinity)
         delete iter.second;
 
-    for (auto& iter : named_thread_affinity)
+    for (const auto& iter : named_thread_affinity)
         delete iter.second;
 }
 
@@ -235,7 +235,7 @@ void ThreadConfig::apply_thread_policy(SThreadType type, unsigned id)
 
 int ThreadConfig::get_numa_node(hwloc_topology_t topology, hwloc_cpuset_t cpuset)
 {
-    int depth = hwloc->get_type_depth(topology, HWLOC_OBJ_NODE);
+    int depth = hwloc->get_type_depth(topology, HWLOC_OBJ_NUMANODE);
     if (depth == HWLOC_TYPE_DEPTH_UNKNOWN)
         return -1;
 
@@ -301,6 +301,9 @@ void ThreadConfig::implement_thread_affinity(SThreadType type, unsigned id)
     hwloc_cpuset_t current_cpuset, desired_cpuset;
     char* s;
 
+    std::string thread_name_suffix;
+    std::string thread_name;
+
     auto iter = thread_affinity.find(key);
     if (iter != thread_affinity.end())
         desired_cpuset = iter->second->cpuset;
@@ -314,7 +317,32 @@ void ThreadConfig::implement_thread_affinity(SThreadType type, unsigned id)
     current_cpuset = hwloc_bitmap_alloc();
     hwloc_get_cpubind(topology, current_cpuset, HWLOC_CPUBIND_THREAD);
     if (!hwloc_bitmap_isequal(current_cpuset, desired_cpuset))
+    {
         LogMessage("Binding %s to CPU %s.\n", stringify_thread(type, id).c_str(), s);
+        thread_name_suffix = ".core-";
+        thread_name_suffix.append(s);
+    }
+    else
+    {
+        thread_name_suffix = ".ins-";
+        thread_name_suffix.append(std::to_string(id));
+    }
+
+    // Thread name is snort.ins-X for unpinned threads, and snort.core-X
+    // for threads pinned to CPU x
+    if (type == STHREAD_TYPE_MAIN)
+    {
+        thread_name = "snort3";
+        thread_name_suffix = "";
+    }
+    else
+    {
+        thread_name = "snort";
+    }
+
+    thread_name.append(thread_name_suffix);
+    SET_THREAD_NAME(pthread_self(), thread_name.c_str());
+
     hwloc_bitmap_free(current_cpuset);
 
     if (hwloc_set_cpubind(topology, desired_cpuset, HWLOC_CPUBIND_THREAD))
@@ -624,11 +652,11 @@ TEST_CASE("set node for thread", "[ThreadConfig]")
     tc.set_thread_affinity(STHREAD_TYPE_PACKET, 0, cpuset2);
     tc.set_thread_affinity(STHREAD_TYPE_PACKET, 1, cpuset);
 
-    CHECK(tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
+    CHECK(true == tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
 
     hwloc_mock->node.os_index = 1;
     numa_mock->pref = 1;
-    CHECK(tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 1));
+    CHECK(true == tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 1));
 }
 
 TEST_CASE("numa_available negative test", "[ThreadConfig]")
@@ -643,7 +671,7 @@ TEST_CASE("numa_available negative test", "[ThreadConfig]")
     numa_mock->numa_avail = -1;
     numa = numa_mock;
     hwloc = hwloc_mock;
-    CHECK(!tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
+    CHECK(false == tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
 }
 
 TEST_CASE("set node failure negative test", "[ThreadConfig]")
@@ -658,7 +686,7 @@ TEST_CASE("set node failure negative test", "[ThreadConfig]")
     numa_mock->pref = -1;
     numa = numa_mock;
     hwloc = hwloc_mock;
-    CHECK(!tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
+    CHECK(false == tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
 }
 
 TEST_CASE("depth unknown negative test", "[ThreadConfig]")
@@ -674,7 +702,7 @@ TEST_CASE("depth unknown negative test", "[ThreadConfig]")
     hwloc_mock->type_depth = HWLOC_TYPE_DEPTH_UNKNOWN;
     hwloc = hwloc_mock;
     numa = numa_mock;
-    CHECK(!tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
+    CHECK(false == tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
 }
 
 TEST_CASE("set memory policy failure negative test", "[ThreadConfig]")
@@ -690,7 +718,7 @@ TEST_CASE("set memory policy failure negative test", "[ThreadConfig]")
     numa_mock->mem_policy = -1;
     numa = numa_mock;
     hwloc = hwloc_mock;
-    CHECK(!tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
+    CHECK(false == tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
 }
 
 TEST_CASE("get_nbobjs_by_depth failure negative test", "[ThreadConfig]")
@@ -705,7 +733,7 @@ TEST_CASE("get_nbobjs_by_depth failure negative test", "[ThreadConfig]")
     hwloc_mock->nbobjs_by_depth = 0;
     hwloc = hwloc_mock;
     numa = numa_mock;
-    CHECK(!tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
+    CHECK(false == tc.implement_thread_mempolicy(STHREAD_TYPE_PACKET, 0));
 }
 
 #endif

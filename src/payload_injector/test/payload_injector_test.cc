@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,6 +28,8 @@
 
 #include "detection/detection_engine.h"
 #include "flow/flow.h"
+#include "main/snort_config.h"
+#include "main/thread_config.h"
 #include "packet_io/active.h"
 #include "protocols/packet.h"
 #include "utils/util.h"
@@ -61,6 +63,9 @@ DataBus::DataBus() = default;
 DataBus::~DataBus() = default;
 SnortConfig::SnortConfig(snort::SnortConfig const*, const char*) { }
 SnortConfig::~SnortConfig() = default;
+unsigned get_instance_id()
+{ return 0; }
+unsigned ThreadConfig::get_instance_max() { return 1; }
 
 IpsContext ips_context;
 SnortConfig conf;
@@ -95,7 +100,7 @@ class StreamSplitter* Inspector::get_splitter(bool) { return nullptr; }
 }
 
 void show_stats(PegCount*, const PegInfo*, unsigned, const char*) { }
-void show_stats(PegCount*, const PegInfo*, const IndexVec&, const char*, FILE*) { }
+void show_stats(PegCount*, const PegInfo*, const std::vector<unsigned>&, const char*, FILE*) { }
 
 // MockInspector class
 

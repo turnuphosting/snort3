@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2003-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -25,7 +25,6 @@
 
 #include "hash/xhash.h"
 #include "log/messages.h"
-#include "main/thread.h"
 #include "utils/util.h"
 
 #include "sfthd.h"
@@ -57,6 +56,7 @@ void DetectionFilterConfigFree(DetectionFilterConfig* config)
 
 int detection_filter_test(void* pv, const SfIp* sip, const SfIp* dip, long curtime)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(detectionFilterPerfStats);
 
     if (pv == nullptr)

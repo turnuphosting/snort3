@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -23,6 +23,7 @@
 #define APP_ID_CONFIG_H
 
 #include <array>
+#include <memory>
 #include <string>
 
 #include "helpers/discovery_filter.h"
@@ -45,12 +46,19 @@
 #include "detector_plugins/ssh_patterns.h"
 #include "tp_appid_module_api.h"
 #include "utils/sflsq.h"
+#include "appid_cpu_profile_table.h"
+#include "profiler/profiler_defs.h"
 
 #define APP_ID_PORT_ARRAY_SIZE  65536
 
-#define MIN_MAX_BYTES_BEFORE_SERVICE_FAIL 4096
-#define MIN_MAX_PKTS_BEFORE_SERVICE_FAIL 5
-#define MIN_MAX_PKT_BEFORE_SERVICE_FAIL_IGNORE_BYTES 15
+#define MIN_MAX_BYTES_BEFORE_SERVICE_FAIL 1024
+#define MIN_MAX_PKTS_BEFORE_SERVICE_FAIL 2
+#define MIN_MAX_PKT_BEFORE_SERVICE_FAIL_IGNORE_BYTES 2
+
+#define DEFAULT_MAX_BYTES_BEFORE_SERVICE_FAIL 4096
+#define DEFAULT_MAX_PKTS_BEFORE_SERVICE_FAIL  5
+#define DEFAULT_MAX_PKT_BEFORE_SERVICE_FAIL_IGNORE_BYTES 10
+
 
 enum SnortProtoIdIndex
 {
@@ -81,6 +89,8 @@ public:
     AppIdConfig() = default;
     ~AppIdConfig();
 
+    void map_app_names_to_snort_ids(snort::SnortConfig&);
+
     // FIXIT-L: DECRYPT_DEBUG - Move this to ssl-module
 #ifdef REG_TEST
     // To manually restart appid detection for an SSL-decrypted flow (single session only),
@@ -104,7 +114,7 @@ public:
     bool log_all_sessions = false;
     bool enable_rna_filter = false;
     std::string rna_conf_path = "";
-    SnortProtocolId snort_proto_ids[PROTO_INDEX_MAX];
+    SnortProtocolId snort_proto_ids[PROTO_INDEX_MAX] = {};
     void show() const;
 };
 
@@ -132,15 +142,19 @@ public:
     uint32_t host_port_app_cache_lookup_range = 100000;
     bool allow_port_wildcard_host_cache = false;
     bool recheck_for_portservice_appid = false;
-    uint64_t max_bytes_before_service_fail = MIN_MAX_BYTES_BEFORE_SERVICE_FAIL;
-    uint16_t max_packet_before_service_fail = MIN_MAX_PKTS_BEFORE_SERVICE_FAIL;
-    uint16_t max_packet_service_fail_ignore_bytes = MIN_MAX_PKT_BEFORE_SERVICE_FAIL_IGNORE_BYTES;
+    uint64_t max_bytes_before_service_fail = DEFAULT_MAX_BYTES_BEFORE_SERVICE_FAIL;
+    uint16_t max_packet_before_service_fail = DEFAULT_MAX_PKTS_BEFORE_SERVICE_FAIL;
+    uint16_t max_packet_service_fail_ignore_bytes = DEFAULT_MAX_PKT_BEFORE_SERVICE_FAIL_IGNORE_BYTES;
     FirstPktAppIdDiscovered first_pkt_appid_prefix = NO_APPID_FOUND;
     bool eve_http_client = true;
+    bool appid_cpu_profiler = true;
 
     OdpContext(const AppIdConfig&, snort::SnortConfig*);
     void initialize(AppIdInspector& inspector);
     void reload();
+    void dump_appid_config();
+    bool is_appid_cpu_profiler_enabled();  
+    bool is_appid_cpu_profiler_running();    
 
     uint32_t get_version() const
     {
@@ -244,6 +258,11 @@ public:
         return alpn_matchers;
     }
 
+    AppidCPUProfilingManager& get_appid_cpu_profiler_mgr()
+    {
+        return app_cpu_profiler_mgr;
+    }
+    
     unsigned get_pattern_count();
     void add_port_service_id(IpProtocol, uint16_t, AppId);
     void add_protocol_service_id(IpProtocol, AppId);
@@ -255,6 +274,7 @@ public:
 
 private:
     AppInfoManager app_info_mgr;
+    AppidCPUProfilingManager app_cpu_profiler_mgr;
     ClientDiscovery client_disco_mgr;
     HostPortCache host_port_cache;
     HostPortCache first_pkt_cache;
@@ -282,23 +302,65 @@ private:
 class OdpThreadContext
 {
 public:
-    ~OdpThreadContext();
-    void initialize(const snort::SnortConfig*, AppIdContext& ctxt, bool is_control=false,
-        bool reload_odp=false);
+    virtual ~OdpThreadContext() = default;
 
-    void set_lua_detector_mgr(LuaDetectorManager& mgr)
-    {
-        lua_detector_mgr = &mgr;
-    }
-
-    LuaDetectorManager& get_lua_detector_mgr() const
+    lua_State* get_lua_state() const
     {
         assert(lua_detector_mgr);
-        return *lua_detector_mgr;
+        return lua_detector_mgr->L;
     }
 
-private:
-    LuaDetectorManager* lua_detector_mgr = nullptr;
+    bool insert_cb_detector(AppId app_id, LuaObject* ud)
+    {
+        assert(lua_detector_mgr);
+        return lua_detector_mgr->insert_cb_detector(app_id, ud);
+    }
+
+    LuaObject* get_cb_detector(AppId app_id)
+    {
+        assert(lua_detector_mgr);
+        return lua_detector_mgr->get_cb_detector(app_id);
+    }
+
+protected:
+    std::shared_ptr<LuaDetectorManager> lua_detector_mgr;
+};
+
+class OdpControlContext : public OdpThreadContext
+{
+public:
+    ~OdpControlContext() override = default;
+    void initialize(const snort::SnortConfig*, AppIdContext&);
+    void set_ignore_chp_cleanup()
+    {
+        assert(lua_detector_mgr);
+        static_cast<ControlLuaDetectorManager*>(lua_detector_mgr.get())->set_ignore_chp_cleanup();
+    }
+};
+
+class OdpPacketThreadContext : public OdpThreadContext
+{
+public:
+    ~OdpPacketThreadContext() override = default;
+    void initialize(const snort::SnortConfig*);
+
+    void set_detector_flow(DetectorFlow* df)
+    {
+        assert(lua_detector_mgr);
+        static_cast<PacketLuaDetectorManager*>(lua_detector_mgr.get())->set_detector_flow(df);
+    }
+
+    DetectorFlow* get_detector_flow()
+    {
+        assert(lua_detector_mgr);
+        return static_cast<PacketLuaDetectorManager*>(lua_detector_mgr.get())->get_detector_flow();
+    }
+
+    void free_detector_flow()
+    {
+        assert(lua_detector_mgr);
+        static_cast<PacketLuaDetectorManager*>(lua_detector_mgr.get())->free_detector_flow();
+    }
 };
 
 class AppIdContext

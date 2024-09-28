@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -113,7 +113,7 @@ static int* RuleHashToSortedArray(GHash* rh)
          node != nullptr && k < (int)rh->get_count();
          node = rh->find_next() )
     {
-        if ( int* prid = (int*)node->data )
+        if ( const int* prid = (int*)node->data )
             ra[k++] = *prid;
     }
 
@@ -198,20 +198,17 @@ PortObject2* PortObject2Dup(PortObject& po)
     }
 
     /* Dup the input rule list */
-    if ( po.rule_list )
+    SF_LNODE* lpos = nullptr;
+
+    for (int* prid  = (int*)sflist_first(po.rule_list, &lpos);
+            prid != nullptr;
+            prid  = (int*)sflist_next(&lpos) )
     {
-        SF_LNODE* lpos = nullptr;
+        int* prule = (int*)snort_calloc(sizeof(int));
+        *prule = *prid;
 
-        for (int* prid  = (int*)sflist_first(po.rule_list, &lpos);
-             prid != nullptr;
-             prid  = (int*)sflist_next(&lpos) )
-        {
-            int* prule = (int*)snort_calloc(sizeof(int));
-            *prule = *prid;
-
-            if ( ponew->rule_hash->insert(prule, prule) != HASH_OK )
-                snort_free(prule);
-        }
+        if ( ponew->rule_hash->insert(prule, prule) != HASH_OK )
+            snort_free(prule);
     }
 
     return ponew;

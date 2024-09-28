@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2003-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -51,9 +51,8 @@ struct IpProtoData
 class IpProtoOption : public IpsOption
 {
 public:
-    IpProtoOption(const IpProtoData& c) :
-        IpsOption(s_name)
-    { config = c; }
+    IpProtoOption(const IpProtoData& c) : IpsOption(s_name), config(c)
+    { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -260,7 +259,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* ip_proto_ctor(Module* p, OptTreeNode*)
+static IpsOption* ip_proto_ctor(Module* p, IpsInfo&)
 {
     IpProtoModule* m = (IpProtoModule*)p;
     return new IpProtoOption(m->data);

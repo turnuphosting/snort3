@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -99,12 +99,6 @@ static inline const Layer* find_layer(const Layer* lyr,
 void set_packet_pointer(const Packet* const p)
 { curr_pkt = p; }
 
-const uint8_t* get_inner_layer(const Packet* p, ProtocolId prot_id)
-{ return find_inner_layer(p->layers, p->num_layers, prot_id); }
-
-const uint8_t* get_outer_layer(const Packet* p, ProtocolId prot_id)
-{ return find_outer_layer(p->layers, p->num_layers, prot_id); }
-
 const arp::EtherARP* get_arp_layer(const Packet* const p)
 {
     uint8_t num_layers = p->num_layers;
@@ -139,15 +133,6 @@ const gre::GREHdr* get_gre_layer(const Packet* const p)
 
     return reinterpret_cast<const gre::GREHdr*>(
         find_inner_layer(lyr, num_layers, ProtocolId::GRE));
-}
-
-const eapol::EtherEapol* get_eapol_layer(const Packet* const p)
-{
-    uint8_t num_layers = p->num_layers;
-    const Layer* lyr = p->layers;
-
-    return reinterpret_cast<const eapol::EtherEapol*>(
-        find_inner_layer(lyr, num_layers, ProtocolId::ETHERTYPE_EAPOL));
 }
 
 const Layer* get_mpls_layer(const Packet* const p)

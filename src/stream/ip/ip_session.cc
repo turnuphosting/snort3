@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -45,7 +45,7 @@ const PegInfo ip_pegs[] =
     { CountType::SUM, "total_bytes", "total number of bytes processed" },
     { CountType::SUM, "total_frags", "total fragments" },
     { CountType::NOW, "current_frags", "current fragments" },
-    { CountType::SUM, "max_frags", "max fragments" },
+    { CountType::MAX, "max_frags", "max fragments" },
     { CountType::SUM, "reassembled", "reassembled datagrams" },
     { CountType::SUM, "discards", "fragments discarded" },
     { CountType::SUM, "frag_timeouts", "datagrams abandoned" },
@@ -174,7 +174,7 @@ bool IpSession::setup(Packet* p)
 
 int IpSession::process(Packet* p)
 {
-    Profile profile(ip_perf_stats);
+    Profile profile(ip_perf_stats); // cppcheck-suppress unreadVariable
 
     if ( Stream::expired_flow(flow, p) )
     {

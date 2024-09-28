@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -42,6 +42,7 @@ using namespace snort;
 
 bool HttpStreamSplitter::finish(Flow* flow)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(HttpModule::get_profile_stats());
 
     HttpFlowData* session_data = HttpInspect::http_get_flow_data(flow);
@@ -216,6 +217,7 @@ bool HttpStreamSplitter::finish(Flow* flow)
 
 void HttpStreamSplitter::prep_partial_flush(Flow* flow, uint32_t num_flush)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(HttpModule::get_profile_stats());
 
     HttpFlowData* session_data = HttpInspect::http_get_flow_data(flow);

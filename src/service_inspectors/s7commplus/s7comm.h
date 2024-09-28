@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -73,6 +73,7 @@ int get_message_type(int version, const char* name);
 int get_info_type(int version, const char* name);
 
 extern THREAD_LOCAL S7commplusStats s7commplus_stats;
+bool get_buf_s7commplus_content(snort::Packet* p, snort::InspectionBuffer& b);
 
 #endif
 

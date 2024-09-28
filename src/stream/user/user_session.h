@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,6 +25,7 @@
 #include "flow/session.h"
 #include "stream/paf.h"
 
+// cppcheck-suppress noConstructor
 struct UserSegment
 {
     static UserSegment* init(const uint8_t*, unsigned);
@@ -68,7 +69,7 @@ struct UserTracker
 
     std::list<UserSegment*> seg_list;
     snort::StreamSplitter* splitter;
-    PAF_State paf_state;
+    PAF_State paf_state = {};
     unsigned total;
 };
 
@@ -97,8 +98,6 @@ private:
 
     int update_alert(
         snort::Packet*, uint32_t gid, uint32_t sid, uint32_t event_id, uint32_t event_second) override;
-
-    uint8_t get_reassembly_direction() override;
 
 public:
     UserTracker client;

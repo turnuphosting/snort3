@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -77,7 +77,7 @@ private:
 class SipEvent : public snort::DataEvent
 {
 public:
-    SipEvent(const snort::Packet*, const SIPMsg*, const SIP_DialogData*);
+    SipEvent(const snort::Packet*, const SIPMsg&, const SIP_DialogData*);
     ~SipEvent() override;
 
     const snort::Packet* get_packet() const override
@@ -118,7 +118,7 @@ public:
 private:
     const snort::Packet* p;
 
-    const SIPMsg* msg;
+    const SIPMsg& msg;
     const SIP_DialogData* dialog;
 
     const char* from = nullptr;

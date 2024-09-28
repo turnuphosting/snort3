@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -31,9 +31,10 @@ struct EveCaPattern
     const AppId app_id;
     const std::string pattern;
     const uint8_t confidence;
+    bool literal;
 
-    EveCaPattern(AppId id, const std::string& name, uint8_t conf) : app_id(id), pattern(name),
-        confidence(conf) {}
+    EveCaPattern(AppId id, const std::string& name, uint8_t conf, bool literal = true) : app_id(id), pattern(name),
+        confidence(conf), literal(literal) {}
 
     ~EveCaPattern() {}
 };
@@ -45,7 +46,7 @@ class EveCaPatternMatchers
 public:
     ~EveCaPatternMatchers();
     AppId match_eve_ca_pattern(const std::string&, uint8_t);
-    void add_eve_ca_pattern(AppId, const std::string&, uint8_t, const std::string&);
+    void add_eve_ca_pattern(AppId, const std::string&, uint8_t, const std::string&, bool literal = true);
     void finalize_patterns();
     void reload_patterns();
     unsigned get_pattern_count();

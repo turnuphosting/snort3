@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -228,9 +228,11 @@ int TnsServiceDetector::validate(AppIdDiscoveryArgs& args)
             break;
 
         case TNS_STATE_MESSAGE_ACCEPT:
+            if (ss->pos >= (ACCEPT_VERSION_OFFSET + 2))
+                break;
             ss->l.raw_len[ss->pos - ACCEPT_VERSION_OFFSET] = data[offset];
             ss->pos++;
-            if (ss->pos >= (ACCEPT_VERSION_OFFSET + 2))
+            if (ss->pos == (ACCEPT_VERSION_OFFSET + 2))
             {
                 switch (ntohs(ss->l.len))
                 {

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -57,6 +57,8 @@ bool FlowHashKeyOps::key_compare(const void* k1, const void* k2, size_t len)
     else
         return false;
 }
+
+unsigned get_instance_id() { return 0; }
 }
 
 // Stubs whose sole purpose is to make the test code link
@@ -67,13 +69,16 @@ DataBus::DataBus() = default;
 DataBus::~DataBus() = default;
 
 // run_flags is used indirectly from HashFnc class by calling SnortConfig::static_hash()
-SnortConfig::SnortConfig(const SnortConfig* const, const char*)
+SnortConfig::SnortConfig(const SnortConfig* const, const char*) : daq_config(nullptr), thread_config(nullptr)
 { snort_conf->run_flags = 0;}
 
 SnortConfig::~SnortConfig() = default;
 
 const SnortConfig* SnortConfig::get_conf()
 { return snort_conf; }
+
+unsigned int get_random_seed()
+{ return 3193; }
 
 const unsigned ZHASH_ROWS = 50;
 const unsigned ZHASH_KEY_SIZE = 100;

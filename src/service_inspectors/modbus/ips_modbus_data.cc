@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2011-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -30,6 +30,7 @@
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
 
+#include "modbus.h"
 #include "modbus_decode.h"
 
 using namespace snort;
@@ -73,18 +74,13 @@ bool ModbusDataOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus ModbusDataOption::eval(Cursor& c, Packet* p)
 {
-    RuleProfile profile(modbus_data_prof);
+    RuleProfile profile(modbus_data_prof);  // cppcheck-suppress unreadVariable
 
-    if ( !p->flow )
+    InspectionBuffer b;
+    if (!get_buf_modbus_data(p, b))
         return NO_MATCH;
 
-    if ( !p->is_full_pdu() )
-        return NO_MATCH;
-
-    if ( p->dsize < MODBUS_MIN_LEN )
-        return NO_MATCH;
-
-    c.set(s_name, p->data + MODBUS_MIN_LEN, p->dsize - MODBUS_MIN_LEN);
+    c.set(s_name, b.data, b.len);
 
     return MATCH;
 }
@@ -122,7 +118,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* opt_ctor(Module*, OptTreeNode*)
+static IpsOption* opt_ctor(Module*, IpsInfo&)
 {
     return new ModbusDataOption;
 }

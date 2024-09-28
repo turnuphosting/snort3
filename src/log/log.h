@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 // Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 //
@@ -21,19 +21,20 @@
 #ifndef LOG_H
 #define LOG_H
 
+// this is for legacy logging like stream_ip debug and stream_tcp show rebuilt.
+// it should not be used for new code. existing uses should be converted to the
+// trace logger system or directly call TextLog which this wraps.
+
 #include <cstdio>
 
 #include "main/snort_types.h"
 
 namespace snort
 {
-namespace tcp { struct TCPHdr; }
-struct Packet;
-
-SO_PUBLIC void CreateTCPFlagString(const tcp::TCPHdr* const, char*);
+    struct Packet;
 }
 
-FILE* OpenAlertFile(const char*);
+FILE* OpenAlertFile(const char*, bool is_critical=true);
 int RollAlertFile(const char*);
 
 void OpenLogger();
@@ -41,6 +42,11 @@ void CloseLogger();
 void LogIPPkt(snort::Packet*);
 void LogFlow(snort::Packet*);
 void LogNetData(const uint8_t* data, const int len, snort::Packet*);
+
+void InitProtoNames();
+void CleanupProtoNames();
+
+const char* get_protocol_name(uint8_t ip_proto);
 
 #endif
 

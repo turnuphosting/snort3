@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,11 +25,13 @@
 
 #include "connectors/file_connector/file_connector.h"
 #include "connectors/file_connector/file_connector_module.h"
+#include "main/thread_config.h"
 
 #include <CppUTest/CommandLineTestRunner.h>
 #include <CppUTest/TestHarness.h>
 
 using namespace snort;
+
 
 extern const BaseApi* file_connector;
 const ConnectorApi* fc_api = nullptr;
@@ -49,22 +51,23 @@ Connector* connector_tb;
 Connector* connector_rb;
 
 void show_stats(PegCount*, const PegInfo*, unsigned, const char*) { }
-void show_stats(PegCount*, const PegInfo*, const IndexVec&, const char*, FILE*) { }
+void show_stats(PegCount*, const PegInfo*, const std::vector<unsigned>&, const char*, FILE*) { }
 
 namespace snort
 {
 const char* get_instance_file(std::string& file, const char* name)
 { file += name; return nullptr; }
+unsigned get_instance_id()
+{ return 0; }
+unsigned ThreadConfig::get_instance_max() { return 1; }
 }
 
 FileConnectorModule::FileConnectorModule() :
     Module("FC", "FC Help", nullptr)
-{ }
+{ config_set = nullptr; }
 
 FileConnectorConfig::FileConnectorConfigSet* FileConnectorModule::get_and_clear_config()
-{
-    return new FileConnectorConfig::FileConnectorConfigSet;
-}
+{ return new FileConnectorConfig::FileConnectorConfigSet; }
 
 FileConnectorModule::~FileConnectorModule() = default;
 

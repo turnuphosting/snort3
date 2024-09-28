@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 // Copyright (C) 1998-2005 Martin Roesch <roesch@sourcefire.com>
 //
@@ -24,8 +24,6 @@
 // Snort is the top-level application class.
 #include <daq_common.h>
 
-#include "main/snort_types.h"
-
 class ContextSwitcher;
 
 namespace snort
@@ -47,7 +45,8 @@ public:
     static void cleanup();
 
     static bool has_dropped_privileges();
-    SO_PUBLIC static bool is_reloading();
+    static bool is_exiting() { return already_exiting; }
+    static bool is_reloading();
 
 private:
     static void init(int, char**);
@@ -59,14 +58,7 @@ private:
     static bool initializing;
     static bool reloading;
     static bool privileges_dropped;
-};
-
-// RAII-style mechanism for removal and reinstallation of Snort's crash handler
-class SO_PUBLIC OopsHandlerSuspend
-{
-public:
-    OopsHandlerSuspend();
-    ~OopsHandlerSuspend();
+    static bool already_exiting;
 };
 }
 

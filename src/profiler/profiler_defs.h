@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -22,7 +22,6 @@
 #define PROFILER_DEFS_H
 
 #include "main/snort_types.h"
-#include "main/thread.h"
 #include "memory_defs.h"
 #include "memory_profiler_defs.h"
 #include "rule_profiler_defs.h"
@@ -104,24 +103,37 @@ class SO_PUBLIC ProfileContext
 public:
     ProfileContext(ProfileStats& stats) : time(stats.time), memory(stats.memory)
     {
-        prev_time = curr_time;
+        prev_time = get_curr_time();
         if ( prev_time )
             prev_time->pause();
-        curr_time = &time;
+        set_curr_time(&time);
     }
 
     ~ProfileContext()
     {
         if ( prev_time )
             prev_time->resume();
-        curr_time = prev_time;
+        set_curr_time(prev_time);
     }
+
+private:
+#ifdef _WIN64
+    static TimeContext* get_curr_time();
+    static void set_curr_time(TimeContext*);
+#else
+    static THREAD_LOCAL TimeContext* curr_time;
+
+    static TimeContext* get_curr_time()
+    { return curr_time; }
+
+    static void set_curr_time(TimeContext* t)
+    { curr_time = t; }
+#endif
 
 private:
     TimeContext time;
     MemoryContext memory;
     TimeContext* prev_time;
-    static THREAD_LOCAL TimeContext* curr_time;
 };
 
 using get_profile_stats_fn = ProfileStats* (*)(const char*);

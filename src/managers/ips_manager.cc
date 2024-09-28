@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,6 +28,7 @@
 
 #include "detection/fp_detect.h"
 #include "detection/treenodes.h"
+#include "framework/ips_info.h"
 #include "log/messages.h"
 #include "main/snort_config.h"
 
@@ -66,7 +67,7 @@ void IpsManager::add_plugin(const IpsApi* api)
 
 void IpsManager::release_plugins()
 {
-    for ( auto& p : s_options )
+    for ( const auto& p : s_options )
         delete p.second;
 
     s_options.clear();
@@ -300,7 +301,8 @@ IpsOption* IpsManager::option_end(
         return nullptr;
     }
 
-    IpsOption* ips = opt->api->ctor(mod, otn);
+    IpsInfo info(otn, sc);
+    IpsOption* ips = opt->api->ctor(mod, info);
     type = opt->api->type;
     current_keyword.clear();
 
@@ -337,7 +339,7 @@ void IpsManager::global_init(const SnortConfig*)
 
 void IpsManager::global_term(const SnortConfig* sc)
 {
-    for ( auto& p : s_options )
+    for ( const auto& p : s_options )
         if ( p.second->init && p.second->api->pterm )
         {
             p.second->api->pterm(sc);
@@ -347,27 +349,27 @@ void IpsManager::global_term(const SnortConfig* sc)
 
 void IpsManager::reset_options()
 {
-    for ( auto& p : s_options )
+    for ( const auto& p : s_options )
         p.second->count = 0;
 }
 
 void IpsManager::setup_options(const SnortConfig* sc)
 {
-    for ( auto& p : s_options )
+    for ( const auto& p : s_options )
         if ( p.second->init && p.second->api->tinit )
             p.second->api->tinit(sc);
 }
 
 void IpsManager::clear_options(const SnortConfig* sc)
 {
-    for ( auto& p : s_options )
+    for ( const auto& p : s_options )
         if ( p.second->init && p.second->api->tterm )
             p.second->api->tterm(sc);
 }
 
 bool IpsManager::verify(SnortConfig* sc)
 {
-    for ( auto& p : s_options )
+    for ( const auto& p : s_options )
         if ( p.second->init && p.second->api->verify )
             p.second->api->verify(sc);
 

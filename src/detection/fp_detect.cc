@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -41,11 +41,13 @@
 
 #include <vector>
 
-#include "actions/actions.h"
 #include "events/event.h"
+#include "events/event_queue.h"
 #include "filters/rate_filter.h"
 #include "filters/sfthreshold.h"
+#include "framework/act_info.h"
 #include "framework/cursor.h"
+#include "framework/ips_action.h"
 #include "framework/mpse.h"
 #include "latency/packet_latency.h"
 #include "latency/rule_latency.h"
@@ -54,7 +56,7 @@
 #include "main/snort_config.h"
 #include "managers/action_manager.h"
 #include "packet_io/active.h"
-#include "packet_tracer/packet_tracer.h"
+#include "packet_io/packet_tracer.h"
 #include "parser/parser.h"
 #include "profiler/profiler_defs.h"
 #include "protocols/icmp4.h"
@@ -67,13 +69,13 @@
 #include "utils/util.h"
 
 #include "context_switcher.h"
-#include "detect.h"
 #include "detect_trace.h"
+#include "detection_buf.h"
 #include "detection_continuation.h"
 #include "detection_engine.h"
 #include "detection_module.h"
 #include "detection_options.h"
-#include "detection_util.h"
+#include "event_trace.h"
 #include "fp_config.h"
 #include "fp_create.h"
 #include "fp_utils.h"
@@ -108,9 +110,7 @@ void populate_trace_data()
     if ( tr_len > 0 )
     {
         tr_context[tr_len-1] = ' ';
-        PacketTracer::daq_log("IPS+%" PRId64"++%s$",
-            TO_NSECS(pt_timer->get()),
-            tr_context);
+        PacketTracer::daq_log("IPS+%" PRId64"++%s$", PacketTracer::get_time(), tr_context);
 
         tr_len = 0;
         tr_context[0] = '\0';
@@ -128,14 +128,14 @@ static inline void init_match_info(const IpsContext* c)
 // called by fpLogEvent(), which does the filtering etc.
 // this handles the non-rule-actions (responses).
 static inline void fpLogOther(
-    Packet* p, const RuleTreeNode* rtn, const OptTreeNode* otn, Actions::Type action)
+    Packet* p, const RuleTreeNode* rtn, const OptTreeNode* otn, IpsAction::Type action)
 {
     if ( EventTrace_IsEnabled(p->context->conf) )
         EventTrace_Log(p, otn, action);
 
     if ( PacketTracer::is_active() )
     {
-        std::string act = Actions::get_string(action);
+        std::string act = IpsAction::get_string(action);
         PacketTracer::log("Event: %u:%u:%u, Action %s\n",
             otn->sigInfo.gid, otn->sigInfo.sid,
             otn->sigInfo.rev, act.c_str());
@@ -143,7 +143,7 @@ static inline void fpLogOther(
 
     if ( PacketTracer::is_daq_activated() )
     {
-        std::string act = Actions::get_string(action);
+        std::string act = IpsAction::get_string(action);
         tr_len += snprintf(tr_context+tr_len, sizeof(tr_context) - tr_len,
                       "gid:%u, sid:%u, rev:%u, action:%s, msg:%s\n",
                       otn->sigInfo.gid, otn->sigInfo.sid,
@@ -186,9 +186,9 @@ int fpLogEvent(const RuleTreeNode* rtn, const OptTreeNode* otn, Packet* p)
 
     // perform rate filtering tests - impacts action taken
     rateAction = RateFilter_Test(otn, p);
-    override = ( rateAction >= Actions::get_max_types() );
+    override = ( rateAction >= IpsAction::get_max_types() );
     if ( override )
-        rateAction -= Actions::get_max_types();
+        rateAction -= IpsAction::get_max_types();
 
     // internal events are no-ops
     if ( (rateAction < 0) && EventIsInternal(otn->sigInfo.gid) )
@@ -223,7 +223,18 @@ int fpLogEvent(const RuleTreeNode* rtn, const OptTreeNode* otn, Packet* p)
         **  that are drop rules.  We just don't want to see the alert.
         */
         IpsAction * act = get_ips_policy()->action[action];
-        act->exec(p);
+        ActInfo ai(otn, false);
+        act->exec(p, ai);
+
+        if ( p->active && p->flow && (p->active->get_action() >= Active::ACT_DROP) )
+        {
+            if ( p->active->can_partial_block_session() )
+                p->flow->flags.ips_pblock_event_suppressed = true;
+            else if (p->active->packet_would_be_dropped())
+                p->flow->flags.ips_wblock_event_suppressed = true;
+            else
+                p->flow->flags.ips_block_event_suppressed = true;
+        }
         fpLogOther(p, rtn, otn, action);
         pc.event_limit++;
         return 1;
@@ -236,20 +247,19 @@ int fpLogEvent(const RuleTreeNode* rtn, const OptTreeNode* otn, Packet* p)
     const SnortConfig* sc = p->context->conf;
 
     if ( (p->packet_flags & PKT_PASS_RULE) &&
-        (sc->get_eval_index(rtn->action) > sc->get_eval_index(Actions::get_type("pass"))) )
+        (sc->get_eval_index(rtn->action) > sc->get_eval_index(IpsAction::get_type("pass"))) )
     {
         fpLogOther(p, rtn, otn, rtn->action);
         return 1;
     }
 
     otn->state[get_instance_id()].alerts++;
+    uint16_t eseq = Event::get_next_seq_num();
+    IpsAction* act = get_ips_policy()->action[action];
+    ActInfo ai(otn);
 
-    incr_event_id();
-
-    IpsAction * act = get_ips_policy()->action[action];
-    act->exec(p, otn);
-    SetTags(p, otn, get_event_id());
-
+    act->exec(p, ai);
+    SetTags(p, otn, eseq);
     fpLogOther(p, rtn, otn, action);
 
     return 0;
@@ -274,7 +284,7 @@ int fpLogEvent(const RuleTreeNode* rtn, const OptTreeNode* otn, Packet* p)
 **    OptTreeNode        * - the otn to add.
 **
 **  FORMAL OUTPUTS
-**    int - 2 No rule tree node found for given policy ID.
+**    int - 2 rule no longer enabled in current policy.
 **    int - 1 max_events variable hit.
 **    int - 0 successful.
 **
@@ -282,7 +292,7 @@ int fpLogEvent(const RuleTreeNode* rtn, const OptTreeNode* otn, Packet* p)
 int fpAddMatch(OtnxMatchData* omd, const OptTreeNode* otn)
 {
     RuleTreeNode* rtn = getRtnFromOtn(otn);
-    if ( not rtn )
+    if ( !rtn )
         return 2;
 
     unsigned evalIndex = rtn->listhead->ruleListNode->evalIndex;
@@ -631,7 +641,7 @@ static inline int fpFinalSelectEvent(OtnxMatchData* omd, Packet* p)
     {
         /* bail if were not dumping events in all the action groups,
          * and we've already got some events */
-        if (!p->context->conf->process_all_events() && (tcnt > 0))
+        if (!p->context->conf->event_queue_config->process_all_events && (tcnt > 0))
             return 1;
 
         if ( omd->matchInfo[i].iMatchCount )
@@ -719,11 +729,15 @@ static inline int fpFinalSelectEvent(OtnxMatchData* omd, Packet* p)
 class MpseStash
 {
 public:
+    // for some reason cppcheck does not understand that all members are used in MpseStash::process
     struct MatchData
     {
+        // cppcheck-suppress unusedStructMember
         void* user;
         void* tree;
+        // cppcheck-suppress unusedStructMember
         void* list;
+        // cppcheck-suppress unusedStructMember
         int index;
     };
 
@@ -783,6 +797,7 @@ bool MpseStash::push(void* user, void* tree, int index, void* context, void* lis
 
     if ( !checker and qmax == queue.size() and is_packet_thread() )
     {
+        // cppcheck-suppress unreadVariable
         Profile rule_profile(rulePerfStats);
         process((IpsContext*)context, queue);
     }
@@ -821,7 +836,7 @@ void MpseStash::process(IpsContext* context, MatchStore& store)
     unsigned i = 0;
 #endif
 
-    for ( auto it : store )
+    for ( const auto & it : store )
     {
         debug_logf(detection_trace, TRACE_RULE_EVAL,
             static_cast<snort::IpsContext*>(context)->packet, "Processing pattern match #%d\n", ++i);
@@ -900,7 +915,7 @@ static int fp_search(RuleGroup* port_group, Packet* p, bool srvc)
                 {
                     // need to add a norm_data keyword or telnet, rpc_decode, smtp keywords
                     // until then we must use the standard packet mpse
-                    const DataBuffer& buf = DetectionEngine::get_alt_buffer(p);
+                    const DataPointer& buf = DetectionEngine::get_alt_buffer(p);
 
                     if ( buf.len )
                     {
@@ -1284,6 +1299,7 @@ static void fpEvalPacket(Packet* p, FPTask task)
 
 void fp_partial(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile mpse_profile(mpsePerfStats);
     IpsContext* c = p->context;
     init_match_info(c);
@@ -1301,10 +1317,12 @@ void fp_complete(Packet* p, bool search)
 
     if ( search )
     {
+        // cppcheck-suppress unreadVariable
         Profile mpse_profile(mpsePerfStats);
         c->searches.search_sync();
     }
     {
+        // cppcheck-suppress unreadVariable
         Profile rule_profile(rulePerfStats);
 
         if (p->flow && p->flow->ips_cont)
@@ -1337,10 +1355,12 @@ static void fp_immediate(Packet* p)
     IpsContext* c = p->context;
     MpseStash* stash = c->stash;
     {
+        // cppcheck-suppress unreadVariable
         Profile mpse_profile(mpsePerfStats);
         c->searches.search_sync();
     }
     {
+        // cppcheck-suppress unreadVariable
         Profile rule_profile(rulePerfStats);
         stash->process(c);
         c->searches.items.clear();
@@ -1351,11 +1371,13 @@ static void fp_immediate(MpseGroup* mpg, Packet* p, const uint8_t* buf, unsigned
 {
     MpseStash* stash = p->context->stash;
     {
+        // cppcheck-suppress unreadVariable
         Profile mpse_profile(mpsePerfStats);
         int start_state = 0;
         mpg->get_normal_mpse()->search(buf, len, rule_tree_queue, p->context, &start_state);
     }
     {
+        // cppcheck-suppress unreadVariable
         Profile rule_profile(rulePerfStats);
         stash->process(p->context);
     }
@@ -1375,7 +1397,8 @@ static inline int fp_do_actions(OtnxMatchData* omd, Packet* p)
             const OptTreeNode* otn = omd->matchInfo[i].MatchArray[0];
             RuleTreeNode* rtn = getRtnFromOtn(otn);
             IpsAction* act = get_ips_policy()->action[rtn->action];
-            act->exec(p, otn);
+            ActInfo ai(otn);
+            act->exec(p, ai);
         }
     }
 
@@ -1384,6 +1407,7 @@ static inline int fp_do_actions(OtnxMatchData* omd, Packet* p)
 
 void fp_eval_service_group(Packet* p, SnortProtocolId snort_protocol_id)
 {
+    // cppcheck-suppress unreadVariable
     Profile mpse_profile(mpsePerfStats);
     RuleGroup* svc = p->context->conf->sopgTable->get_port_group(true, snort_protocol_id);
 
@@ -1399,13 +1423,14 @@ void fp_eval_service_group(Packet* p, SnortProtocolId snort_protocol_id)
     IpsContext::ActiveRules actv_rules = c->active_rules;
     c->active_rules = IpsContext::CONTENT;
     IpsPolicy* ips_policy = snort::get_ips_policy();
-    snort::set_ips_policy(get_default_ips_policy(SnortConfig::get_conf()));
+    snort::set_ips_policy(get_ips_policy(SnortConfig::get_conf()));
 
     print_pkt_info(p, "file_id fast-patterns"); //FIXIT
     fpEvalHeaderSW(svc, p, 0, FPTask::FP, true, true);
     MpseStash* stash = c->stash;
     c->searches.search_sync();
     {
+        // cppcheck-suppress unreadVariable
         Profile rule_profile(rulePerfStats);
         stash->process(c);
 

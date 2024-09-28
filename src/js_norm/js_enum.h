@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -20,7 +20,7 @@
 #ifndef JS_ENUM_H
 #define JS_ENUM_H
 
-#include "utils/event_gen.h"
+#include "helpers/event_gen.h"
 
 namespace jsn
 {

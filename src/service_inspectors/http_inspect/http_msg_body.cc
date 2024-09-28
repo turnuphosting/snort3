@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,6 +26,7 @@
 #include "decompress/file_olefile.h"
 #include "file_api/file_flows.h"
 #include "file_api/file_service.h"
+#include "hash/hash_key_operations.h"
 #include "helpers/buffer_data.h"
 #include "js_norm/js_enum.h"
 #include "pub_sub/http_request_body_event.h"
@@ -202,40 +203,44 @@ void HttpMsgBody::analyze()
             ptr++;
 
             latest_attachment = session_data->mime_state[source_id]->get_attachment();
-            if (latest_attachment.data != nullptr)
-            {
-                uint32_t attach_length;
-                uint8_t* attach_buf;
-                if (!last_attachment_complete)
-                {
-                    assert(!mime_bufs->empty());
-                    // Remove the partial attachment from the list and replace it with an extended version
-                    const uint8_t* const old_buf = mime_bufs->back().file.start();
-                    const uint32_t old_length = mime_bufs->back().file.length();
-                    attach_length = old_length + latest_attachment.length;
-                    attach_buf = new uint8_t[attach_length];
-                    memcpy(attach_buf, old_buf, old_length);
-                    memcpy(attach_buf + old_length, latest_attachment.data, latest_attachment.length);
-                    mime_bufs->pop_back();
-                }
-                else
-                {
-                    attach_length = latest_attachment.length;
-                    attach_buf = new uint8_t[attach_length];
-                    memcpy(attach_buf, latest_attachment.data, latest_attachment.length);
-                }
-                const BufferData& vba_buf = session_data->mime_state[source_id]->get_ole_buf();
-                if (vba_buf.data_ptr() != nullptr)
-                {
-                    uint8_t* my_vba_buf = new uint8_t[vba_buf.length()];
-                    memcpy(my_vba_buf, vba_buf.data_ptr(), vba_buf.length());
-                    mime_bufs->emplace_back(attach_length, attach_buf, true, vba_buf.length(), my_vba_buf, true);
-                }
-                else
-                    mime_bufs->emplace_back(attach_length, attach_buf, true, STAT_NOT_PRESENT, nullptr, false);
 
-                mime_bufs->back().file.set_accumulation(!last_attachment_complete);
+            if (!latest_attachment.data)
+            {
+                last_attachment_complete = latest_attachment.finished;
+                continue;
             }
+
+            uint32_t attach_length;
+            uint8_t* attach_buf;
+            if (!last_attachment_complete)
+            {
+                assert(!mime_bufs->empty());
+                // Remove the partial attachment from the list and replace it with an extended version
+                const uint8_t* const old_buf = mime_bufs->back().file.start();
+                const uint32_t old_length = mime_bufs->back().file.length();
+                attach_length = old_length + latest_attachment.length;
+                attach_buf = new uint8_t[attach_length];
+                memcpy(attach_buf, old_buf, old_length);
+                memcpy(attach_buf + old_length, latest_attachment.data, latest_attachment.length);
+                mime_bufs->pop_back();
+            }
+            else
+            {
+                attach_length = latest_attachment.length;
+                attach_buf = new uint8_t[attach_length];
+                memcpy(attach_buf, latest_attachment.data, latest_attachment.length);
+            }
+            const BufferData& vba_buf = session_data->mime_state[source_id]->get_ole_buf();
+            if (vba_buf.data_ptr() != nullptr)
+            {
+                uint8_t* my_vba_buf = new uint8_t[vba_buf.length()];
+                memcpy(my_vba_buf, vba_buf.data_ptr(), vba_buf.length());
+                mime_bufs->emplace_back(attach_length, attach_buf, true, vba_buf.length(), my_vba_buf, true);
+            }
+            else
+                mime_bufs->emplace_back(attach_length, attach_buf, true, STAT_NOT_PRESENT, nullptr, false);
+
+            mime_bufs->back().file.set_accumulation(!last_attachment_complete);
             last_attachment_complete = latest_attachment.finished;
         }
 
@@ -324,40 +329,32 @@ void HttpMsgBody::analyze()
 
 void HttpMsgBody::do_utf_decoding(const Field& input, Field& output)
 {
-    if ((session_data->utf_state[source_id] == nullptr) || (input.length() == 0))
+    auto ctx = session_data->utf_state[source_id];
+
+    if ((ctx == nullptr) || (input.length() <= 0) || !ctx->is_utf_encoding_present())
     {
         output.set(input);
         return;
     }
 
-    if (session_data->utf_state[source_id]->is_utf_encoding_present())
-    {
-        int bytes_copied;
-        bool decoded;
-        uint8_t* buffer = new uint8_t[input.length()];
-        decoded = session_data->utf_state[source_id]->decode_utf(
-            input.start(), input.length(), buffer, input.length(), &bytes_copied);
+    int bytes_copied;
+    uint8_t* buffer = new uint8_t[input.length()];
 
-        if (!decoded)
-        {
-            delete[] buffer;
-            output.set(input);
-            add_infraction(INF_UTF_NORM_FAIL);
-            create_event(EVENT_UTF_NORM_FAIL);
-        }
-        else if (bytes_copied > 0)
-        {
-            output.set(bytes_copied, buffer, true);
-        }
-        else
-        {
-            delete[] buffer;
-            output.set(input);
-        }
+    if (!ctx->decode_utf(input.start(), input.length(), buffer, input.length(), &bytes_copied))
+    {
+        add_infraction(INF_UTF_NORM_FAIL);
+        create_event(EVENT_UTF_NORM_FAIL);
+        if (CHARSET_SET_BY_GUESS == ctx->get_decode_utf_charset_src())
+            bytes_copied = 0;
     }
 
+    if (bytes_copied > 0)
+        output.set(bytes_copied, buffer, true);
     else
+    {
+        delete[] buffer;
         output.set(input);
+    }
 }
 
 void HttpMsgBody::get_ole_data()
@@ -477,7 +474,8 @@ HttpJSNorm* HttpMsgBody::acquire_js_ctx()
 
     if (js_ctx)
     {
-        if (js_ctx->get_trans_num() == trans_num)
+        if (js_ctx->get_trans_num() == trans_num and
+            js_ctx->ctx().get_generation_id() == SnortConfig::get_conf()->get_reload_id())
             return js_ctx;
 
         delete js_ctx;
@@ -510,22 +508,24 @@ HttpJSNorm* HttpMsgBody::acquire_js_ctx()
     case CT_TEXT_JSCRIPT:
     case CT_TEXT_LIVESCRIPT:
         // an external script should be processed from the beginning
-        js_ctx = first_body ? new HttpExternalJSNorm(jsn_config, trans_num) : nullptr;
+        js_ctx = first_body ? new HttpExternalJSNorm(jsn_config, trans_num,
+            SnortConfig::get_conf()->get_reload_id()) : nullptr;
         break;
 
     case CT_APPLICATION_XHTML_XML:
     case CT_TEXT_HTML:
         js_ctx = new HttpInlineJSNorm(jsn_config, trans_num, params->js_norm_param.mpse_otag,
-            params->js_norm_param.mpse_attr);
+            params->js_norm_param.mpse_attr, SnortConfig::get_conf()->get_reload_id());
         break;
 
     case CT_APPLICATION_PDF:
-        js_ctx = new HttpPDFJSNorm(jsn_config, trans_num);
+        js_ctx = new HttpPDFJSNorm(jsn_config, trans_num, SnortConfig::get_conf()->get_reload_id());
         break;
 
     case CT_APPLICATION_OCTET_STREAM:
-        js_ctx = first_body and HttpPDFJSNorm::is_pdf(decompressed_file_body.start(), decompressed_file_body.length()) ?
-            new HttpPDFJSNorm(jsn_config, trans_num) : nullptr;
+        js_ctx = first_body and
+            HttpPDFJSNorm::is_pdf(decompressed_file_body.start(), decompressed_file_body.length()) ?
+            new HttpPDFJSNorm(jsn_config, trans_num, SnortConfig::get_conf()->get_reload_id()) : nullptr;
         break;
     }
 
@@ -539,7 +539,8 @@ HttpJSNorm* HttpMsgBody::acquire_js_ctx_mime()
 
     if (js_ctx)
     {
-        if (js_ctx->get_trans_num() == trans_num)
+        if (js_ctx->get_trans_num() == trans_num and
+            js_ctx->ctx().get_generation_id() == SnortConfig::get_conf()->get_reload_id())
             return js_ctx;
 
         delete js_ctx;
@@ -548,7 +549,7 @@ HttpJSNorm* HttpMsgBody::acquire_js_ctx_mime()
 
     JSNormConfig* jsn_config = get_inspection_policy()->jsn_config;
     js_ctx = HttpPDFJSNorm::is_pdf(decompressed_file_body.start(), decompressed_file_body.length()) ?
-        new HttpPDFJSNorm(jsn_config, trans_num) : nullptr;
+        new HttpPDFJSNorm(jsn_config, trans_num, SnortConfig::get_conf()->get_reload_id()) : nullptr;
 
     session_data->js_ctx_mime[source_id] = js_ctx;
     return js_ctx;
@@ -688,11 +689,19 @@ void HttpMsgBody::do_file_processing(const Field& file_data)
 
     const FileDirection dir = source_id == SRC_SERVER ? FILE_DOWNLOAD : FILE_UPLOAD;
 
-    const uint64_t file_index = get_header(source_id)->get_file_cache_index();
+    uint64_t file_index = get_header(source_id)->get_file_cache_index();
+
+    const uint8_t* filename_buffer = nullptr;
+    uint32_t filename_length = 0;
+    const uint8_t* uri_buffer = nullptr;
+    uint32_t uri_length = 0;
+    if (request != nullptr)
+        get_file_info(dir, filename_buffer, filename_length, uri_buffer, uri_length);
 
     bool continue_processing_file = file_flows->file_process(p, file_index, file_data.start(),
         fp_length, session_data->file_octets[source_id], dir,
-        get_header(source_id)->get_multi_file_processing_id(), file_position);
+        get_header(source_id)->get_multi_file_processing_id(), file_position,
+        filename_buffer, filename_length);
     if (continue_processing_file)
     {
         session_data->file_depth_remaining[source_id] -= fp_length;
@@ -702,12 +711,6 @@ void HttpMsgBody::do_file_processing(const Field& file_data)
         {
             if (request != nullptr)
             {
-                const uint8_t* filename_buffer;
-                const uint8_t* uri_buffer;
-                uint32_t filename_length;
-                uint32_t uri_length;
-                get_file_info(dir, filename_buffer, filename_length, uri_buffer, uri_length);
-
                 continue_processing_file = file_flows->set_file_name(filename_buffer,
                     filename_length, 0,
                     get_header(source_id)->get_multi_file_processing_id(), uri_buffer,
@@ -749,6 +752,11 @@ bool HttpMsgBody::run_detection(snort::Packet* p)
 
             js_ctx_tmp = session_data->js_ctx[source_id];
             session_data->js_ctx[source_id] = acquire_js_ctx_mime();
+
+            // When multiple attachments appear in a single TCP segment,
+            // the detection engine caches the results of the rule options after
+            // evaluating on the first call. Setting this flag stops the caching.
+            p->packet_flags |= PKT_ALLOW_MULTIPLE_DETECT;
 
             DetectionEngine::detect(p);
 

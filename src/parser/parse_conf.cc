@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 // Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 // Copyright (C) 2000,2001 Andrew R. Baker <andrewb@uab.edu>
@@ -44,6 +44,7 @@
 #include "config_file.h"
 #include "parser.h"
 #include "parse_stream.h"
+#include "var_dependency.h"
 #include "vars.h"
 
 using namespace snort;
@@ -55,8 +56,8 @@ struct Location
     std::string file;
     unsigned line;
 
-    Location(const char* c, const char* p, const char* f, unsigned u)
-    { code = c; path = p; file = f; line = u; }
+    Location(const char* c, const char* p, const char* f, unsigned u) : code(c), path(p), file(f), line(u)
+    { }
 };
 
 static std::stack<Location> files;
@@ -160,6 +161,12 @@ static bool relative_to_include_dir(const char* file, std::string& path)
     return valid_file(file, path);
 }
 
+static bool relative_to_working_dir(const char* file, std::string& path)
+{
+    path = ".";
+    return valid_file(file, path);
+}
+
 const char* get_config_file(const char* arg, std::string& file)
 {
     assert(arg);
@@ -183,6 +190,9 @@ const char* get_config_file(const char* arg, std::string& file)
 
     if ( relative_to_config_dir(arg, file) )
         return "C";
+
+    if ( relative_to_working_dir(arg, file) )
+        return "W";
 
     return nullptr;
 }
@@ -214,7 +224,7 @@ void parse_include(SnortConfig* sc, const char* arg)
     pop_parse_location();
 }
 
-void ParseIpVar(const char* var, const char* value)
+bool ParseIpVar(const char* var, const char* value)
 {
     int ret;
     IpsPolicy* p = get_ips_policy();
@@ -227,7 +237,7 @@ void ParseIpVar(const char* var, const char* value)
         {
         case SFIP_ARG_ERR:
             ParseError("the following is not allowed: %s.", value);
-            return;
+            return false;
 
         case SFIP_DUPLICATE:
             ParseWarning(WARN_VARS, "Var '%s' redefined.", var);
@@ -237,26 +247,35 @@ void ParseIpVar(const char* var, const char* value)
             ParseError("negated IP ranges that are more general than "
                 "non-negated ranges are not allowed. Consider "
                 "inverting the logic in %s.", var);
-            return;
+            return false;
 
         case SFIP_NOT_ANY:
             ParseError("!any is not allowed in %s.", var);
-            return;
+            return false;
+
+        case SFIP_LOOKUP_FAILURE:
+            if (is_resolving_nets())
+                ParseError("failed to parse the IP address: %s.", value);
+            else
+                push_to_weak_nets(var, value);
+            return false;
 
         default:
             ParseError("failed to parse the IP address: %s.", value);
-            return;
+            return false;
         }
     }
+
+    return true;
 }
 
 static void add_service_to_otn_helper(SnortConfig* sc, OptTreeNode* otn, const char* svc_name)
 {
     SnortProtocolId svc_id = sc->proto_ref->add(svc_name);
 
-    for ( const auto& si : otn->sigInfo.services )
-        if ( si.snort_protocol_id == svc_id )
-            return;  // already added
+    if (std::any_of(otn->sigInfo.services.cbegin(), otn->sigInfo.services.cend(),
+        [svc_id](const SignatureServiceInfo& si){ return si.snort_protocol_id == svc_id; }))
+        return;  // already added
 
     SignatureServiceInfo si(svc_name, svc_id);
     otn->sigInfo.services.emplace_back(si);

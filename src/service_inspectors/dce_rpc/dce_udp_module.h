@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -44,7 +44,7 @@ extern THREAD_LOCAL const snort::Trace* dce_udp_trace;
 
 struct dce2UdpProtoConf
 {
-    dce2CommonProtoConf common;
+    dce2CommonProtoConf common = {};
 };
 
 class Dce2UdpModule : public snort::Module
@@ -73,7 +73,7 @@ public:
     const snort::TraceOption* get_trace_options() const override;
 
 private:
-    dce2UdpProtoConf config;
+    dce2UdpProtoConf config = {};
 };
 
 void print_dce2_udp_conf(const dce2UdpProtoConf&);

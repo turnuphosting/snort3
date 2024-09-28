@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -31,11 +31,13 @@
 
 using namespace snort;
 
-bool Inspector::is_inactive() { return true; }
-
 NetworkPolicy* snort::get_network_policy()
 { return (NetworkPolicy*)mock().getData("network_policy").getObjectPointer(); }
+NetworkPolicy* PolicyMap::get_user_network(uint64_t) const
+{ return (NetworkPolicy*)mock().getData("network_policy").getObjectPointer(); }
 InspectionPolicy* snort::get_inspection_policy()
+{ return (InspectionPolicy*)mock().getData("inspection_policy").getObjectPointer(); }
+InspectionPolicy* NetworkPolicy::get_user_inspection_policy(uint64_t) const
 { return (InspectionPolicy*)mock().getData("inspection_policy").getObjectPointer(); }
 
 InspectionPolicy::InspectionPolicy(PolicyId)
@@ -54,6 +56,8 @@ NetworkPolicy::~NetworkPolicy()
 }
 PolicyMap::PolicyMap(PolicyMap*, const char*)
 {
+    empty_ips_policy = nullptr;
+    inspector_tinit_complete = nullptr;
     file_id = InspectorManager::create_single_instance_inspector_policy();
     flow_tracking = InspectorManager::create_single_instance_inspector_policy();
     global_inspector_policy = InspectorManager::create_global_inspector_policy();
@@ -83,7 +87,7 @@ SnortConfig::~SnortConfig()
 const SnortConfig* SnortConfig::get_conf()
 { return (const SnortConfig*)mock().getData("snort_config").getObjectPointer(); }
 
-Module::Module(const char* name, const char*) : name(name)
+Module::Module(const char* name, const char*) : name(name), help(nullptr), params(nullptr), list(false)
 { }
 
 class TestInspector : public Inspector
@@ -91,7 +95,6 @@ class TestInspector : public Inspector
 public:
     TestInspector() = default;
     ~TestInspector() override = default;
-    void eval(Packet*) override { }
 };
 
 class TestModule : public Module

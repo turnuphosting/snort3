@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -33,10 +33,10 @@ public:
     Option(const std::string& name, std::string val, int depth);
     virtual ~Option() = default;
 
-    inline const std::string& get_name()
+    inline const std::string& get_name() const
     { return name; }
 
-    inline const std::string& get_value()
+    inline const std::string& get_value() const
     { return value; }
 
     void set_print_whitespace(bool w)

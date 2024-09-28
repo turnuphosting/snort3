@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -165,6 +165,7 @@ const NormalizedHeader::HeaderNormalizer* const NormalizedHeader::header_norms[H
     &NORMALIZER_TOKEN_LIST, // HEAD_HTTP2_SETTINGS
     &NORMALIZER_BASIC,      // HEAD_RESTRICT_ACCESS_TO_TENANTS
     &NORMALIZER_BASIC,      // HEAD_RESTRICT_ACCESS_CONTEXT
+    &NORMALIZER_URI,        // HEAD_ORIGIN
     &NORMALIZER_BASIC,      // HEAD__MAX_VALUE
     &NORMALIZER_BASIC,      // HEAD_CUSTOM_XFF_HEADER
     &NORMALIZER_BASIC,      // HEAD_CUSTOM_XFF_HEADER
@@ -254,6 +255,7 @@ void NormalizedHeader::HeaderNormalizer::normalize(const HeaderId head_id, const
 
     uint8_t* const norm_value = new uint8_t[buffer_length];
     uint8_t* const temp_space = new uint8_t[buffer_length];
+    // cppcheck-suppress uninitdata
     uint8_t* const norm_start = (num_normalizers%2 == 0) ? norm_value : temp_space;
     uint8_t* working = norm_start;
     int32_t data_length = 0;
@@ -349,7 +351,7 @@ const Field& NormalizedHeader::get_norm(HttpInfractions* infractions, HttpEventG
     return norm;
 }
 
-const Field& NormalizedHeader::get_comma_separated_raw(HttpMsgHeadShared& msg_head,
+const Field& NormalizedHeader::get_comma_separated_raw(const HttpMsgHeadShared& msg_head,
     HttpInfractions* infractions, HttpEventGen* events, const HttpEnums::HeaderId header_name_id[],
     const Field header_value[], const int32_t num_headers)
 {

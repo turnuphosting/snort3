@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,7 +27,7 @@
 
 #include <list>
 
-#include "detection/detection_util.h"
+#include "detection/detection_buf.h"
 #include "framework/codec.h"
 #include "framework/mpse.h"
 #include "framework/mpse_batch.h"
@@ -175,6 +175,8 @@ public:
     // FIXIT-L eliminate max_ips_id and just resize data vector.
     // Only 5 inspectors currently use the ips context data.
     static constexpr unsigned max_ips_id = 8;
+
+    std::vector<MatchedBuffer> matched_buffers;
 
 private:
     FlowSnapshot flow = {};

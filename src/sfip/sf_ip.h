@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 1998-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -70,6 +70,7 @@ struct SO_PUBLIC SfIp
     uint32_t get_ip4_value() const;
     const uint32_t* get_ip4_ptr() const;
     const uint32_t* get_ip6_ptr() const;
+    const uint64_t* get_ip64_ptr() const;
     const uint32_t* get_ptr() const;
     bool is_set() const;
     bool is_ip6() const;
@@ -88,6 +89,7 @@ struct SO_PUBLIC SfIp
     bool fast_eq6(const SfIp& ip2) const;
     bool fast_equals_raw(const SfIp& ip2) const;
     bool operator==(const SfIp& ip2) const;
+    bool operator < (const SfIp& rhs) const;
 
     /*
      * Miscellaneous
@@ -120,6 +122,7 @@ private:
         uint8_t ip8[16];
         uint16_t ip16[8];
         uint32_t ip32[4];
+        uint64_t ip64[2];
     };
     int16_t family;
 } __attribute__((__packed__));
@@ -156,6 +159,11 @@ inline const uint32_t* SfIp::get_ip4_ptr() const
 inline const uint32_t* SfIp::get_ip6_ptr() const
 {
     return ip32;
+}
+
+inline const uint64_t* SfIp::get_ip64_ptr() const
+{
+    return ip64;
 }
 
 inline const uint32_t* SfIp::get_ptr() const
@@ -415,13 +423,9 @@ inline bool SfIp::fast_gt6(const SfIp& ip2) const
 
 inline bool SfIp::fast_eq6(const SfIp& ip2) const
 {
-    if (ip32[0] != ip2.ip32[0])
+    if (ip64[0] != ip2.ip64[0])
         return false;
-    if (ip32[1] != ip2.ip32[1])
-        return false;
-    if (ip32[2] != ip2.ip32[2])
-        return false;
-    if (ip32[3] != ip2.ip32[3])
+    if (ip64[1] != ip2.ip64[1])
         return false;
 
     return true;
@@ -454,6 +458,11 @@ inline bool SfIp::fast_equals_raw(const SfIp& ip2) const
 inline bool SfIp::operator==(const SfIp& ip2) const
 {
     return fast_equals_raw(ip2);
+}
+
+inline bool SfIp::operator < (const SfIp& rhs) const
+{
+    return less_than(rhs);
 }
 
 /* End of member function definitions */
@@ -537,3 +546,4 @@ inline std::ostream& operator<<(std::ostream& os, const SfIp* addr)
 SO_PUBLIC const char* snort_inet_ntop(int family, const void* ip_raw, char* buf, int bufsize);
 } // namespace snort
 #endif
+

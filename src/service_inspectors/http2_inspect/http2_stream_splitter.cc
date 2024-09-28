@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -43,6 +43,7 @@ using namespace Http2Enums;
 StreamSplitter::Status Http2StreamSplitter::scan(Packet* pkt, const uint8_t* data, uint32_t length,
     uint32_t, uint32_t* flush_offset)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(Http2Module::get_profile_stats());
 
     Flow* const flow = pkt->flow;
@@ -127,6 +128,7 @@ StreamSplitter::Status Http2StreamSplitter::scan(Packet* pkt, const uint8_t* dat
 const StreamBuffer Http2StreamSplitter::reassemble(Flow* flow, unsigned total, unsigned offset,
     const uint8_t* data, unsigned len, uint32_t flags, unsigned& copied)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(Http2Module::get_profile_stats());
 
     copied = len;

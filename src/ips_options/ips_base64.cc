@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 1998-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -24,7 +24,6 @@
 #endif
 
 #include "detection/detection_engine.h"
-#include "detection/treenodes.h"
 #include "hash/hash_key_operations.h"
 #include "framework/cursor.h"
 #include "framework/ips_option.h"
@@ -59,8 +58,8 @@ struct Base64DecodeData
 class Base64DecodeOption : public IpsOption
 {
 public:
-    Base64DecodeOption(const Base64DecodeData& c) : IpsOption(s_name)
-    { config = c; }
+    Base64DecodeOption(const Base64DecodeData& c) : IpsOption(s_name), config(c)
+    { }
 
 
     uint32_t hash() const override;
@@ -115,8 +114,9 @@ bool Base64DecodeOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus Base64DecodeOption::eval(Cursor& c, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(base64PerfStats);
-    DataBuffer& base64_decode_buffer = DetectionEngine::get_alt_buffer(p);
+    DataBuffer& base64_decode_buffer = DetectionEngine::acquire_alt_buffer(p);
     base64_decode_buffer.len = 0;
 
     Base64DecodeData* idx = (Base64DecodeData*)&config;
@@ -152,7 +152,7 @@ IpsOption::EvalStatus Base64DecodeOption::eval(Cursor& c, Packet* p)
     }
 
     if (sf_base64decode(base64_buf, base64_size, base64_decode_buffer.data,
-        sizeof(base64_decode_buffer.data), &base64_decode_buffer.len) != 0)
+        base64_decode_buffer.decode_blen, &base64_decode_buffer.len) != 0)
         return NO_MATCH;
 
     return MATCH;
@@ -228,7 +228,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* base64_decode_ctor(Module* p, OptTreeNode*)
+static IpsOption* base64_decode_ctor(Module* p, IpsInfo&)
 {
     B64DecodeModule* m = (B64DecodeModule*)p;
     return new Base64DecodeOption(m->data);
@@ -284,8 +284,9 @@ public:
 
 IpsOption::EvalStatus Base64DataOption::eval(Cursor& c, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(base64PerfStats);
-    const DataBuffer& base64_decode_buffer = DetectionEngine::get_alt_buffer(p);
+    const DataPointer& base64_decode_buffer = DetectionEngine::get_alt_buffer(p);
 
     if ( !base64_decode_buffer.len )
         return NO_MATCH;
@@ -300,9 +301,9 @@ IpsOption::EvalStatus Base64DataOption::eval(Cursor& c, Packet* p)
 //-------------------------------------------------------------------------
 
 static class IpsOption* base64_data_ctor(
-    Module*, OptTreeNode* otn)
+    Module*, IpsInfo& info)
 {
-    if ( !otn_has_plugin(otn, "base64_decode") )
+    if ( !IpsOption::has_plugin(info, "base64_decode") )
     {
         ParseError("base64_decode needs to be specified before base64_data in a rule");
         return nullptr;

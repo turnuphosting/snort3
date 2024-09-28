@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,11 +24,12 @@
 #include "packet.h"
 
 #include "detection/ips_context.h"
-#include "flow/expect_cache.h"
+#include "flow/expect_flow.h"
+#include "flow/flow_key.h"
 #include "framework/endianness.h"
 #include "log/obfuscator.h"
+#include "main/snort_config.h"
 #include "packet_io/active.h"
-#include "managers/codec_manager.h"
 
 #include "packet_manager.h"
 #include "vlan.h"
@@ -38,7 +39,7 @@ namespace snort
 {
 Packet::Packet(bool packet_data)
 {
-    layers = new Layer[CodecManager::get_max_layers()];
+    layers = new Layer[PacketManager::get_max_layers()];
     allocated = packet_data;
 
     if (!packet_data)
@@ -52,10 +53,7 @@ Packet::Packet(bool packet_data)
         pkt = new uint8_t[Codec::PKT_MAX];
     }
 
-    obfuscator = nullptr;
-    endianness = nullptr;
     active_inst = new Active();
-    action_inst = nullptr;
     reset();
 }
 
@@ -94,6 +92,7 @@ void Packet::reset()
     vlan_idx = 0;
     filtering_state.clear();
     sect = PS_NONE;
+    inspection_started_timestamp = 0;
 }
 
 void Packet::release_helpers()

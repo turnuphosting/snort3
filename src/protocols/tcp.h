@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -64,6 +64,13 @@ namespace tcp
 #define SOL_TCP        6    /* TCP level */
 
 #define GET_PKT_SEQ(p) (ntohl((p)->ptrs.tcph->th_seq))
+
+/* Macros to deal with sequence numbers - p810 TCP Illustrated vol 2 */
+#define SEQ_LT(a,b)  ((int)((a) - (b)) <  0)
+#define SEQ_LEQ(a,b) ((int)((a) - (b)) <= 0)
+#define SEQ_GT(a,b)  ((int)((a) - (b)) >  0)
+#define SEQ_GEQ(a,b) ((int)((a) - (b)) >= 0)
+#define SEQ_EQ(a,b)  ((int)((a) - (b)) == 0)
 
 constexpr uint8_t TCP_MIN_HEADER_LEN = 20; // this is actually the minimal TCP header length
 constexpr int OPT_TRUNC = -1;
@@ -176,6 +183,19 @@ struct TCPHdr
 
     inline void set_seq(uint32_t new_seq)
     { th_seq = htonl(new_seq); }
+
+    void stringify_flags(char* buf) const
+    {
+        *buf++ = (char)((th_flags & TH_RES1) ? '1' : '*');
+        *buf++ = (char)((th_flags & TH_RES2) ? '2' : '*');
+        *buf++ = (char)((th_flags & TH_URG)  ? 'U' : '*');
+        *buf++ = (char)((th_flags & TH_ACK)  ? 'A' : '*');
+        *buf++ = (char)((th_flags & TH_PUSH) ? 'P' : '*');
+        *buf++ = (char)((th_flags & TH_RST)  ? 'R' : '*');
+        *buf++ = (char)((th_flags & TH_SYN)  ? 'S' : '*');
+        *buf++ = (char)((th_flags & TH_FIN)  ? 'F' : '*');
+        *buf = '\0';
+    }
 };
 }  // namespace tcp
 }  // namespace snort

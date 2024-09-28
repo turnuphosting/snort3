@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -111,7 +111,7 @@ static const PegInfo latency_pegs[] =
 {
     { CountType::SUM, "total_packets", "total packets monitored" },
     { CountType::SUM, "total_usecs", "total usecs elapsed" },
-    { CountType::SUM, "max_usecs", "maximum usecs elapsed" },
+    { CountType::MAX, "max_usecs", "maximum usecs elapsed" },
     { CountType::SUM, "packet_timeouts", "packets that timed out" },
     { CountType::SUM, "total_rule_evals", "total rule evals monitored" },
     { CountType::SUM, "rule_eval_timeouts", "rule evals that timed out" },
@@ -203,10 +203,14 @@ bool LatencyModule::set(const char* fqn, Value& v, SnortConfig* sc)
 
 bool LatencyModule::end(const char*, int, SnortConfig* sc)
 {
-    PacketLatencyConfig& config = sc->latency->packet_latency;
+    PacketLatencyConfig& packet_config = sc->latency->packet_latency;
+    RuleLatencyConfig& rule_config = sc->latency->rule_latency;
 
-    if (config.max_time > CLOCK_ZERO)
-        config.force_enable = true;
+    if ( packet_config.max_time > CLOCK_ZERO )
+        packet_config.force_enable = true;
+
+    if ( rule_config.max_time > CLOCK_ZERO )
+        rule_config.force_enable = true;
 
     return true;
 }

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,6 +28,7 @@
 #include "detection/ips_context.h"
 #include "framework/policy_selector.h"
 #include "log/messages.h"
+#include "main/policy.h"
 #include "policy_selectors/int_set_to_string.h"
 #include "profiler/profiler.h"
 
@@ -77,9 +78,8 @@ protected:
 };
 
 AddressSpaceSelector::AddressSpaceSelector(const PolicySelectorApi* api_in,
-    std::vector<AddressSpaceSelection>& psv) : PolicySelector(api_in)
+    std::vector<AddressSpaceSelection>& psv) : PolicySelector(api_in), policy_selections(std::move(psv))
 {
-    policy_selections = std::move(psv);
     for (auto i = policy_selections.rbegin(); i != policy_selections.rend(); ++i)
     {
         std::sort((*i).addr_spaces.begin(), (*i).addr_spaces.end());
@@ -117,6 +117,7 @@ void AddressSpaceSelector::show() const
 
 bool AddressSpaceSelector::select_default_policies(uint32_t key, const SnortConfig* sc)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(address_space_selectPerfStats);
 
     address_space_select_stats.packets++;

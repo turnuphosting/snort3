@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2004-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -28,6 +28,7 @@
 #include "dns.h"
 
 #include "detection/detection_engine.h"
+#include "dns_config.h"
 #include "log/messages.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
@@ -35,6 +36,7 @@
 
 #include "dns_module.h"
 #include "dns_splitter.h"
+#include "pub_sub/dns_events.h"
 
 using namespace snort;
 
@@ -58,13 +60,12 @@ const PegInfo dns_peg_names[] =
 /*
  * Function prototype(s)
  */
-static void snort_dns(Packet* p);
+static void snort_dns(Packet* p, const DnsConfig* dns_config);
 
 unsigned DnsFlowData::inspector_id = 0;
 
 DnsFlowData::DnsFlowData() : FlowData(inspector_id)
 {
-    memset(&session, 0, sizeof(session));
     dnsstats.concurrent_sessions++;
     if(dnsstats.max_concurrent_sessions < dnsstats.concurrent_sessions)
         dnsstats.max_concurrent_sessions = dnsstats.concurrent_sessions;
@@ -74,6 +75,16 @@ DnsFlowData::~DnsFlowData()
 {
     assert(dnsstats.concurrent_sessions > 0);
     dnsstats.concurrent_sessions--;
+}
+
+bool DNSData::publish_response() const
+{
+    return (dns_config->publish_response and state == DNS_RESP_STATE_ANS_RR);
+}
+
+bool DNSData::has_events() const
+{
+    return !dns_events.empty();
 }
 
 static DNSData* SetNewDNSData(Packet* p)
@@ -109,7 +120,6 @@ static DNSData* get_dns_session_data(Packet* p, bool from_server, DNSData& udpSe
                 return nullptr;
         }
 
-        memset(&udpSessionData, 0, sizeof(udpSessionData));
         return &udpSessionData;
     }
 
@@ -280,7 +290,7 @@ static uint16_t ParseDNSHeader(
 }
 
 static uint16_t ParseDNSName(
-    const unsigned char* data, uint16_t bytes_unused, DNSData* dnsSessionData)
+    const unsigned char* data, uint16_t bytes_unused, DNSData* dnsSessionData, bool parse_dns_name = false)
 {
     uint16_t bytes_required = dnsSessionData->curr_txt.txt_len -
         dnsSessionData->curr_txt.txt_bytes_seen;
@@ -338,7 +348,26 @@ static uint16_t ParseDNSName(
                 {
                     /* If this one is a relative offset, read that extra byte */
                     dnsSessionData->curr_txt.offset |= *data;
+                    if (dnsSessionData->length > 0)
+                        dnsSessionData->curr_txt.offset += 2; // first two bytes are length in TCP
+
+                    if (parse_dns_name)
+                    {
+                        // parse recursively relative name
+                        dnsSessionData->curr_txt.name_state = DNS_RESP_STATE_NAME_SIZE;
+                        return ParseDNSName(&dnsSessionData->data[0] + dnsSessionData->curr_txt.offset,
+                            dnsSessionData->bytes_unused, dnsSessionData, parse_dns_name);
+                    }
                 }
+
+                if (parse_dns_name)
+                {
+                    if (!dnsSessionData->curr_txt.dns_name.empty())
+                        dnsSessionData->curr_txt.dns_name += ".";
+
+                    dnsSessionData->curr_txt.dns_name.append((const char*)data, bytes_required);
+                }
+
                 data += bytes_required;
                 dnsSessionData->bytes_seen_curr_rec += bytes_required;
                 dnsSessionData->curr_txt.txt_bytes_seen += bytes_required;
@@ -384,7 +413,7 @@ static uint16_t ParseDNSQuestion(
         if (dnsSessionData->curr_txt.name_state == DNS_RESP_STATE_NAME_COMPLETE)
         {
             dnsSessionData->curr_rec_state = DNS_RESP_STATE_Q_TYPE;
-            memset(&dnsSessionData->curr_txt, 0, sizeof(DNSNameState));
+            dnsSessionData->curr_txt = DNSNameState();
             data = data + bytes_used;
             bytes_unused = new_bytes_unused;
 
@@ -451,13 +480,16 @@ static uint16_t ParseDNSAnswer(
 
     if (dnsSessionData->curr_rec_state < DNS_RESP_STATE_RR_NAME_COMPLETE)
     {
+        if (dnsSessionData->publish_response())
+            dnsSessionData->cur_fqdn_event = DnsResponseFqdn(data, bytes_unused, dnsSessionData);
+
         uint16_t new_bytes_unused = ParseDNSName(data, bytes_unused, dnsSessionData);
         uint16_t bytes_used = bytes_unused - new_bytes_unused;
 
         if (dnsSessionData->curr_txt.name_state == DNS_RESP_STATE_NAME_COMPLETE)
         {
             dnsSessionData->curr_rec_state = DNS_RESP_STATE_RR_TYPE;
-            memset(&dnsSessionData->curr_txt, 0, sizeof(DNSNameState));
+            dnsSessionData->curr_txt = DNSNameState();
             data = data + bytes_used;
         }
         bytes_unused = new_bytes_unused;
@@ -533,7 +565,6 @@ static uint16_t ParseDNSAnswer(
             if ( !--bytes_unused )
                 return 0;
         }
-        dnsSessionData->curr_rec_state = DNS_RESP_STATE_RR_RDLENGTH;
         // Fall through
 
     case DNS_RESP_STATE_RR_RDLENGTH:
@@ -717,8 +748,22 @@ static uint16_t ParseDNSRData(
         bytes_unused = SkipDNSRData(data, bytes_unused, dnsSessionData);
         break;
     case DNS_RR_TYPE_A:
-    case DNS_RR_TYPE_NS:
+    case DNS_RR_TYPE_AAAA:
+        if (dnsSessionData->publish_response())
+        {
+            dnsSessionData->dns_events.add_fqdn(dnsSessionData->cur_fqdn_event, dnsSessionData->curr_rr.ttl);
+            dnsSessionData->dns_events.add_ip(DnsResponseIp(data, dnsSessionData->curr_rr.type));
+        }
+
+        bytes_unused = SkipDNSRData(data, bytes_unused, dnsSessionData);
+        break;
     case DNS_RR_TYPE_CNAME:
+        if (dnsSessionData->publish_response())
+            dnsSessionData->dns_events.add_fqdn(dnsSessionData->cur_fqdn_event, dnsSessionData->curr_rr.ttl);
+
+        bytes_unused = SkipDNSRData(data, bytes_unused, dnsSessionData);
+        break;
+    case DNS_RR_TYPE_NS:
     case DNS_RR_TYPE_SOA:
     case DNS_RR_TYPE_WKS:
     case DNS_RR_TYPE_PTR:
@@ -736,11 +781,17 @@ static uint16_t ParseDNSRData(
     return bytes_unused;
 }
 
-static void ParseDNSResponseMessage(Packet* p, DNSData* dnsSessionData)
+static void ParseDNSResponseMessage(Packet* p, DNSData* dnsSessionData, bool& needNextPacket)
 {
     uint16_t bytes_unused = p->dsize;
     int i;
     const unsigned char* data = p->data;
+    if (dnsSessionData->dns_config->publish_response and dnsSessionData->data.empty())
+    {
+        dnsSessionData->data.resize(bytes_unused);
+        memcpy((void*)&dnsSessionData->data[0], data, bytes_unused);
+        dnsSessionData->bytes_unused = bytes_unused;
+    }
 
     while (bytes_unused)
     {
@@ -767,7 +818,7 @@ static void ParseDNSResponseMessage(Packet* p, DNSData* dnsSessionData)
             }
             else
             {
-                /* No more data */
+                needNextPacket = true;
                 return;
             }
 
@@ -800,7 +851,7 @@ static void ParseDNSResponseMessage(Packet* p, DNSData* dnsSessionData)
                 }
                 else
                 {
-                    /* No more data */
+                    needNextPacket = true;
                     return;
                 }
             }
@@ -819,7 +870,7 @@ static void ParseDNSResponseMessage(Packet* p, DNSData* dnsSessionData)
 
                 if (bytes_unused == 0)
                 {
-                    /* No more data */
+                    needNextPacket = true;
                     return;
                 }
 
@@ -835,7 +886,7 @@ static void ParseDNSResponseMessage(Packet* p, DNSData* dnsSessionData)
                     bytes_unused = ParseDNSRData(data, bytes_unused, dnsSessionData);
                     if (dnsSessionData->curr_rec_state != DNS_RESP_STATE_RR_COMPLETE)
                     {
-                        /* Out of data, pick up on the next packet */
+                        needNextPacket = true;
                         return;
                     }
                     else
@@ -847,7 +898,7 @@ static void ParseDNSResponseMessage(Packet* p, DNSData* dnsSessionData)
                         if (dnsSessionData->curr_rr.type == DNS_RR_TYPE_TXT)
                         {
                             /* Reset the state tracking for this record */
-                            memset(&dnsSessionData->curr_txt, 0, sizeof(DNSNameState));
+                            dnsSessionData->curr_txt = DNSNameState();
                         }
                         data = p->data + (p->dsize - bytes_unused);
                     }
@@ -892,7 +943,7 @@ static void ParseDNSResponseMessage(Packet* p, DNSData* dnsSessionData)
                         if (dnsSessionData->curr_rr.type == DNS_RR_TYPE_TXT)
                         {
                             /* Reset the state tracking for this record */
-                            memset(&dnsSessionData->curr_txt, 0, sizeof(DNSNameState));
+                            dnsSessionData->curr_txt = DNSNameState();
                         }
                         data = p->data + (p->dsize - bytes_unused);
                     }
@@ -903,7 +954,7 @@ static void ParseDNSResponseMessage(Packet* p, DNSData* dnsSessionData)
             dnsSessionData->curr_rec = 0;
         /* Fall through */
         case DNS_RESP_STATE_ADD_RR: /* ADDITIONALS section */
-            for (i=dnsSessionData->curr_rec; i<dnsSessionData->hdr.authorities; i++)
+            for (i=dnsSessionData->curr_rec; i<dnsSessionData->hdr.additionals; i++)
             {
                 bytes_unused = ParseDNSAnswer(data, bytes_unused, dnsSessionData);
 
@@ -937,7 +988,7 @@ static void ParseDNSResponseMessage(Packet* p, DNSData* dnsSessionData)
                         if (dnsSessionData->curr_rr.type == DNS_RR_TYPE_TXT)
                         {
                             /* Reset the state tracking for this record */
-                            memset(&dnsSessionData->curr_txt, 0, sizeof(DNSNameState));
+                            dnsSessionData->curr_txt = DNSNameState();
                         }
                         data = p->data + (p->dsize - bytes_unused);
                     }
@@ -951,8 +1002,108 @@ static void ParseDNSResponseMessage(Packet* p, DNSData* dnsSessionData)
     }
 }
 
-static void snort_dns(Packet* p)
+SfIp DnsResponseIp::get_ip()
 {
+    SfIp ip = {};
+    int family = 0;
+    switch (type)
+    {
+        case DNS_RR_TYPE_A:
+            family = AF_INET;
+            break;
+        case DNS_RR_TYPE_AAAA:
+            family = AF_INET6;
+            break;
+    }
+
+    if (family and strlen((const char*)data))
+        ip.set(data, family);
+
+    return ip;
+}
+
+FqdnTtl DnsResponseFqdn::get_fqdn()
+{
+    std::string dns_name;
+    ParseDNSName(data, bytes_unused, dnsSessionData.get(), true);
+
+    if (dnsSessionData->curr_txt.name_state == DNS_RESP_STATE_NAME_COMPLETE)
+        dnsSessionData->curr_txt.get_dns_name(dns_name);
+
+    return FqdnTtl(dns_name, dnsSessionData->curr_rr.ttl);
+}
+
+void DnsResponseFqdn::update_ttl(uint32_t ttl)
+{
+    dnsSessionData->curr_rr.ttl = ttl;
+}
+
+//-------------------------------------------------------------------------
+// class stuff
+//-------------------------------------------------------------------------
+
+class Dns : public Inspector
+{
+public:
+    Dns(DnsModule*);
+    ~Dns() override;
+
+    void eval(Packet*) override;
+    StreamSplitter* get_splitter(bool) override;
+    bool configure(snort::SnortConfig*) override;
+    void show(const snort::SnortConfig*) const override;
+    static unsigned get_pub_id() { return pub_id; }
+
+    bool supports_no_ips() const override
+    { return true; }
+
+private:
+    const DnsConfig* config = nullptr;
+    static unsigned pub_id;
+};
+
+unsigned Dns::pub_id = 0;
+
+Dns::Dns(DnsModule* m)
+{
+    config = m->get_config();
+    assert(config);
+}
+
+Dns::~Dns()
+{
+    delete config;
+}
+
+void Dns::show(const SnortConfig*) const
+{
+    config->show();
+}
+
+void Dns::eval(Packet* p)
+{
+    // precondition - what we registered for
+    assert((p->is_udp() and p->dsize and p->data) or p->has_tcp_data() or p->has_udp_quic_data());
+    assert(p->flow);
+
+    ++dnsstats.packets;
+    snort_dns(p, config);
+}
+
+bool Dns::configure(snort::SnortConfig*)
+{
+    pub_id = DataBus::get_id(dns_pub_key);
+    return true;
+}
+
+StreamSplitter* Dns::get_splitter(bool c2s)
+{
+    return new DnsSplitter(c2s);
+}
+
+static void snort_dns(Packet* p, const DnsConfig* dns_config)
+{
+    // cppcheck-suppress unreadVariable
     Profile profile(dnsPerfStats);
 
     // For TCP, do a few extra checks...
@@ -989,45 +1140,22 @@ static void snort_dns(Packet* p)
     if (dnsSessionData->flags & DNS_FLAG_NOT_DNS)
         return;
 
+    dnsSessionData->dns_config = dns_config;
     if ( from_server )
     {
-        ParseDNSResponseMessage(p, dnsSessionData);
+        bool needNextPacket = false;
+        ParseDNSResponseMessage(p, dnsSessionData, needNextPacket);
+
+        if (!needNextPacket and dnsSessionData->has_events())
+            DataBus::publish(Dns::get_pub_id(), DnsEventIds::DNS_RESPONSE_DATA, dnsSessionData->dns_events);
+
+        if (p->type() == PktType::UDP)
+            p->flow->session_state |= STREAM_STATE_CLOSED;
     }
     else
     {
         dnsstats.requests++;
     }
-}
-
-//-------------------------------------------------------------------------
-// class stuff
-//-------------------------------------------------------------------------
-
-class Dns : public Inspector
-{
-public:
-    Dns(DnsModule*);
-
-    void eval(Packet*) override;
-    StreamSplitter* get_splitter(bool) override;
-};
-
-Dns::Dns(DnsModule*)
-{ }
-
-void Dns::eval(Packet* p)
-{
-    // precondition - what we registered for
-    assert((p->is_udp() and p->dsize and p->data) or p->has_tcp_data());
-    assert(p->flow);
-
-    ++dnsstats.packets;
-    snort_dns(p);
-}
-
-StreamSplitter* Dns::get_splitter(bool c2s)
-{
-    return new DnsSplitter(c2s);
 }
 
 //-------------------------------------------------------------------------
@@ -1091,6 +1219,10 @@ SO_PUBLIC const BaseApi* snort_plugins[] =
     nullptr
 };
 #else
-const BaseApi* sin_dns = &dns_api.base;
+const BaseApi* sin_dns[] =
+{
+    &dns_api.base,
+    nullptr
+};
 #endif
 

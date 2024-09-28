@@ -1,5 +1,5 @@
 ////--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -32,9 +32,9 @@
 #include "framework/mpse_batch.h"
 #include "log/messages.h"
 #include "main/snort_config.h"
+#include "main/thread_config.h"
 #include "managers/mpse_manager.h"
-#include "search_engines/pat_stats.h"
-#include "utils/stats.h"
+#include "profiler/time_profiler_defs.h"
 
 //-------------------------------------------------------------------------
 // base stuff
@@ -53,11 +53,9 @@ const SnortConfig* SnortConfig::get_conf()
 { return snort_conf; }
 
 SnortConfig::SnortConfig(const SnortConfig* const, const char*)
-{
-    state = &s_state;
-    num_slots = 1;
-    fast_pattern_config = new FastPatternConfig();
-}
+    : daq_config(nullptr), fast_pattern_config(new FastPatternConfig()), state(&s_state), num_slots(1),
+    thread_config(nullptr)
+{ }
 
 SnortConfig::~SnortConfig() = default;
 
@@ -78,10 +76,10 @@ void SnortConfig::release_scratch(int)
 DataBus::DataBus() = default;
 DataBus::~DataBus() = default;
 
-unsigned get_instance_id()
-{ return 0; }
+THREAD_LOCAL bool snort::TimeProfilerStats::enabled;
 
-THREAD_LOCAL PatMatQStat pmqs;
+unsigned get_instance_id() { return 0; }
+unsigned ThreadConfig::get_instance_max() { return 1; }
 
 unsigned parse_errors = 0;
 void ParseError(const char*, ...)
@@ -104,13 +102,13 @@ void md5(const unsigned char*, size_t, unsigned char*) { }
 FastPatternConfig::FastPatternConfig()
 { search_api = get_test_api(); }
 
-const char* FastPatternConfig::get_search_method()
+const char* FastPatternConfig::get_search_method() const
 { return search_api ? search_api->base.name : nullptr; }
 
 using namespace snort;
 
 void show_stats(PegCount*, const PegInfo*, unsigned, const char*) { }
-void show_stats(PegCount*, const PegInfo*, const IndexVec&, const char*, FILE*) { }
+void show_stats(PegCount*, const PegInfo*, const std::vector<unsigned>&, const char*, FILE*) { }
 
 Mpse* mpse = nullptr;
 

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,7 +26,6 @@
 
 #include <cassert>
 
-#include "main/thread.h"
 #include "utils/util.h"
 
 #ifdef UNIT_TEST
@@ -396,7 +395,7 @@ static inline fd_status_t Handle_State_DICT_OBJECT(fd_session_t* SessionPtr, uin
            and handles other diversion such as nested Dict objects.
            If the /Filter token doesn't exist then we don't fill the
            Filter_Spec_Buf[].  If in skip mode, no need to look for token. */
-        char Filter_Tok[] = TOK_DICT_FILT;
+        static const char Filter_Tok[] = TOK_DICT_FILT;
 
         if ( (p->Sub_State == P_DICT_ACTIVE) && c == Filter_Tok[p->Elem_Index++] )
         {

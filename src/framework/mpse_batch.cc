@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,7 +24,6 @@
 #include "mpse_batch.h"
 
 #include "profiler/profiler_defs.h"
-#include "search_engines/pat_stats.h"
 #include "managers/mpse_manager.h"
 #include "managers/module_manager.h"
 #include "main/snort_config.h"

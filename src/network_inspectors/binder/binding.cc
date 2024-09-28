@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -45,7 +45,7 @@ void Binding::clear()
     when.ips_id_user = 0;
     when.protos = PROTO_BIT__ANY_TYPE;
     when.role = BindWhen::BR_EITHER;
-    when.svc.clear();
+    when.svc_list.clear();
 
     if (when.src_nets)
     {
@@ -107,6 +107,7 @@ void Binding::configure(const SnortConfig* sc)
     {
         const char* name = use.name.c_str();
         Inspector* ins = InspectorManager::get_inspector(name, use.global_type, sc);
+
         if (ins)
         {
             switch (ins->get_api()->type)
@@ -563,7 +564,11 @@ inline bool Binding::check_tenant(const Flow& flow) const
     if (!when.has_criteria(BindWhen::Criteria::BWC_TENANTS))
         return true;
 
-    return when.tenants.count(flow.tenant) != 0;
+#ifndef DISABLE_TENANT_ID
+    return when.tenants.count(flow.key->tenant_id) != 0;
+#else
+    return when.tenants.count(0) != 0;
+#endif
 }
 
 inline bool Binding::check_tenant(const Packet* p) const
@@ -582,7 +587,7 @@ inline bool Binding::check_service(const Flow& flow) const
     if (!flow.service)
         return false;
 
-    return when.svc == flow.service;
+    return when.svc_list.find(flow.service) != when.svc_list.end();
 }
 
 inline bool Binding::check_service(const char* service) const
@@ -592,7 +597,7 @@ inline bool Binding::check_service(const char* service) const
     if (!when.has_criteria(BindWhen::Criteria::BWC_SVC))
         return false;
 
-    return when.svc == service;
+    return when.svc_list.find(service) != when.svc_list.end();
 }
 
 inline bool Binding::check_service() const

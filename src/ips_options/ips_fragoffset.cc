@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -37,9 +37,8 @@ static THREAD_LOCAL ProfileStats fragOffsetPerfStats;
 class FragOffsetOption : public IpsOption
 {
 public:
-    FragOffsetOption(const RangeCheck& c) :
-        IpsOption(s_name)
-    { config = c; }
+    FragOffsetOption(const RangeCheck& c) : IpsOption(s_name), config(c)
+    { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -76,6 +75,7 @@ bool FragOffsetOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus FragOffsetOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(fragOffsetPerfStats);
 
     if (!p->has_ip())
@@ -149,7 +149,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* fragoffset_ctor(Module* p, OptTreeNode*)
+static IpsOption* fragoffset_ctor(Module* p, IpsInfo&)
 {
     FragOffsetModule* m = (FragOffsetModule*)p;
     return new FragOffsetOption(m->data);

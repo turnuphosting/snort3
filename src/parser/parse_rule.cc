@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -23,14 +23,15 @@
 
 #include "parse_rule.h"
 
-#include "actions/actions.h"
-#include "detection/detect.h"
+#include "detection/extract.h"
 #include "detection/fp_config.h"
 #include "detection/fp_utils.h"
 #include "detection/rtn_checks.h"
 #include "detection/treenodes.h"
 #include "framework/decode_data.h"
+#include "framework/ips_action.h"
 #include "hash/xhash.h"
+#include "log/log_stats.h"
 #include "log/messages.h"
 #include "main/snort_config.h"
 #include "main/thread_config.h"
@@ -42,7 +43,6 @@
 #include "sfip/sf_vartable.h"
 #include "target_based/snort_protocols.h"
 #include "utils/util.h"
-#include "ips_options/extract.h"
 
 #include "parser.h"
 #include "parse_conf.h"
@@ -93,7 +93,11 @@ static bool buf_is_set = false;
 static std::string s_type;
 static std::string s_body;
 
+static std::list<const char*> buffer_setters;
+
 static bool action_file_id = false;
+static bool fp_file_id = false;
+static bool only_file_data = true;
 static bool strict_rtn_reduction = false;
 
 struct SoRule
@@ -784,15 +788,15 @@ void parse_rule_type(SnortConfig* sc, const char* s, RuleTreeNode& rtn)
 
     assert(s);
 
-    rtn.action = Actions::get_type(s);
+    rtn.action = IpsAction::get_type(s);
 
-    if ( !Actions::is_valid_action(rtn.action) )
+    if ( !IpsAction::is_valid_action(rtn.action) )
     {
         s_ignore = true;
         ParseError("unknown rule action '%s'", s);
         return;
     }
-    if (!strcmp(s,"file_id"))
+    if (!strcmp(s, "file_id"))
         action_file_id = true;
     else
         action_file_id = false;
@@ -1014,7 +1018,22 @@ void parse_rule_opt_end(SnortConfig* sc, const char* key, OptTreeNode* otn)
     CursorActionType cat = ips ? ips->get_cursor_type() : CAT_NONE;
 
     if ( cat > CAT_ADJUST )
+    {
         buf_is_set = true;
+        if ( action_file_id and strcmp(ips->get_name(), "file_data") )
+            only_file_data = false;
+    }
+
+    if ( ips and action_file_id )
+    {
+        if ( !strcmp(ips->get_name(), "content") or !strcmp(ips->get_name(), "regex") )
+            fp_file_id = true;
+    }
+
+    // only add unique buffer setters
+    if ( !action_file_id and ips and ips->is_buffer_setter() and
+        std::find(buffer_setters.cbegin(), buffer_setters.cend(), ips->get_name()) == buffer_setters.cend() )
+        buffer_setters.emplace_back(ips->get_name());
 
     if ( type != OPT_TYPE_META )
         otn->num_detection_opts++;
@@ -1057,6 +1076,8 @@ OptTreeNode* parse_rule_open(SnortConfig* sc, RuleTreeNode& rtn, bool stub)
     s_capture = sc->dump_rule_meta();
     s_body = "(";
     buf_is_set = false;
+
+    buffer_setters.clear();
 
     return otn;
 }
@@ -1157,6 +1178,28 @@ void parse_rule_close(SnortConfig* sc, RuleTreeNode& rtn, OptTreeNode* otn)
         return;
     }
 
+    if ( action_file_id )
+    {
+        if ( !otn->sigInfo.file_id )
+            ParseError("file_id rule %u:%u:%u requires file_meta option", otn->sigInfo.gid,
+                otn->sigInfo.sid, otn->sigInfo.rev);
+
+        if ( !fp_file_id )
+            ParseError("file_id rule %u:%u:%u requires a fast-pattern option",
+                otn->sigInfo.gid, otn->sigInfo.sid, otn->sigInfo.rev);
+
+        if ( buf_is_set and !only_file_data )
+            ParseError("file_id rule %u:%u:%u disallows IPS buffers that are not file_data",
+                otn->sigInfo.gid, otn->sigInfo.sid, otn->sigInfo.rev);
+
+        if ( !buf_is_set )
+            ParseError("file_id rule %u:%u:%u requires file_data option",
+                otn->sigInfo.gid, otn->sigInfo.sid, otn->sigInfo.rev);
+
+        only_file_data = true;
+        fp_file_id = false;
+    }
+
     RuleTreeNode* tmp = s_so_rule ? s_so_rule->rtn : &rtn;
     RuleTreeNode* new_rtn = transfer_rtn(tmp);
     addRtnToOtn(sc, otn, new_rtn);
@@ -1214,6 +1257,18 @@ void parse_rule_close(SnortConfig* sc, RuleTreeNode& rtn, OptTreeNode* otn)
 
     if ( otn->sigInfo.message.empty() )
         otn->sigInfo.message = "\"no msg in rule\"";
+
+    if ( !otn->sigInfo.file_id and buffer_setters.size() )
+    {
+        otn->buffer_setters = new const char*[buffer_setters.size() + 1];
+
+        size_t idx = 0;
+        for (auto& setter : buffer_setters)
+        {
+            otn->buffer_setters[idx++] = setter;
+        }
+        otn->buffer_setters[idx] = nullptr;
+    }
 
     OptFpList* fpl = AddOptFuncToList(nullptr, otn);
     fpl->type = RULE_OPTION_TYPE_LEAF_NODE;

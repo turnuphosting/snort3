@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -29,11 +29,10 @@
 #include <sys/resource.h>
 
 #include "flow/flow.h"
-#include "log/messages.h"
 #include "main/analyzer_command.h"
-#include "managers/inspector_manager.h"
+#include "main/snort_config.h"
 #include "managers/module_manager.h"
-#include "packet_tracer/packet_tracer.h"
+#include "packet_io/packet_tracer.h"
 #include "profiler/profiler.h"
 #include "pub_sub/appid_event_ids.h"
 #include "pub_sub/intrinsic_event_ids.h"
@@ -64,14 +63,16 @@
 
 using namespace snort;
 THREAD_LOCAL ThirdPartyAppIdContext* pkt_thread_tp_appid_ctxt = nullptr;
-THREAD_LOCAL OdpThreadContext* odp_thread_local_ctxt = nullptr;
+OdpControlContext* odp_control_thread_ctxt = nullptr;
+THREAD_LOCAL OdpPacketThreadContext* odp_thread_local_ctxt = nullptr;
 THREAD_LOCAL OdpContext* pkt_thread_odp_ctxt = nullptr;
 
-unsigned AppIdInspector::pub_id = 0;
+unsigned AppIdInspector::cached_global_pub_id = 0;
+static THREAD_LOCAL unsigned appid_pub_id = 0;
 
 static THREAD_LOCAL PacketTracer::TracerMute appid_mute;
 
-static void add_appid_to_packet_trace(Flow& flow, const OdpContext& odp_context)
+static void add_appid_to_packet_trace(const Flow& flow, const OdpContext& odp_context)
 {
     AppIdSession* session = appid_api.get_appid_session(flow);
     // Skip sessions using old odp context after odp reload
@@ -95,29 +96,24 @@ static void add_appid_to_packet_trace(Flow& flow, const OdpContext& odp_context)
         (misc_name ? misc_name : ""), misc_id);
 }
 
-AppIdInspector::AppIdInspector(AppIdModule& mod)
+AppIdInspector::AppIdInspector(AppIdModule& mod) : config(mod.get_data()), ctxt(*config)
 {
-    config = mod.get_data();
-    assert(config);
 }
 
 AppIdInspector::~AppIdInspector()
 {
-    if (ctxt)
-        delete ctxt;
     delete config;
 }
 
-AppIdContext& AppIdInspector::get_ctxt() const
+unsigned AppIdInspector::get_pub_id()
 {
-    assert(ctxt);
-    return *ctxt;
+    return appid_pub_id;
 }
 
 bool AppIdInspector::configure(SnortConfig* sc)
 {
-    assert(!ctxt);
-
+    // cppcheck-suppress unreadVariable
+    Profile profile(appid_perf_stats);
     struct rusage ru;
     long prev_maxrss = -1;
     #ifdef REG_TEST
@@ -130,19 +126,19 @@ bool AppIdInspector::configure(SnortConfig* sc)
     }
     #endif
 
-    ctxt = new AppIdContext(const_cast<AppIdConfig&>(*config));
-    ctxt->init_appid(sc, *this);
+    assert(sc);
+    config->map_app_names_to_snort_ids(*sc);
+    ctxt.init_appid(sc, *this);
 
     #ifdef REG_TEST
     if ( config->log_memory_and_pattern_count )
     {
     #endif
         if ( prev_maxrss == -1 or getrusage(RUSAGE_SELF, &ru) == -1 )
-            ErrorMessage("appid: fetching memory usage failed\n");
+            appid_log(nullptr, TRACE_ERROR_LEVEL, "appid: fetching memory usage failed\n");
         else
-            LogMessage("appid: MaxRss diff: %li\n", ru.ru_maxrss - prev_maxrss);
-
-        LogMessage("appid: patterns loaded: %u\n", ctxt->get_odp_ctxt().get_pattern_count());
+            appid_log(nullptr, TRACE_INFO_LEVEL, "appid: MaxRss diff: %li\n", ru.ru_maxrss - prev_maxrss);
+        appid_log(nullptr, TRACE_INFO_LEVEL, "appid: patterns loaded: %u\n", ctxt.get_odp_ctxt().get_pattern_count());
     #ifdef REG_TEST
     }
     #endif
@@ -158,7 +154,7 @@ bool AppIdInspector::configure(SnortConfig* sc)
     DataBus::subscribe_global(dce_tcp_pub_key, DceTcpEventIds::EXP_SESSION, new DceExpSsnEventHandler(), *sc);
     DataBus::subscribe_global(ssh_pub_key, SshEventIds::STATE_CHANGE, new SshEventHandler(), *sc);
     DataBus::subscribe_global(cip_pub_key, CipEventIds::DATA, new CipEventHandler(*this), *sc);
-    DataBus::subscribe_global(external_pub_key, ExternalEventIds::DATA_DECRYPT, new DataDecryptEventHandler(), *sc);
+    DataBus::subscribe_global(external_pub_key, ExternalEventIds::DATA_DECRYPT, new DataDecryptEventHandler(*this), *sc);
 
     DataBus::subscribe_global(external_pub_key, ExternalEventIds::EVE_PROCESS,
         new AppIdEveProcessEventHandler(*this), *sc);
@@ -169,7 +165,8 @@ bool AppIdInspector::configure(SnortConfig* sc)
     DataBus::subscribe_global(intrinsic_pub_key, IntrinsicEventIds::FLOW_NO_SERVICE,
          new AppIdServiceEventHandler(*this), *sc);
 
-    pub_id = DataBus::get_id(appid_pub_key);
+    cached_global_pub_id = DataBus::get_id(appid_pub_key);
+    appid_pub_id = cached_global_pub_id;
     return true;
 }
 
@@ -180,23 +177,24 @@ void AppIdInspector::show(const SnortConfig*) const
 
 void AppIdInspector::tinit()
 {
+    appid_pub_id = cached_global_pub_id;
     appid_mute = PacketTracer::get_mute();
 
     AppIdStatistics::initialize_manager(*config);
 
     assert(!pkt_thread_odp_ctxt);
-    pkt_thread_odp_ctxt = &(ctxt->get_odp_ctxt());
+    pkt_thread_odp_ctxt = &ctxt.get_odp_ctxt();
 
     assert(!odp_thread_local_ctxt);
-    odp_thread_local_ctxt = new OdpThreadContext();
-    odp_thread_local_ctxt->initialize(SnortConfig::get_conf(), *ctxt);
+    odp_thread_local_ctxt = new OdpPacketThreadContext;
+    odp_thread_local_ctxt->initialize(SnortConfig::get_conf());
 
     AppIdServiceState::initialize(config->memcap);
     assert(!pkt_thread_tp_appid_ctxt);
-    pkt_thread_tp_appid_ctxt = ctxt->get_tp_appid_ctxt();
+    pkt_thread_tp_appid_ctxt = ctxt.get_tp_appid_ctxt();
     if (pkt_thread_tp_appid_ctxt)
         pkt_thread_tp_appid_ctxt->tinit();
-    if (ctxt->config.log_all_sessions)
+    if (config->log_all_sessions)
         appidDebug->set_enabled(true);
      if ( snort::HighAvailabilityManager::active() )
         AppIdHAManager::tinit();
@@ -224,6 +222,7 @@ void AppIdInspector::tear_down(SnortConfig*)
 
 void AppIdInspector::eval(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(appid_perf_stats);
     appid_stats.packets++;
 
@@ -231,7 +230,7 @@ void AppIdInspector::eval(Packet* p)
     if (p->flow)
     {
         if (PacketTracer::is_daq_activated())
-            PacketTracer::pt_timer_start();
+            PacketTracer::restart_timer();
 
         AppIdDiscovery::do_application_discovery(p, *this, *pkt_thread_odp_ctxt, pkt_thread_tp_appid_ctxt);
         // FIXIT-L tag verdict reason as appid for daq
@@ -260,18 +259,21 @@ static void appid_inspector_pinit()
 {
     AppIdSession::init();
     TPLibHandler::get();
+    AppIdPegCounts::init_peg_info();
 }
 
 static void appid_inspector_pterm()
 {
     AppIdContext::pterm();
     TPLibHandler::pfini();
+    AppIdPegCounts::cleanup_peg_info();
 }
 
 static void appid_inspector_tinit()
 {
     AppIdPegCounts::init_pegs();
-    appidDebug = new AppIdDebug();
+    if (!appidDebug)
+        appidDebug = new AppIdDebug();
 }
 
 static void appid_inspector_tterm()
@@ -281,6 +283,7 @@ static void appid_inspector_tterm()
     AppIdPegCounts::cleanup_pegs();
     AppIdServiceState::clean();
     delete appidDebug;
+    appidDebug = nullptr;
 }
 
 static Inspector* appid_inspector_ctor(Module* m)

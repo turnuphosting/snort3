@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2012-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -34,27 +34,28 @@
 #include <iostream>
 #include <iomanip>
 
-#include "hash/hashes.h"
+#include "detection/fp_detect.h"
 #include "framework/data_bus.h"
-#include "main/snort_config.h"
 #include "managers/inspector_manager.h"
-#include "packet_tracer/packet_tracer.h"
+#include "hash/hashes.h"
+#include "helpers/utf.h"
+#include "main/snort_config.h"
+#include "packet_io/packet_tracer.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
 #include "pub_sub/intrinsic_event_ids.h"
 #include "utils/util.h"
-#include "utils/util_utf.h"
 
 #include "file_api.h"
+#include "file_cache.h"
 #include "file_capture.h"
 #include "file_config.h"
-#include "file_cache.h"
 #include "file_flows.h"
-#include "file_service.h"
-#include "file_segment.h"
-#include "file_stats.h"
+#include "file_inspect.h"
 #include "file_module.h"
-#include "detection/fp_detect.h"
+#include "file_segment.h"
+#include "file_service.h"
+#include "file_stats.h"
 
 using namespace snort;
 
@@ -109,8 +110,11 @@ FileInfo::~FileInfo ()
         delete[] sha256;
 }
 
-void FileInfo::copy(const FileInfo& other)
+void FileInfo::copy(const FileInfo& other, bool clear_data)
 {
+    if (&other == this)
+        return;
+
     if (other.sha256)
     {
         sha256 = new uint8_t[SHA256_HASH_SIZE];
@@ -131,8 +135,13 @@ void FileInfo::copy(const FileInfo& other)
     file_capture_enabled = other.file_capture_enabled;
     file_state = other.file_state;
     pending_expire_time = other.pending_expire_time;
-    // only one copy of file capture
-    file_capture = nullptr;
+    if (clear_data)
+    {
+        // only one copy of file capture
+        file_capture = nullptr;
+        policy_id = 0;
+        user_file_data = nullptr;
+    }
 }
 
 FileInfo::FileInfo(const FileInfo& other)
@@ -152,14 +161,13 @@ FileInfo& FileInfo::operator=(const FileInfo& other)
 
 /*File properties*/
 
-void FileInfo::set_file_name(const char* name, uint32_t name_size)
+void FileInfo::set_file_name(const char* name, uint32_t name_size, bool fn_set)
 {
     if (name and name_size)
-    {
         file_name.assign(name, name_size);
-    }
 
-    file_name_set = true;
+    if (fn_set)
+        file_name_set = fn_set;
 }
 
 void FileInfo::set_url(const char* url_name, uint32_t url_size)
@@ -309,7 +317,7 @@ void FileInfo::set_file_data(UserFileDataBase* fd)
     user_file_data = fd;
 }
 
-UserFileDataBase* FileInfo::get_file_data()
+UserFileDataBase* FileInfo::get_file_data() const
 {
     return user_file_data;
 }
@@ -328,10 +336,11 @@ FileContext::~FileContext ()
 {
     if (file_signature_context)
         snort_free(file_signature_context);
+
     if (file_capture)
         stop_file_capture();
-    if (file_segments)
-        delete file_segments;
+
+    delete file_segments;
     InspectorManager::release(inspector);
 }
 
@@ -461,6 +470,7 @@ void FileContext::check_policy(Flow* flow, FileDirection dir, FilePolicyBase* po
 bool FileContext::process(Packet* p, const uint8_t* file_data, int data_size,
     FilePosition position, FilePolicyBase* policy)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(file_perf_stats);
     Flow* flow = p->flow;
 
@@ -624,17 +634,16 @@ bool FileContext::process(Packet* p, const uint8_t* file_data, int data_size,
  * 3) file magics are exhausted in depth
  *
  */
-void FileContext::find_file_type_from_ips(Packet* pkt, const uint8_t* file_data, int
-    data_size,
+void FileContext::find_file_type_from_ips(Packet* pkt, const uint8_t* file_data, int data_size,
     FilePosition position)
 {
     bool depth_exhausted = false;
-    bool set_file_context = false;
 
     if ((int64_t)processed_bytes + data_size >= config->file_type_depth)
     {
         data_size = config->file_type_depth - processed_bytes;
-        assert(data_size > 0);
+        if (data_size < 0)
+	        return;
         depth_exhausted = true;
     }
     const FileConfig* const conf = get_file_config();
@@ -649,17 +658,20 @@ void FileContext::find_file_type_from_ips(Packet* pkt, const uint8_t* file_data,
     p->packet_flags |= PKT_ALLOW_MULTIPLE_DETECT;
     p->proto_bits |= PROTO_BIT__PDU;
 
+    bool set_file_context = false;
     FileFlows* files = FileFlows::get_file_flows(p->flow, false);
-    if (files and (!files->get_current_file_context() or files->get_current_file_context() != this))
+    if (files)
     {
-        files->set_current_file_context(this);
-        set_file_context =true;
+        FileContext* context = files->get_current_file_context();
+        if (!context or context != this)
+        {
+            files->set_current_file_context(this);
+            set_file_context = true;
+        }
     }
     fp_eval_service_group(p, conf->snort_protocol_id);
     if (set_file_context)
-    {
         files->set_current_file_context(nullptr);
-    }
     /* Check whether file transfer is done or type depth is reached */
     if ((position == SNORT_FILE_END) || (position == SNORT_FILE_FULL) || depth_exhausted)
         finalize_file_type();
@@ -669,7 +681,8 @@ void FileContext::process_file_type(Packet* pkt,const uint8_t* file_data, int da
     FilePosition position)
 {
     /* file type already found and no magics to continue */
-    find_file_type_from_ips(pkt, file_data, data_size, position);
+    if (SNORT_FILE_TYPE_CONTINUE == file_type_id)
+        find_file_type_from_ips(pkt, file_data, data_size, position);
 }
 
 void FileContext::process_file_signature_sha256(const uint8_t* file_data, int data_size,

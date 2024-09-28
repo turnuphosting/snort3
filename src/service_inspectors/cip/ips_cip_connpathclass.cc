@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -49,8 +49,8 @@ static THREAD_LOCAL ProfileStats cip_connpathclass_perf_stats;
 class CipConnpathclassOption : public IpsOption
 {
 public:
-    CipConnpathclassOption(const RangeCheck& v) : IpsOption(s_name)
-    { cip_cpc = v; }
+    CipConnpathclassOption(const RangeCheck& v) : IpsOption(s_name), cip_cpc(v)
+    { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -82,6 +82,7 @@ bool CipConnpathclassOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus CipConnpathclassOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(cip_connpathclass_perf_stats);
 
     if ( !p->flow || !p->is_full_pdu() )
@@ -170,7 +171,7 @@ static void cip_connpathclass_mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* cip_connpathclass_ctor(Module* p, OptTreeNode*)
+static IpsOption* cip_connpathclass_ctor(Module* p, IpsInfo&)
 {
     CipConnpathclassModule* m = static_cast<CipConnpathclassModule*>(p);
     return new CipConnpathclassOption(m->cip_cpc);

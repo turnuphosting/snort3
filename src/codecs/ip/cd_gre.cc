@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -353,6 +353,6 @@ TEST_CASE ("Validate error check for raw_len greater than GRE_HEADER_LEN", "[cd_
     Buffer buf(&t, size);
     Flow *flow = nullptr;
 
-    CHECK (grecodec.encode(&raw_in,raw_len,enc,buf,flow) == false);
+    CHECK (false == grecodec.encode(&raw_in,raw_len,enc,buf,flow));
 }
 #endif

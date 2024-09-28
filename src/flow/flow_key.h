@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -31,8 +31,6 @@
 #include "hash/hash_key_operations.h"
 #include "utils/cpp_macros.h"
 
-class HashKeyOperations;
-
 namespace snort
 {
 struct SfIp;
@@ -49,7 +47,6 @@ public:
     bool key_compare(const void* k1, const void* k2, size_t) override;
 };
 
-
 PADDING_GUARD_BEGIN
 struct SO_PUBLIC FlowKey
 {
@@ -57,6 +54,9 @@ struct SO_PUBLIC FlowKey
     uint32_t   ip_h[4]; /* High IP */
     uint32_t   mplsLabel;
     uint32_t   addressSpaceId;
+#ifndef DISABLE_TENANT_ID
+    uint32_t   tenant_id; // included by default
+#endif
     uint16_t   port_l;  /* Low Port - 0 if ICMP */
     uint16_t   port_h;  /* High Port - 0 if ICMP */
     int16_t    group_l;
@@ -72,22 +72,19 @@ struct SO_PUBLIC FlowKey
         uint8_t padding_bits : 7;
     } flags;
 
-    /* The init() functions return true if the key IP/port fields were actively
-        normalized, reversing the source and destination addresses internally.
-        The IP-only init() will always return false as we will not reorder its
-        addresses at this time. */
+    // The init() functions return true if the key IP/port fields were actively
+    // normalized, reversing the source and destination addresses internally.
+    // The IP-only init() will always return false as we will not reorder its
+    // addresses at this time.
     bool init(
         const SnortConfig*, PktType, IpProtocol,
         const snort::SfIp *srcIP, uint16_t srcPort,
         const snort::SfIp *dstIP, uint16_t dstPort,
-        uint16_t vlanId, uint32_t mplsId, uint32_t addrSpaceId,
-        int16_t group_h = DAQ_PKTHDR_UNKNOWN, int16_t group_l = DAQ_PKTHDR_UNKNOWN);
-
-    bool init(
-        const SnortConfig*, PktType, IpProtocol,
-        const snort::SfIp *srcIP, const snort::SfIp *dstIP,
-        uint32_t id, uint16_t vlanId,
-        uint32_t mplsId, uint32_t addrSpaceId,
+        uint16_t vlanId, uint32_t mplsId, uint32_t addrSpaceId, 
+#ifndef DISABLE_TENANT_ID
+        uint32_t tid, 
+#endif
+        bool significant_groups,
         int16_t group_h = DAQ_PKTHDR_UNKNOWN, int16_t group_l = DAQ_PKTHDR_UNKNOWN);
 
     bool init(
@@ -96,6 +93,7 @@ struct SO_PUBLIC FlowKey
         const snort::SfIp *dstIP, uint16_t dstPort,
         uint16_t vlanId, uint32_t mplsId, const DAQ_PktHdr_t&);
 
+    // IP fragment key
     bool init(
         const SnortConfig*, PktType, IpProtocol,
         const snort::SfIp *srcIP, const snort::SfIp *dstIP,
@@ -106,8 +104,11 @@ struct SO_PUBLIC FlowKey
     void init_address_space(const SnortConfig*, uint32_t);
     void init_groups(int16_t, int16_t, bool);
 
-    // If this data structure changes size, compare must be updated!
-    static bool is_equal(const void* k1, const void* k2, size_t);
+    static bool is_equal(const FlowKey* k1, const FlowKey* k2)
+    {
+        return 0 == memcmp(k1, k2, sizeof(FlowKey));
+    }
+
 
 private:
     bool init4(IpProtocol, const snort::SfIp *srcIP, uint16_t srcPort,

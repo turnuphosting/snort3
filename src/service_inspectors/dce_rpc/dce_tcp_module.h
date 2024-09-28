@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -31,7 +31,7 @@ struct SnortConfig;
 
 struct dce2TcpProtoConf
 {
-    dce2CoProtoConf common;
+    dce2CoProtoConf common = {};
 };
 
 class Dce2TcpModule : public snort::Module
@@ -57,7 +57,7 @@ public:
     { return true; }
 
 private:
-    dce2TcpProtoConf config;
+    dce2TcpProtoConf config = {};
 };
 
 void print_dce2_tcp_conf(const dce2TcpProtoConf& config);

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -32,11 +32,12 @@
 #include <sys/stat.h>
 
 #include "control/control.h"
+#include "framework/pig_pen.h"
 #include "host_tracker/host_cache.h"
+#include "host_tracker/host_cache_segmented.h"
 #include "log/messages.h"
 #include "lua/lua.h"
 #include "main/snort_config.h"
-#include "managers/inspector_manager.h"
 #include "managers/module_manager.h"
 #include "utils/util.h"
 
@@ -65,7 +66,7 @@ THREAD_LOCAL const Trace* rna_trace = nullptr;
 static int dump_mac_cache(lua_State* L)
 {
     RnaModule* mod = (RnaModule*) ModuleManager::get_module(RNA_NAME);
-    Inspector* rna = InspectorManager::get_inspector(RNA_NAME, true);
+    Inspector* rna = PigPen::get_inspector(RNA_NAME, true);
     if ( rna && mod )
         mod->log_mac_cache( luaL_optstring(L, 1, nullptr) );
     return 0;
@@ -88,7 +89,7 @@ static inline string format_dump_mac(const uint8_t mac[MAC_SIZE])
 
 static int purge_data(lua_State* L)
 {
-    Inspector* rna = InspectorManager::get_inspector(RNA_NAME, true);
+    Inspector* rna = PigPen::get_inspector(RNA_NAME, true);
     if ( rna )
     {
         HostCacheMac* mac_cache = new HostCacheMac(MAC_CACHE_INITIAL_SIZE);
@@ -163,7 +164,7 @@ static bool get_mac_from_args(lua_State* L, uint8_t* mac_addr)
 
 static int delete_mac_host(lua_State* L)
 {
-    Inspector* rna = InspectorManager::get_inspector(RNA_NAME, true);
+    Inspector* rna = PigPen::get_inspector(RNA_NAME, true);
     if ( rna )
     {
         uint8_t mac[MAC_SIZE] = {0};
@@ -199,7 +200,7 @@ static int delete_mac_host(lua_State* L)
 
 static int delete_mac_host_proto(lua_State* L)
 {
-    Inspector* rna = InspectorManager::get_inspector(RNA_NAME, true);
+    Inspector* rna = PigPen::get_inspector(RNA_NAME, true);
     if ( rna )
     {
         uint8_t mac[MAC_SIZE] = {0};
@@ -503,7 +504,7 @@ bool RnaModule::set(const char* fqn, Value& v, SnortConfig*)
             return true;
         else if (v.is("substring"))
         {
-            const auto& ua_part = v.get_string();
+            const char* ua_part = v.get_string();
             if ( !ua_part )
                 return false;
             fingerprint.user_agent.emplace_back(ua_part);
@@ -627,7 +628,6 @@ bool RnaModule::log_mac_cache(const char* outfile)
         snort::LogMessage("Error opening %s for dumping MAC cache", outfile);
     }
 
-    string str;
     HostCacheMac* host_cache_mac = get_host_cache_mac();
     assert(host_cache_mac);
     const auto&& lru_data = host_cache_mac->get_all_data();
@@ -635,7 +635,7 @@ bool RnaModule::log_mac_cache(const char* outfile)
         << lru_data.size() << " trackers" << endl << endl;
     for ( const auto& elem : lru_data )
     {
-        str = "MAC: ";
+        string str = "MAC: ";
         str += format_dump_mac(elem.first.mac_addr);
         str += "\n Key: " + to_string(hash_mac(elem.first.mac_addr));
         elem.second->stringify(str);
@@ -663,14 +663,14 @@ TEST_CASE("RNA module", "[rna_module]")
         RnaModule mod;
         SnortConfig sc;
 
-        CHECK_FALSE(mod.begin("dummy", 0, nullptr));
-        CHECK(mod.end("rna", 0, nullptr) == false);
-        CHECK(mod.begin("rna", 0, nullptr) == true);
+        CHECK(false == mod.begin("dummy", 0, nullptr));
+        CHECK(false == mod.end("rna", 0, nullptr));
+        CHECK(true == mod.begin("rna", 0, nullptr));
 
         Value v1("rna.conf");
         v1.set(Parameter::find(rna_params, "rna_conf_path"));
-        CHECK(mod.set(nullptr, v1, nullptr) == true);
-        CHECK(mod.end("rna", 0, &sc) == true);
+        CHECK(true == mod.set(nullptr, v1, nullptr));
+        CHECK(true == mod.end("rna", 0, &sc));
 
         RnaModuleConfig* rc = mod.get_config();
         CHECK(rc != nullptr);
@@ -685,11 +685,11 @@ TEST_CASE("RNA module", "[rna_module]")
         SnortConfig sc;
 
         sc.set_run_flags(RUN_FLAG__IP_FRAGS_ONLY);
-        CHECK(sc.ip_frags_only() == true);
+        CHECK(true == sc.ip_frags_only());
 
-        CHECK(mod.begin(RNA_NAME, 0, nullptr) == true);
-        CHECK(mod.end(RNA_NAME, 0, &sc) == true);
-        CHECK(sc.ip_frags_only() == false);
+        CHECK(true == mod.begin(RNA_NAME, 0, nullptr));
+        CHECK(true == mod.end(RNA_NAME, 0, &sc));
+        CHECK(false == sc.ip_frags_only());
 
         delete mod.get_config();
     }
@@ -700,11 +700,11 @@ TEST_CASE("RNA module", "[rna_module]")
         SnortConfig sc;
 
         sc.clear_run_flags(RUN_FLAG__TRACK_ON_SYN);
-        CHECK(sc.track_on_syn() == false);
+        CHECK(false == sc.track_on_syn());
 
-        CHECK(mod.begin(RNA_NAME, 0, nullptr) == true);
-        CHECK(mod.end(RNA_NAME, 0, &sc) == true);
-        CHECK(sc.track_on_syn() == true);
+        CHECK(true == mod.begin(RNA_NAME, 0, nullptr));
+        CHECK(true == mod.end(RNA_NAME, 0, &sc));
+        CHECK(true == sc.track_on_syn());
 
         delete mod.get_config();
     }

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -29,7 +29,6 @@
 #include <cassert>
 
 #include "detection/pattern_match_data.h"
-#include "detection/treenodes.h"
 #include "framework/cursor.h"
 #include "framework/ips_option.h"
 #include "framework/module.h"
@@ -87,7 +86,7 @@ public:
     bool is_relative() override
     { return config.pmd.is_relative(); }
 
-    bool retry(Cursor&, const Cursor&) override;
+    bool retry(Cursor&) override;
 
     PatternMatchData* get_pattern(SnortProtocolId, RuleDirection) override
     { return &config.pmd; }
@@ -98,11 +97,8 @@ private:
     RegexConfig config;
 };
 
-RegexOption::RegexOption(const RegexConfig& c) :
-    IpsOption(s_name, RULE_OPTION_TYPE_CONTENT)
+RegexOption::RegexOption(const RegexConfig& c) : IpsOption(s_name, RULE_OPTION_TYPE_CONTENT), config(c)
 {
-    config = c;
-
     if ( !scratcher->allocate(config.db) )
         ParseError("can't allocate scratch for regex '%s'", config.re.c_str());
 
@@ -148,11 +144,14 @@ bool RegexOption::operator==(const IpsOption& ips) const
     return false;
 }
 
+namespace
+{
 struct ScanContext
 {
     unsigned index;
     bool found = false;
 };
+}
 
 static int hs_match(
     unsigned int /*id*/, unsigned long long /*from*/, unsigned long long to,
@@ -166,6 +165,7 @@ static int hs_match(
 
 IpsOption::EvalStatus RegexOption::eval(Cursor& c, Packet*)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(regex_perf_stats);
 
     unsigned pos = c.get_delta();
@@ -192,7 +192,7 @@ IpsOption::EvalStatus RegexOption::eval(Cursor& c, Packet*)
     return NO_MATCH;
 }
 
-bool RegexOption::retry(Cursor&, const Cursor&)
+bool RegexOption::retry(Cursor&)
 { return !is_relative(); }
 
 //-------------------------------------------------------------------------
@@ -321,7 +321,7 @@ bool RegexModule::convert_pcre_to_regex_form()
     }
 
     // finally, process the modifiers
-    for ( char& c : modifiers )
+    for ( const char& c : modifiers )
     {
         switch ( c )
         {
@@ -407,7 +407,7 @@ static Module* mod_ctor()
 static void mod_dtor(Module* p)
 { delete p; }
 
-static IpsOption* regex_ctor(Module* m, OptTreeNode*)
+static IpsOption* regex_ctor(Module* m, IpsInfo&)
 {
     RegexModule* mod = (RegexModule*)m;
     RegexConfig c;

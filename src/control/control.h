@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2017-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2017-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -49,7 +49,6 @@ public:
     void unblock();
     void remove();
     bool show_prompt();
-
     bool is_blocked() const { return blocked; }
     bool is_closed() const { return (fd == -1); }
     bool is_removed() const { return removed; }
@@ -70,6 +69,8 @@ public:
     SO_PUBLIC static ControlConn* query_from_lua(const lua_State*);
 
     static void log_command(const std::string& module, bool log);
+    static unsigned increment_pending_cmds_count() { return ++pending_cmds_count; }
+    static unsigned decrement_pending_cmds_count() { return --pending_cmds_count; }
 
 private:
     void touch();
@@ -80,15 +81,19 @@ private:
     std::string next_command;
     class Shell *shell;
     int fd;
+    int blocked = 0; // a number of commands blocking the channel
     bool local = false;
-    bool blocked = false;
     bool removed = false;
     time_t touched;
 
     static std::vector<std::string> log_exclusion_list;
+    static unsigned pending_cmds_count; //counter to serialize commands across control connections
 };
 
-#define LogRespond(cn, ...)       do { if (cn) cn->respond(__VA_ARGS__); else LogMessage(__VA_ARGS__); } while(0)
-#define LogfRespond(cn, fh, ...)  do { if (cn) cn->respond(__VA_ARGS__); else LogMessage(fh, __VA_ARGS__); } while(0)
+#define LogRespond(cn, ...) \
+    do { if (cn) cn->respond(__VA_ARGS__); else snort::LogMessage(__VA_ARGS__); } while(0)
+
+#define LogfRespond(cn, fh, ...) \
+    do { if (cn) cn->respond(__VA_ARGS__); else snort::LogMessage(fh, __VA_ARGS__); } while(0)
 
 #endif

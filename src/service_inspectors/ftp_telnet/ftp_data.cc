@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2004-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -30,7 +30,7 @@
 #include "file_api/file_flows.h"
 #include "file_api/file_service.h"
 #include "packet_io/active.h"
-#include "packet_tracer/packet_tracer.h"
+#include "packet_io/packet_tracer.h"
 #include "parser/parse_rule.h"
 #include "profiler/profiler.h"
 #include "protocols/tcp.h"
@@ -39,7 +39,6 @@
 #include "utils/util.h"
 
 #include "ft_main.h"
-#include "ftp_module.h"
 #include "ftpp_si.h"
 #include "ftpdata_splitter.h"
 
@@ -257,44 +256,6 @@ void FtpDataFlowData::handle_eof(Packet* p)
         ftstats.total_sessions_mss_changed++;
 }
 
-//-------------------------------------------------------------------------
-// class stuff
-//-------------------------------------------------------------------------
-
-class FtpData : public Inspector
-{
-public:
-    FtpData() = default;
-
-    void eval(Packet*) override;
-    StreamSplitter* get_splitter(bool to_server) override;
-
-    bool can_carve_files() const override
-    { return true; }
-
-    bool can_start_tls() const override
-    { return true; }
-};
-
-class FtpDataModule : public Module
-{
-public:
-    FtpDataModule() : Module(FTP_DATA_NAME, s_help) { }
-
-    const PegInfo* get_pegs() const override;
-    PegCount* get_counts() const override;
-    ProfileStats* get_profile() const override;
-
-    bool set(const char*, Value&, SnortConfig*) override
-    { return false; }
-
-    Usage get_usage() const override
-    { return INSPECT; }
-
-    bool is_bindable() const override
-    { return true; }
-};
-
 const PegInfo* FtpDataModule::get_pegs() const
 { return simple_pegs; }
 
@@ -306,6 +267,7 @@ ProfileStats* FtpDataModule::get_profile() const
 
 void FtpData::eval(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(ftpdataPerfStats);
 
     // precondition - what we registered for

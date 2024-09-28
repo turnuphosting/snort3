@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -89,12 +89,14 @@ StatsBucket* AppIdStatistics::get_stats_bucket(time_t start_time)
 
 void AppIdStatistics::open_stats_log_file()
 {
-    log = TextLog_Init(appid_stats_filename, 4096, roll_size);
+    log = TextLog_Init(appid_stats_filename, 4096, roll_size, false);
+    if (!log)
+        log_err = true;
 }
 
 void AppIdStatistics::dump_statistics()
 {
-    if ( !log_buckets )
+    if ( !log_buckets or log_err )
         return;
 
     if ( !log )
@@ -104,9 +106,14 @@ void AppIdStatistics::dump_statistics()
 
     while ((bucket = (struct StatsBucket*)sflist_remove_head(log_buckets)) != nullptr)
     {
+        if (log_err)
+        {
+            delete bucket;
+            continue;
+        }
         if ( bucket->app_record_cnt )
         {
-            for (auto it : bucket->apps_tree)
+            for (auto& it : bucket->apps_tree)
             {
                 struct AppIdStatRecord& record = it.second;
 
@@ -120,21 +127,13 @@ void AppIdStatistics::dump_statistics()
 }
 
 AppIdStatistics::AppIdStatistics(const AppIdConfig& config)
+    : bucket_interval(config.app_stats_period), roll_size(config.app_stats_rollover_size)
 {
-    enabled = true;
-
-    roll_size = config.app_stats_rollover_size;
-    bucket_interval = config.app_stats_period;
-
-    time_t now = get_time();
-    start_stats_period(now);
+    start_stats_period(get_time());
 }
 
 AppIdStatistics::~AppIdStatistics()
 {
-    if ( !enabled )
-        return;
-
     /*flush the last stats period. */
     end_stats_period();
     dump_statistics();
@@ -266,9 +265,6 @@ void AppIdStatistics::update(const AppIdSession& asd)
 
 void AppIdStatistics::flush()
 {
-    if ( !enabled )
-        return;
-
     time_t now = get_time();
     if (now >= bucket_end)
     {
@@ -277,4 +273,3 @@ void AppIdStatistics::flush()
         start_stats_period(now);
     }
 }
-

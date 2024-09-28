@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2011-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -63,6 +63,7 @@ int get_message_type(int version, const char* name);
 int get_info_type(int version, const char* name);
 
 extern THREAD_LOCAL ModbusStats modbus_stats;
+bool get_buf_modbus_data(snort::Packet* p, snort::InspectionBuffer& b);
 
 #endif
 

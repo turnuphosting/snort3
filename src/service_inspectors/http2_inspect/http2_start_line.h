@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -20,10 +20,10 @@
 #ifndef HTTP2_START_LINE_H
 #define HTTP2_START_LINE_H
 
+#include "helpers/event_gen.h"
+#include "helpers/infractions.h"
 #include "service_inspectors/http_inspect/http_common.h"
 #include "service_inspectors/http_inspect/http_field.h"
-#include "utils/event_gen.h"
-#include "utils/infractions.h"
 
 #include "http2_enum.h"
 

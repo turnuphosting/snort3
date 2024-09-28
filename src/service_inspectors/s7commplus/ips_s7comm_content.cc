@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -30,6 +30,7 @@
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
 
+#include "s7comm.h"
 #include "s7comm_decode.h"
 
 using namespace snort;
@@ -73,18 +74,13 @@ bool S7commplusContentOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus S7commplusContentOption::eval(Cursor& c, Packet* p)
 {
-    RuleProfile profile(s7commplus_content_prof);
+    RuleProfile profile(s7commplus_content_prof);   // cppcheck-suppress unreadVariable
 
-    if ( !p->flow )
+    InspectionBuffer b;
+    if (!get_buf_s7commplus_content(p, b))
         return NO_MATCH;
 
-    if ( !p->is_full_pdu() )
-        return NO_MATCH;
-
-    if ( p->dsize < S7COMMPLUS_MIN_HDR_LEN )
-        return NO_MATCH;
-
-    c.set(s_name, p->data + S7COMMPLUS_MIN_HDR_LEN, p->dsize - S7COMMPLUS_MIN_HDR_LEN);
+    c.set(s_name, b.data, b.len);
 
     return MATCH;
 }
@@ -122,7 +118,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* opt_ctor(Module*, OptTreeNode*)
+static IpsOption* opt_ctor(Module*, IpsInfo&)
 {
     return new S7commplusContentOption;
 }

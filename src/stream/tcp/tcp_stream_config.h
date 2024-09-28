@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -70,7 +70,9 @@ public:
     uint32_t paf_max = 16384;
     int hs_timeout = -1;
 
-    bool no_ack;
+    bool no_ack = false;
+    uint32_t embryonic_timeout = STREAM_DEFAULT_SSN_TIMEOUT;
+    uint32_t idle_timeout = 3600;
 };
 
 #endif

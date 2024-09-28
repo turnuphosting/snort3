@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2007-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -94,9 +94,8 @@ static void CvsGetEOL(const uint8_t*, const uint8_t*,
 class CvsOption : public IpsOption
 {
 public:
-    CvsOption(const CvsRuleOption& c) :
-        IpsOption(s_name)
-    { config = c; }
+    CvsOption(const CvsRuleOption& c) : IpsOption(s_name), config(c)
+    { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -410,7 +409,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* cvs_ctor(Module* p, OptTreeNode*)
+static IpsOption* cvs_ctor(Module* p, IpsInfo&)
 {
     CvsModule* m = (CvsModule*)p;
     return new CvsOption(m->data);
@@ -466,9 +465,7 @@ const BaseApi* ips_cvs[] =
 class StubIpsOption : public IpsOption
 {
 public:
-    StubIpsOption(const char* name, option_type_t option_type) :
-        IpsOption(name, option_type)
-    {}
+    StubIpsOption(const char* name) : IpsOption(name) { }
 };
 
 TEST_CASE("CvsOption test", "[ips_cvs]")
@@ -480,8 +477,7 @@ TEST_CASE("CvsOption test", "[ips_cvs]")
 
         SECTION("not equal as IpsOptions")
         {
-            StubIpsOption opt_other("not_cvs",
-                option_type_t::RULE_OPTION_TYPE_OTHER);
+            StubIpsOption opt_other("not_cvs");
             REQUIRE_FALSE(cvs_opt == opt_other);
         }
 

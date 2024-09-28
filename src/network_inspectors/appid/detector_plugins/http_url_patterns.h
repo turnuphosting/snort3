@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -26,10 +26,11 @@
 #include <vector>
 
 #include "flow/flow.h"
-#include "log/messages.h"
 #include "search_engines/search_tool.h"
+#include "trace/trace.h"
 #include "utils/util.h"
 
+#include "appid_debug.h"
 #include "appid_types.h"
 #include "appid_utils/sf_mlmp.h"
 #include "application_ids.h"
@@ -75,6 +76,7 @@ struct DetectorAppUrlPattern
     } patterns;
 
     UrlUserData userData;
+    bool is_literal;
 };
 
 // These values are used in Lua code as raw numbers. Do NOT reassign new values.
@@ -101,13 +103,13 @@ struct DetectorHTTPPattern
     {
         if( !pat )
         {
-            snort::ErrorMessage("HTTP pattern string is null.");
+            appid_log(nullptr, TRACE_ERROR_LEVEL, "HTTP pattern string is null.");
             return false;
         }
 
         if (seq < SINGLE || seq > USER_AGENT_HEADER)
         {
-            snort::ErrorMessage("Invalid HTTP DHP Sequence.");
+            appid_log(nullptr, TRACE_ERROR_LEVEL, "Invalid HTTP DHP Sequence.");
             return false;
         }
 
@@ -122,13 +124,13 @@ struct DetectorHTTPPattern
         return true;
     }
 
-    DHPSequence sequence;
-    AppId service_id;
-    AppId client_id;
-    AppId payload_id;
-    AppId app_id;
-    unsigned pattern_size;
-    const uint8_t* pattern;
+    DHPSequence sequence = SINGLE;
+    AppId service_id = 0;
+    AppId client_id = 0;
+    AppId payload_id = 0;
+    AppId app_id = 0;
+    unsigned pattern_size = 0;
+    const uint8_t* pattern = nullptr;
 };
 typedef std::vector<DetectorHTTPPattern> DetectorHTTPPatterns;
 
@@ -308,7 +310,7 @@ public:
     void get_server_vendor_version(const char*, int, char**, char**, AppIdServiceSubtype**);
     void identify_user_agent(const char*, int, AppId&, AppId&, char**);
     uint32_t parse_multiple_http_patterns(const char* pattern, tMlmpPattern*,
-        uint32_t numPartLimit, int level);
+        uint32_t numPartLimit, int level, bool is_literal);
 
 private:
     DetectorHTTPPatterns client_agent_patterns;

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,8 +26,8 @@
 #include <cstring>
 
 #include "framework/module.h"
-#include "framework/packet_constraints.h"
 #include "managers/module_manager.h"
+#include "packet_io/packet_constraints.h"
 
 #include "trace_logger.h"
 

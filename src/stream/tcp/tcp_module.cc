@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -22,14 +22,15 @@
 #include "config.h"
 #endif
 
-#include "tcp_module.h"
-#include "tcp_normalizer.h"
-
 #include "main/snort_config.h"
 #include "profiler/profiler_defs.h"
 #include "stream/paf.h"
+#include "stream/paf_stats.h"
 #include "trace/trace.h"
+#include "trace/trace_api.h"
 
+#include "tcp_module.h"
+#include "tcp_normalizer.h"
 #include "tcp_trace.h"
 
 using namespace snort;
@@ -41,8 +42,8 @@ using namespace snort;
 THREAD_LOCAL ProfileStats s5TcpPerfStats;
 
 THREAD_LOCAL const Trace* stream_tcp_trace = nullptr;
+THREAD_LOCAL bool stream_tcp_trace_enabled = false;
 
-#ifdef DEBUG_MSGS
 static const TraceOption stream_tcp_trace_options[] =
 {
     { "segments", TRACE_SEGMENTS, "enable stream TCP segments trace logging" },
@@ -50,7 +51,6 @@ static const TraceOption stream_tcp_trace_options[] =
 
     { nullptr, 0, nullptr }
 };
-#endif
 
 const PegInfo tcp_pegs[] =
 {
@@ -116,6 +116,11 @@ const PegInfo tcp_pegs[] =
     { CountType::MAX, "max_bytes", "maximum number of bytes queued in any flow" },
     { CountType::SUM, "zero_len_tcp_opt", "number of zero length tcp options" },
     { CountType::SUM, "zero_win_probes", "number of tcp zero window probes" },
+    { CountType::SUM, "keep_alive_probes", "number of tcp keep-alive probes" },
+    { CountType::SUM, "proxy_mode_flows", "number of flows set to proxy normalization policy" },
+    { CountType::SUM, "full_retransmits", "number of fully retransmitted segments" },
+    { CountType::SUM, "flush_on_asymmetric_flow", "number of flushes on asymmetric flows" },
+    { CountType::SUM, "asymmetric_flows", "number of completed flows having one-way traffic only" },
     { CountType::END, nullptr, nullptr }
 };
 
@@ -129,8 +134,6 @@ THREAD_LOCAL TcpStats tcpStats;
     "data sent on stream not accepting data"
 #define STREAM_TCP_BAD_TIMESTAMP_STR \
     "TCP timestamp is outside of PAWS window"
-#define STREAM_TCP_BAD_SEGMENT_STR \
-    "bad segment, adjusted size <= 0 (deprecated)"
 #define STREAM_TCP_WINDOW_TOO_LARGE_STR \
     "window size (after scaling) larger than policy allows"
 #define STREAM_TCP_EXCESSIVE_TCP_OVERLAPS_STR \
@@ -161,6 +164,10 @@ THREAD_LOCAL TcpStats tcpStats;
     "TCP window closed before receiving data"
 #define STREAM_TCP_NO_3WHS_STR \
     "TCP session without 3-way handshake"
+#define STREAM_TCP_MAX_QUEUED_BYTES_STR \
+    "TCP max queued reassembly bytes exceeded threshold"
+#define STREAM_TCP_MAX_QUEUED_SEGS_STR \
+    "TCP max queued reassembly segments exceeded threshold"
 
 static const Parameter stream_tcp_small_params[] =
 {
@@ -225,6 +232,12 @@ static const Parameter s_params[] =
     { "track_only", Parameter::PT_BOOL, nullptr, "false",
       "disable reassembly if true" },
 
+    { "embryonic_timeout", Parameter::PT_INT, "1:max31", "30",
+      "Non-established connection timeout" },
+
+    { "idle_timeout", Parameter::PT_INT, "1:max31", "3600",
+      "session deletion on idle " },
+
     { nullptr, Parameter::PT_MAX, nullptr, nullptr, nullptr }
 };
 
@@ -234,7 +247,6 @@ static const RuleMap stream_tcp_rules[] =
     { STREAM_TCP_DATA_ON_SYN, STREAM_TCP_DATA_ON_SYN_STR },
     { STREAM_TCP_DATA_ON_CLOSED, STREAM_TCP_DATA_ON_CLOSED_STR },
     { STREAM_TCP_BAD_TIMESTAMP, STREAM_TCP_BAD_TIMESTAMP_STR },
-    { STREAM_TCP_BAD_SEGMENT, STREAM_TCP_BAD_SEGMENT_STR },
     { STREAM_TCP_WINDOW_TOO_LARGE, STREAM_TCP_WINDOW_TOO_LARGE_STR },
     { STREAM_TCP_EXCESSIVE_TCP_OVERLAPS, STREAM_TCP_EXCESSIVE_TCP_OVERLAPS_STR },
     { STREAM_TCP_DATA_AFTER_RESET, STREAM_TCP_DATA_AFTER_RESET_STR },
@@ -250,6 +262,8 @@ static const RuleMap stream_tcp_rules[] =
     { STREAM_TCP_DATA_AFTER_RST_RCVD, STREAM_TCP_DATA_AFTER_RST_RCVD_STR },
     { STREAM_TCP_WINDOW_SLAM, STREAM_TCP_WINDOW_SLAM_STR },
     { STREAM_TCP_NO_3WHS, STREAM_TCP_NO_3WHS_STR },
+    { STREAM_TCP_MAX_QUEUED_BYTES_EXCEEDED, STREAM_TCP_MAX_QUEUED_BYTES_STR },
+    { STREAM_TCP_MAX_QUEUED_SEGS_EXCEEDED, STREAM_TCP_MAX_QUEUED_SEGS_STR },
 
     { 0, nullptr }
 };
@@ -261,15 +275,15 @@ StreamTcpModule::StreamTcpModule() :
 }
 
 void StreamTcpModule::set_trace(const Trace* trace) const
-{ stream_tcp_trace = trace; }
+{
+    stream_tcp_trace = trace;
+    stream_tcp_trace_enabled = trace_enabled(stream_tcp_trace, TRACE_SEGMENTS) ||
+                                   trace_enabled(stream_tcp_trace, TRACE_STATE);
+}
 
 const TraceOption* StreamTcpModule::get_trace_options() const
 {
-#ifndef DEBUG_MSGS
-    return nullptr;
-#else
     return stream_tcp_trace_options;
-#endif
 }
 
 const RuleMap* StreamTcpModule::get_rules() const
@@ -335,6 +349,12 @@ bool StreamTcpModule::set(const char*, Value& v, SnortConfig*)
     else if ( v.is("session_timeout") )
         config->session_timeout = v.get_uint32();
 
+    else if ( v.is("embryonic_timeout") )
+        config->embryonic_timeout = v.get_uint32();
+
+    else if ( v.is("idle_timeout") )
+        config->idle_timeout = v.get_uint32();
+
     else if ( v.is("reassemble_async") )
     {
         if ( v.get_bool() )
@@ -342,10 +362,12 @@ bool StreamTcpModule::set(const char*, Value& v, SnortConfig*)
         else
             config->flags |= STREAM_CONFIG_NO_ASYNC_REASSEMBLY;
     }
+
     else if ( v.is("require_3whs") )
     {
         config->hs_timeout = v.get_int32();
     }
+
     else if ( v.is("show_rebuilt_packets") )
     {
         if ( v.get_bool() )
@@ -353,6 +375,7 @@ bool StreamTcpModule::set(const char*, Value& v, SnortConfig*)
         else
             config->flags &= ~STREAM_CONFIG_SHOW_PACKETS;
     }
+
     else if ( v.is("track_only") )
     {
         if ( v.get_bool() )

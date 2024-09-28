@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,6 +27,7 @@
 
 #include "hash/hash_defs.h"
 #include "main/snort_config.h"
+#include "main/thread.h"
 #include "utils/util.h"
 
 #include <CppUTest/CommandLineTestRunner.h>
@@ -38,11 +39,13 @@ using namespace snort;
 static SnortConfig my_config;
 THREAD_LOCAL SnortConfig* snort_conf = &my_config;
 
+unsigned snort::get_instance_id() { return 0; }
+
 DataBus::DataBus() = default;
 DataBus::~DataBus() = default;
 
 // run_flags is used indirectly from HashFnc class by calling SnortConfig::static_hash()
-SnortConfig::SnortConfig(const SnortConfig* const, const char*)
+SnortConfig::SnortConfig(const SnortConfig* const, const char*) : daq_config(nullptr), thread_config(nullptr)
 { snort_conf->run_flags = 0;}
 
 SnortConfig::~SnortConfig() = default;
@@ -50,6 +53,8 @@ SnortConfig::~SnortConfig() = default;
 const SnortConfig* SnortConfig::get_conf()
 { return snort_conf; }
 
+unsigned int get_random_seed()
+{ return 3193; }
 struct xhash_test_key
 {
     int key;

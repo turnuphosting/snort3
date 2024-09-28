@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,6 +28,7 @@
 
 #include "framework/data_bus.h"
 #include "protocols/protocol_ids.h"
+#include "profiler/profiler_impl.h"
 #include "service_inspectors/http_inspect/http_msg_header.h"
 #include "tp_appid_module_api.h"
 #include "tp_appid_session_api.h"
@@ -46,9 +47,13 @@
 #include <CppUTest/TestHarness.h>
 
 using namespace snort;
+THREAD_LOCAL bool TimeProfilerStats::enabled = false;
 
 namespace snort
 {
+Packet::Packet(bool) {}
+Packet::~Packet() = default;
+Packet* DetectionEngine::get_current_packet() { return nullptr; }
 AppIdSessionApi::AppIdSessionApi(const AppIdSession*, const SfIp&) :
     StashGenericObject(STASH_GENERIC_OBJECT_APPID) {}
 }
@@ -59,6 +64,8 @@ const char* AppInfoManager::get_app_name(AppId)
 {
     return "";
 }
+
+void appid_log(const snort::Packet*, unsigned char, char const*, ...) { }
 
 // HttpPatternMatchers mock functions
 void HttpPatternMatchers::scan_key_chp(ChpMatchDescriptor&)
@@ -110,7 +117,11 @@ static Flow flow;
 
 // AppIdSession mock functions
 AppIdSession::AppIdSession(IpProtocol, const SfIp* ip, uint16_t, AppIdInspector& inspector,
-    OdpContext&, uint32_t) : FlowData(inspector_id, &inspector), config(stub_config),
+    OdpContext&, uint32_t
+#ifndef DISABLE_TENANT_ID
+    ,uint32_t
+#endif
+    ) : FlowData(inspector_id, &inspector), config(stub_config),
         api(*(new AppIdSessionApi(this, *ip))), odp_ctxt(stub_odp_ctxt)
 {}
 
@@ -144,12 +155,16 @@ bool AppIdSession::is_tp_appid_available() const
     return true;
 }
 
+void AppIdSession::update_encrypted_app_id(AppId)
+{
+}
+
 void AppIdModule::reset_stats() {}
 
 // AppIdDebug mock functions
 void AppIdDebug::activate(const uint32_t*, const uint32_t*, uint16_t,
     uint16_t, IpProtocol, const int, uint32_t, const AppIdSession*, bool,
-    int16_t, int16_t, bool)
+    uint32_t, int16_t, int16_t, bool)
 {
 }
 
@@ -179,7 +194,11 @@ TEST_GROUP(appid_http_session)
     void setup() override
     {
         SfIp sfip;
-        session = new AppIdSession(IpProtocol::IP, &sfip, 0, dummy_appid_inspector, stub_odp_ctxt);
+        session = new AppIdSession(IpProtocol::IP, &sfip, 0, dummy_appid_inspector, stub_odp_ctxt, 0
+#ifndef DISABLE_TENANT_ID
+        ,0
+#endif
+        );
         session->flow = &flow;
         mock_hsession = new AppIdHttpSession(*session, 0);
         appidDebug = new AppIdDebug();
@@ -201,7 +220,6 @@ TEST(appid_http_session, http_field_ids_enum_order)
     // to make sure the order of the HttpFieldIds has not changed
     // in appid_http_session.h.
     AppidChangeBits change_bits;
-
     mock_hsession->set_field( (HttpFieldIds)0, new std::string("agent"), change_bits);
     mock_hsession->set_field( (HttpFieldIds)1, new std::string("host"), change_bits);
     mock_hsession->set_field( (HttpFieldIds)2, new std::string("referer"), change_bits);

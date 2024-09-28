@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2011-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -26,7 +26,6 @@
 #include "modbus_decode.h"
 
 #include "detection/detection_engine.h"
-#include "events/event_queue.h"
 #include "protocols/packet.h"
 
 #include "modbus.h"
@@ -89,9 +88,9 @@ using namespace snort;
 struct modbus_header_t
 {
     /* MBAP Header */
-    uint16_t transaction_id;
+    uint16_t transaction_id;    // cppcheck-suppress unusedStructMember
     uint16_t protocol_id;
-    uint16_t length;
+    uint16_t length;    // cppcheck-suppress unusedStructMember
     uint8_t unit_id;
 
     /* PDU Start */

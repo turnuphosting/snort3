@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,6 +26,10 @@
 
 #include <cctype>
 #include <cstring>
+
+#include "protocols/packet.h"
+
+#include "sip.h"
 
 using namespace snort;
 
@@ -167,9 +171,18 @@ void SipSplitter::process_command(const uint8_t ch)
 }
 
 StreamSplitter::Status SipSplitter::scan(
-    Packet*, const uint8_t* data, uint32_t len,
+    Packet* pkt, const uint8_t* data, uint32_t len,
     uint32_t, uint32_t* fp)
 {
+    SIPData* sip_sess;
+    Flow* flow = pkt->flow;
+
+    sip_sess = get_sip_session_data(flow);
+    if (sip_sess && sip_sess->sip_aborted) {
+        sip_stats.aborted_sessions++;
+        return StreamSplitter::ABORT;
+    }
+
     for (uint32_t i = 0; i < len; i++)
     {
         uint8_t ch = data[i];

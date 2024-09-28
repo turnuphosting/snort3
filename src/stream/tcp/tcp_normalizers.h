@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,8 +24,8 @@
 
 #include "stream/tcp/tcp_normalizer.h"
 
-class TcpStreamSession;
-class TcpStreamSession;
+class TcpSession;
+class TcpSession;
 
 class TcpNormalizerFactory
 {
@@ -46,9 +46,12 @@ public:
     TcpNormalizerPolicy() = default;
     ~TcpNormalizerPolicy() = default;
 
-    void init(StreamPolicy os, TcpStreamSession* ssn, TcpStreamTracker* trk, TcpStreamTracker* peer);
+    void init(StreamPolicy os, TcpSession* ssn, TcpStreamTracker* trk, TcpStreamTracker* peer);
     void reset()
     { init(StreamPolicy::OS_DEFAULT, nullptr, nullptr, nullptr); }
+
+    TcpNormalizer::NormStatus apply_normalizations(TcpSegmentDescriptor& tsd, uint32_t seq, bool stream_is_inorder)
+    { return norm->apply_normalizations(tns, tsd, seq, stream_is_inorder); }
 
     void session_blocker(TcpSegmentDescriptor& tsd)
     { norm->session_blocker(tns, tsd); }
@@ -80,6 +83,9 @@ public:
     uint32_t get_stream_window(TcpSegmentDescriptor& tsd)
     { return norm->get_stream_window(tns, tsd); }
 
+    uint32_t data_inside_window(TcpSegmentDescriptor& tsd)
+    { return norm->data_inside_window(tns, tsd);  }
+
     uint32_t get_tcp_timestamp(TcpSegmentDescriptor& tsd, bool strip)
     { return norm->get_tcp_timestamp(tns, tsd, strip); }
 
@@ -94,6 +100,13 @@ public:
 
     void set_zwp_seq(uint32_t seq)
     { return norm->set_zwp_seq(tns, seq); }
+
+    void log_drop_reason(const TcpSegmentDescriptor& tsd, bool inline_mode,
+        const char *issuer, const std::string& log)
+    { return norm->log_drop_reason(tns, tsd, inline_mode, issuer, log); }
+
+    bool is_keep_alive_probe(const TcpSegmentDescriptor& tsd)
+    { return norm->is_keep_alive_probe(tns, tsd); }
 
     uint16_t set_urg_offset(const snort::tcp::TCPHdr* tcph, uint16_t dsize)
     { return norm->set_urg_offset(tns, tcph, dsize); }

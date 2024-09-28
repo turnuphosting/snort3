@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -53,16 +53,16 @@ public:
     { return DETECT; }
 
 protected:
-    snort::PduSection pdu_section;
+    snort::PduSection pdu_section = snort::PduSection::PS_NONE;
     const HttpEnums::HTTP_RULE_OPT rule_opt_index;
     const char* const key;
-    uint64_t sub_id;
+    uint64_t sub_id = 0;
 
 private:
     friend class HttpIpsOption;
 
     const snort::CursorActionType cat;
-    uint64_t form;
+    uint64_t form = 0;
 };
 
 class HttpIpsOption : public snort::IpsOption
@@ -71,7 +71,8 @@ public:
     HttpIpsOption(const HttpRuleOptModule* cm) :
         snort::IpsOption(cm->key),
         buffer_info(cm->rule_opt_index, cm->sub_id, cm->form),
-        cat(cm->cat), pdu_section(cm->pdu_section) {}
+        cat(cm->sub_id and cm->cat == snort::CAT_SET_FAST_PATTERN ? snort::CAT_SET_SUB_SECTION : cm->cat),
+        pdu_section(cm->pdu_section) {}
     snort::CursorActionType get_cursor_type() const override { return cat; }
     EvalStatus eval(Cursor&, snort::Packet*) override = 0;
     uint32_t hash() const override;

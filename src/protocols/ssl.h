@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2007-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -201,14 +201,14 @@ struct SSLv2_shello_t
     uint8_t minor;
 };
 
-struct SSLV3ClientHelloData
+struct SO_PUBLIC SSLV3ClientHelloData
 {
     ~SSLV3ClientHelloData();
     void clear();
     char* host_name = nullptr;
 };
 
-struct SSLV3ServerCertData
+struct SO_PUBLIC SSLV3ServerCertData
 {
     ~SSLV3ServerCertData();
     void clear();
@@ -218,8 +218,8 @@ struct SSLV3ServerCertData
     /* Data collected from certificates afterwards: */
     char* common_name = nullptr;
     int common_name_strlen;
-    char* org_name = nullptr;
-    int org_name_strlen;
+    char* org_unit = nullptr;
+    int org_unit_strlen;
 };
 
 enum class SSLV3RecordType : uint8_t
@@ -289,6 +289,7 @@ struct ServiceSSLV3ExtensionServerName
 #define SSL_IS_CHELLO(x) ((x) & SSL_CLIENT_HELLO_FLAG)
 #define SSL_IS_SHELLO(x) ((x) & SSL_SERVER_HELLO_FLAG)
 #define SSL_IS_CKEYX(x) ((x) & SSL_CLIENT_KEYX_FLAG)
+#define SSL_IS_CHANGE_CIPHER(x) ((x) & SSL_CHANGE_CIPHER_FLAG)
 #define SSL_IS_APP(x) (((x) & SSL_SAPP_FLAG) || ((x) & SSL_CAPP_FLAG))
 #define SSL_IS_ALERT(x) ((x) & SSL_ALERT_FLAG)
 #define SSL_CLEAR_TEMPORARY_FLAGS(x) (x) &= ~SSL_STATEFLAGS
@@ -305,7 +306,7 @@ struct ServiceSSLV3ExtensionServerName
 
 namespace snort
 {
-uint32_t SSL_decode(
+SO_PUBLIC uint32_t SSL_decode(
     const uint8_t* pkt, int size, uint32_t pktflags, uint32_t prevflags,
     uint8_t* alert_flags, uint16_t* partial_rec_len, int hblen, uint32_t* info_flags = nullptr,
     SSLV3ClientHelloData* data = nullptr, SSLV3ServerCertData* server_cert_data = nullptr);

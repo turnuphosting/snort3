@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -80,7 +80,7 @@ static TpktAppliSearchStateType resolve_spdu_parameter(Cursor* tpkt_cur, const O
         struct OsiSessionSpduSessionRequirement
         {
             OsiSessionSpduParameterHdr param_hdr;
-            uint16_t flags;
+            uint16_t flags; // cppcheck-suppress unusedStructMember
         };
 
         // overlay the appropriate struct
@@ -114,7 +114,7 @@ static TpktAppliSearchStateType resolve_spdu_parameter(Cursor* tpkt_cur, const O
         struct OsiSessionSpduCallingSessionSelector
         {
             OsiSessionSpduParameterHdr param_hdr;
-            uint16_t calling_session_selector;
+            uint16_t calling_session_selector;  // cppcheck-suppress unusedStructMember
         };
 
         // overlay the appropriate struct
@@ -143,7 +143,7 @@ static TpktAppliSearchStateType resolve_spdu_parameter(Cursor* tpkt_cur, const O
         struct OsiSessionSpduCalledSessionSelector
         {
             OsiSessionSpduParameterHdr param_hdr;
-            uint16_t called_session_selector;
+            uint16_t called_session_selector;   // cppcheck-suppress unusedStructMember
         };
 
         // overlay the appropriate struct

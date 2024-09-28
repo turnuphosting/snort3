@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 // Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 // Copyright (C) 2000,2001 Andrew R. Baker <andrewb@uab.edu>
@@ -27,7 +27,6 @@
 #include <vector>
 
 #include "detection/detection_engine.h"
-#include "detection/signature.h"
 #include "events/event.h"
 #include "flow/flow.h"
 #include "flow/session.h"
@@ -60,6 +59,24 @@ static once_flag init_flag;
 #define F_NAME S_NAME ".txt"
 
 //-------------------------------------------------------------------------
+// translation stuff
+//-------------------------------------------------------------------------
+
+enum BuffersToOutput
+{
+    BUFFERS_NONE = 0,
+    BUFFERS_RULE,
+    BUFFERS_INSPECTOR,
+    BUFFERS_BOTH,
+};
+
+static void param_to_buffers(unsigned param, bool& buffers_rule, bool& buffers_inspector)
+{
+    buffers_rule = param == BUFFERS_RULE or param == BUFFERS_BOTH;
+    buffers_inspector = param == BUFFERS_INSPECTOR or param == BUFFERS_BOTH;
+}
+
+//-------------------------------------------------------------------------
 // module stuff
 //-------------------------------------------------------------------------
 
@@ -70,6 +87,12 @@ static const Parameter s_params[] =
 
     { "packet", Parameter::PT_BOOL, nullptr, "false",
       "output packet dump with alert" },
+
+    { "buffers", Parameter::PT_ENUM, "none | rule | inspector | both", "none",
+      "output IPS buffer dump (evaluated by IPS rule or an inspector)" },
+
+    { "buffers_depth", Parameter::PT_INT, "0:maxSZ", "0",
+      "number of IPS buffer bytes to dump per buffer (0 is unlimited)" },
 
     { "limit", Parameter::PT_INT, "0:maxSZ", "0",
       "set maximum size in MB before rollover (0 is unlimited)" },
@@ -93,8 +116,11 @@ public:
 
 public:
     size_t limit = 0;
+    size_t buffers_depth = 0;
     bool file = false;
     bool packet = false;
+    bool buffers_rule = false;
+    bool buffers_inspector = false;
 };
 
 bool FastModule::set(const char*, Value& v, SnortConfig*)
@@ -105,8 +131,14 @@ bool FastModule::set(const char*, Value& v, SnortConfig*)
     else if ( v.is("packet") )
         packet = v.get_bool();
 
+    else if ( v.is("buffers") )
+        param_to_buffers(v.get_uint8(), buffers_rule, buffers_inspector);
+
     else if ( v.is("limit") )
         limit = v.get_size() * 1024 * 1024;
+
+    else if ( v.is("buffers_depth") )
+        buffers_depth = v.get_size();
 
     return true;
 }
@@ -116,6 +148,9 @@ bool FastModule::begin(const char*, int, SnortConfig*)
     file = false;
     limit = 0;
     packet = false;
+    buffers_rule = false;
+    buffers_inspector = false;
+    buffers_depth = 0;
     return true;
 }
 
@@ -148,6 +183,80 @@ static void ObfuscateLogNetData(TextLog* log, const uint8_t* data, const int len
     LogNetData(log, (const uint8_t*)buf.c_str(), len, p, buf_name, ins_name);
 }
 
+static bool should_dump_buffer(const char* buf_name, const char** buffs_to_dump)
+{
+    if ( !buf_name )
+        return false;
+
+    size_t cmp_idx = 0;
+
+    while ( buffs_to_dump[cmp_idx] )
+        if ( !strcmp(buf_name, buffs_to_dump[cmp_idx++]) )
+            return true;
+
+    return false;
+}
+
+static void log_ips_buffers(Packet* p, const char** buffs_to_dump, unsigned long depth)
+{
+    if ( !buffs_to_dump or !buffs_to_dump[0] )
+        return;
+
+    auto& all_buffs = p->context->matched_buffers;
+    std::vector<MatchedBuffer*> to_dump;
+
+    for ( auto& b : all_buffs )
+        if ( should_dump_buffer(b.name, buffs_to_dump) and to_dump.cend() ==
+            find_if(to_dump.begin(), to_dump.end(), [b](MatchedBuffer*& cmp_b)
+            {
+                bool same_buffers = cmp_b->name == b.name and cmp_b->data == b.data;
+                if ( same_buffers and cmp_b->size < b.size )
+                {
+                    cmp_b->size = b.size;
+                    return true;
+                }
+
+                return same_buffers;
+            }) )
+            to_dump.push_back(&b);
+
+    for ( auto b : to_dump )
+    {
+        const char* buf_name = b->name;
+
+        if ( !buf_name )
+            continue;
+
+        int log_depth = depth && depth < b->size ? depth : b->size;
+        ObfuscateLogNetData(fast_log, b->data, log_depth, p, buf_name, buf_name, "detection");
+    }
+}
+
+static void log_inspector_buffers(Packet* p, unsigned long depth)
+{
+    if ( !p->flow or !p->flow->gadget )
+        return;
+
+    Inspector* gadget = p->flow->gadget;
+    const char* gadget_name = gadget->get_name();
+    const char** buffers = gadget->get_api()->buffers;
+
+    if ( !buffers )
+        return;
+
+    for ( ; *buffers; buffers++ )
+    {
+        InspectionBuffer buf;
+
+        // FIXIT-E avoid forcing evaluation of JIT buffers
+        if ( gadget->get_buf(*buffers, p, buf) )
+        {
+            int log_depth = depth && depth < buf.len ? depth : buf.len;
+            ObfuscateLogNetData(fast_log, buf.data, log_depth, p, *buffers, *buffers, gadget_name);
+        }
+    }
+}
+
 using BufferIds = std::vector<unsigned>;
 
 //-------------------------------------------------------------------------
@@ -173,7 +282,10 @@ private:
 private:
     string file;
     unsigned long limit;
+    unsigned long buffers_depth;
     bool packet;
+    bool buffers_rule;
+    bool buffers_inspector;
 
     static std::vector<unsigned> req_ids;
     static std::vector<unsigned> rsp_ids;
@@ -182,12 +294,10 @@ private:
 std::vector<unsigned> FastLogger::req_ids;
 std::vector<unsigned> FastLogger::rsp_ids;
 
-FastLogger::FastLogger(FastModule* m)
-{
-    file = m->file ? F_NAME : "stdout";
-    limit = m->limit;
-    packet = m->packet;
-}
+FastLogger::FastLogger(FastModule* m) : file(m->file ? F_NAME : "stdout"), limit(m->limit),
+    buffers_depth(m->buffers_depth), packet(m->packet), buffers_rule(m->buffers_rule),
+    buffers_inspector(m->buffers_inspector)
+{ }
 
 //-----------------------------------------------------------------
 // FIXIT-L generalize buffer sets when other inspectors get smarter
@@ -239,8 +349,9 @@ void FastLogger::alert(Packet* p, const char* msg, const Event& event)
 
     TextLog_Puts(fast_log, " [**] ");
 
-    TextLog_Print(fast_log, "[%u:%u:%u] ",
-        event.sig_info->gid, event.sig_info->sid, event.sig_info->rev);
+    uint32_t gid, sid, rev;
+    event.get_sig_ids(gid, sid, rev);
+    TextLog_Print(fast_log, "[%u:%u:%u] ", gid, sid, rev);
 
     if (p->context->conf->alert_interface())
         TextLog_Print(fast_log, " <%s> ", SFDAQ::get_input_spec());
@@ -262,6 +373,9 @@ void FastLogger::alert(Packet* p, const char* msg, const Event& event)
     }
     TextLog_NewLine(fast_log);
     TextLog_Flush(fast_log);
+
+    if ( buffers_inspector )
+        log_inspector_buffers(p, buffers_depth);
 }
 
 // log packet (p) if this is not an http request with one or more buffers
@@ -320,10 +434,13 @@ void FastLogger::log_data(Packet* p, const Event& event)
     else if ( log_pkt )
         ObfuscateLogNetData(fast_log, p->data, p->dsize, p, nullptr, "pkt_data", ins_name);
 
-    DataBuffer& buf = DetectionEngine::get_alt_buffer(p);
+    const DataPointer& buf = DetectionEngine::get_alt_buffer(p);
 
-    if ( buf.len and event.sig_info->gid != 116 )
+    if ( buf.len and event.get_gid() != 116 )
         LogNetData(fast_log, buf.data, buf.len, p, "alt");
+
+    if ( buffers_rule )
+        log_ips_buffers(p, event.get_buffers(), buffers_depth);
 }
 
 //-------------------------------------------------------------------------

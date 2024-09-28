@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -119,6 +119,16 @@ static inline void trace_printf(TraceLevel log_level,
         fmt, ap);
 
     va_end(ap);
+}
+
+template <trace_func trace_vprintf = snort::trace_vprintf>
+static inline void trace_printf(TraceLevel log_level, const snort::Trace* trace, TraceOptionID trace_option_id,
+    const snort::Packet* p, const char* fmt, va_list ap)
+{
+    if ( !trace_enabled(trace, trace_option_id, log_level, p) )
+        return;
+    const char* trace_option_name = trace->option_name(trace_option_id);
+    trace_vprintf(trace->module_name(), log_level, trace_option_name, p, fmt, ap);
 }
 
 template <trace_func>

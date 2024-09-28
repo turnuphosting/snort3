@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,24 +25,24 @@
 // machine from the patterns, and search either a single buffer or a set
 // of (related) buffers for patterns.
 
-#include <cassert>
+// the SEAPI_VERSION will change if anything in this file changes.
+// see also framework/base_api.h.
+
 #include <string>
 
 #include "framework/base_api.h"
 #include "main/snort_types.h"
-#include "main/thread.h"
 #include "search_engines/search_common.h"
+//#include "framework/mpse_batch.h"
 
 namespace snort
 {
 // this is the current version of the api
-#define SEAPI_VERSION ((BASE_API_VERSION << 16) | 0)
+#define SEAPI_VERSION ((BASE_API_VERSION << 16) | 1)
 
 struct SnortConfig;
-class Mpse;
 struct MpseApi;
 struct MpseBatch;
-struct ProfileStats;
 
 class SO_PUBLIC Mpse
 {
@@ -83,13 +83,13 @@ public:
 
     virtual void reuse_search() { }
 
-    int search(
-        const uint8_t* T, int n, MpseMatch, void* context, int* current_state);
+    virtual int search(
+        const uint8_t* T, int n, MpseMatch, void* context, int* current_state) = 0;
 
     virtual int search_all(
         const uint8_t* T, int n, MpseMatch, void* context, int* current_state);
 
-    void search(MpseBatch&, MpseType);
+    virtual void search(MpseBatch&, MpseType);
 
     virtual MpseRespType receive_responses(MpseBatch&, MpseType)
     { return MPSE_RESP_COMPLETE_SUCCESS; }
@@ -113,15 +113,10 @@ public:
 protected:
     Mpse(const char* method);
 
-    virtual int _search(
-        const uint8_t* T, int n, MpseMatch, void* context, int* current_state) = 0;
-
-    virtual void _search(MpseBatch&, MpseType);
-
 private:
     std::string method;
-    int verbose;
-    const MpseApi* api;
+    int verbose = 0;
+    const MpseApi* api = nullptr;
 };
 
 typedef void (* MpseOptFunc)(SnortConfig*);
@@ -140,7 +135,7 @@ typedef Mpse::MpseRespType (* MpsePollFunc)(MpseBatch*&, Mpse::MpseType);
 struct MpseApi
 {
     BaseApi base;
-    uint32_t flags;
+    uint32_t flags;  // bitmask of MPSE_*
 
     MpseOptFunc activate;
     MpseOptFunc setup;

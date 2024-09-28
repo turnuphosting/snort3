@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -20,8 +20,11 @@
 #ifndef ANALYZER_COMMANDS_H
 #define ANALYZER_COMMANDS_H
 
+#include <daq_common.h>
+
 #include <cstdarg>
 #include <vector>
+#include <mutex>
 
 #include "main/snort_types.h"
 
@@ -74,13 +77,14 @@ public:
 
 typedef enum clear_counter_type
 {
-    TYPE_UNKNOWN=-1,
+    TYPE_INVALID=-1,
     TYPE_DAQ=0,
     TYPE_MODULE,
     TYPE_APPID,
     TYPE_FILE_ID,
     TYPE_SNORT,
-    TYPE_HA
+    TYPE_HA,
+	TYPE_ALL
 } clear_counter_type_t;
 
 // FIXIT-M Will replace this vector with an unordered map of
@@ -102,6 +106,7 @@ public:
     explicit ACResetStats(clear_counter_type_t requested_type);
     bool execute(Analyzer&, void**) override;
     const char* stringify() override { return "RESET_STATS"; }
+    ~ACResetStats() override;
 private:
     clear_counter_type_t requested_type;
 };
@@ -200,6 +205,24 @@ public:
 private:
     snort::SnortConfig* sc;
     std::vector<snort::ScratchAllocator*>& handlers;
+};
+
+class ACShowSnortCPU : public snort::AnalyzerCommand
+{
+public:
+    explicit ACShowSnortCPU(ControlConn* conn) : AnalyzerCommand(conn)
+    { }
+    bool execute(Analyzer&, void**) override;
+    const char* stringify() override { return "SHOW_SNORT_CPU"; }
+    ~ACShowSnortCPU() override;
+
+private:
+    int status = DAQ_SUCCESS;
+    double cpu_usage_30s = 0.0;
+    double cpu_usage_120s = 0.0;
+    double cpu_usage_300s = 0.0;
+    int instance_num = 0;
+    std::mutex cpu_usage_mutex;
 };
 
 namespace snort

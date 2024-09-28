@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -178,7 +178,8 @@ const PegInfo daq_names[] =
     { CountType::SUM, "analyzed", "total packets analyzed from DAQ" },
     { CountType::SUM, "dropped", "packets dropped" },
     { CountType::SUM, "filtered", "packets filtered out" },
-    { CountType::SUM, "outstanding", "packets unprocessed" },
+    { CountType::NOW, "outstanding", "packets unprocessed" },
+    { CountType::MAX, "outstanding_max", "maximum of packets unprocessed" },
     { CountType::SUM, "injected", "active responses or replacements" },
 
     // Must align with MAX_DAQ_VERDICT (one for each, in order)
@@ -230,6 +231,7 @@ static DAQ_Stats_t operator-(const DAQ_Stats_t& left, const DAQ_Stats_t& right)
     ret.packets_received = left.packets_received - right.packets_received;
     ret.packets_filtered = left.packets_filtered - right.packets_filtered;
     ret.packets_injected = left.packets_injected - right.packets_injected;
+    ret.packets_outstanding = left.packets_outstanding - right.packets_outstanding;
 
     for ( unsigned i = 0; i < MAX_DAQ_VERDICT; i++ )
         ret.verdicts[i] = left.verdicts[i] - right.verdicts[i];
@@ -249,27 +251,32 @@ void SFDAQModule::prep_counts(bool dump_stats)
     DAQ_Stats_t daq_stats_delta = new_daq_stats - prev_daq_stats;
 
     daq_stats.pcaps = Trough::get_file_count();
-    daq_stats.received = daq_stats_delta.hw_packets_received;
     daq_stats.analyzed = daq_stats_delta.packets_received;
-    daq_stats.dropped = daq_stats_delta.hw_packets_dropped;
     daq_stats.filtered = daq_stats_delta.packets_filtered;
-    daq_stats.injected =  daq_stats_delta.packets_injected;
+    daq_stats.injected = daq_stats_delta.packets_injected;
+
+    // Data plane stats is reset
+    if ( new_daq_stats.hw_packets_dropped < prev_daq_stats.hw_packets_dropped ||
+            new_daq_stats.hw_packets_received < prev_daq_stats.hw_packets_received )
+    {
+        daq_stats.dropped = new_daq_stats.hw_packets_dropped;
+        daq_stats.received = new_daq_stats.hw_packets_received;
+    }
+    else
+    {
+        daq_stats.dropped = daq_stats_delta.hw_packets_dropped;
+        daq_stats.received = daq_stats_delta.hw_packets_received;
+    }
 
     for ( unsigned i = 0; i < MAX_DAQ_VERDICT; i++ )
         daq_stats.verdicts[i] = daq_stats_delta.verdicts[i];
 
-    // If DAQ returns HW packets counter less than SW packets counter,
-    // Snort treats that as no outstanding packets left.
-    if (daq_stats_delta.hw_packets_received >
-        (daq_stats_delta.packets_filtered + daq_stats_delta.packets_received))
-    {
-        daq_stats.outstanding = daq_stats_delta.hw_packets_received -
-            daq_stats_delta.packets_filtered - daq_stats_delta.packets_received;
-    }
-    else
-        daq_stats.outstanding = 0;
+    daq_stats.outstanding = new_daq_stats.packets_outstanding;
 
-    if(!dump_stats)
+    if ( daq_stats.outstanding > daq_stats.outstanding_max )
+        daq_stats.outstanding_max = daq_stats.outstanding;
+
+    if ( !dump_stats )
         prev_daq_stats = new_daq_stats;
 }
 

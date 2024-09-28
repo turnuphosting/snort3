@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -43,6 +43,7 @@
 THREAD_LOCAL AppIdDebug* appidDebug = nullptr;
 ThirdPartyAppIdContext* AppIdContext::tp_appid_ctxt = nullptr;
 THREAD_LOCAL bool ThirdPartyAppIdContext::tp_reload_in_progress = false;
+THREAD_LOCAL bool TimeProfilerStats::enabled = false;
 bool DiscoveryFilter::is_app_monitored(const snort::Packet*, uint8_t*){return true;}
 void AppIdDebug::activate(const Flow*, const AppIdSession*, bool) { active = true; }
 void ApplicationDescriptor::set_id(const Packet&, AppIdSession&, AppidSessionDirection, AppId, AppidChangeBits&) { }
@@ -65,6 +66,8 @@ AppIdSessionApi::AppIdSessionApi(const AppIdSession*, const SfIp&) :
     StashGenericObject(STASH_GENERIC_OBJECT_APPID) {}
 }
 
+void appid_log(const snort::Packet*, unsigned char, char const*, ...) { }
+
 const char* content_type = nullptr;
 const char* cookie = nullptr;
 const char* host = nullptr;
@@ -82,6 +85,9 @@ class FakeHttpMsgHeader
 };
 FakeHttpMsgHeader* fake_msg_header = nullptr;
 
+bool OdpContext::is_appid_cpu_profiler_enabled() { return false; }
+bool OdpContext::is_appid_cpu_profiler_running() { return false; }
+
 AppIdSession* AppIdSession::allocate_session(const Packet*, IpProtocol, AppidSessionDirection,
     AppIdInspector&, OdpContext&)
 {
@@ -94,15 +100,13 @@ AppIdHttpSession* AppIdSession::get_http_session(uint32_t stream_index) const
 {
     if (stream_index < api.hsessions.size())
     {
-        return api.hsessions[stream_index];
+        return api.hsessions[stream_index].get();
     }
     return nullptr;
 }
 
 void AppIdSession::delete_all_http_sessions()
 {
-    for (auto hsession : api.hsessions)
-        delete hsession;
     api.hsessions.clear();
 }
 
@@ -288,7 +292,11 @@ TEST_GROUP(appid_http_event)
     {
         flow = new Flow;
         SfIp ip;
-        mock_session = new AppIdSession(IpProtocol::TCP, &ip, 1492, dummy_appid_inspector, stub_odp_ctxt);
+        mock_session = new AppIdSession(IpProtocol::TCP, &ip, 1492, dummy_appid_inspector, stub_odp_ctxt, 0
+#ifndef DISABLE_TENANT_ID
+        ,0
+#endif
+        );
         pkt_thread_odp_ctxt = &mock_session->get_odp_ctxt();
         mock_session->create_http_session();
         flow->set_flow_data(mock_session);

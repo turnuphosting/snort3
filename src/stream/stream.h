@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -60,11 +60,24 @@ class StreamSplitter;
 // sequence must match enum StreamPolicy defines in tcp_defs.h
 #define TCP_POLICIES \
     "first | last | linux | old_linux | bsd | macos | solaris | irix | " \
-    "hpux11 | hpux10 | windows | win_2003 | vista | proxy"
+    "hpux11 | hpux10 | windows | win_2003 | vista | proxy | asymmetric"
+
+struct AlertInfo
+{
+    AlertInfo() = default;
+    AlertInfo(uint32_t gid, uint32_t sid, uint32_t id, uint32_t ts = 0)
+        : gid(gid), sid(sid), event_id(id), event_second(ts) {}
+
+    uint32_t gid = 0;
+    uint32_t sid = 0;
+
+    uint32_t event_id = 0;
+    uint32_t event_second = 0;
+};
 
 typedef int (* LogFunction)(Flow*, uint8_t** buf, uint32_t* len, uint32_t* type);
 typedef void (* LogExtraData)(Flow*, void* config, LogFunction* funcs,
-    uint32_t max_count, uint32_t xtradata_mask, uint32_t id, uint32_t sec);
+    uint32_t max_count, uint32_t xtradata_mask, const AlertInfo& alert_info);
 
 #define MAX_LOG_FN 32
 
@@ -100,6 +113,10 @@ public:
     // packet is from the client or server side of the flow and sets bits in the
     // packet_flags field of the Packet struct to indicate the direction determined.
     static uint32_t get_packet_direction(Packet*);
+
+    // Set the stream normalization mode to PROXY.  In this mode wire packets go thru a proxy before snort
+    // sees them.  All stream normalizations are turned off in this mode.
+    static void start_proxy(Flow*);
 
     // Stop inspection on a flow for up to count bytes (-1 to ignore for life or until resume).
     // If response flag is set, automatically resume inspection up to count bytes when a data
@@ -140,8 +157,8 @@ public:
         Flow*, Packet* p, uint32_t gid, uint32_t sid,
         uint32_t eventId, uint32_t eventSecond);
 
+
     static void disable_reassembly(Flow*);
-    static char get_reassembly_direction(Flow*);
 
     // Returns true if stream data for the flow is in sequence, otherwise return false.
     static bool is_stream_sequenced(Flow*, uint8_t dir);
@@ -176,19 +193,6 @@ public:
         bool swap_app_direction = false, bool expect_multi = false, bool bidirectional = false,
         bool expect_persist = false);
 
-    // Get pointer to application data for a flow based on the lookup tuples for cases where
-    // Snort does not have an active packet that is relevant.
-    static FlowData* get_flow_data(
-        PktType type, IpProtocol proto,
-        const snort::SfIp* a1, uint16_t p1, const snort::SfIp* a2, uint16_t p2,
-        uint16_t vlanId, uint32_t mplsId, uint32_t addrSpaceId, unsigned flowdata_id,
-        int16_t ingress_group = DAQ_PKTHDR_UNKNOWN, int16_t egress_group = DAQ_PKTHDR_UNKNOWN);
-
-    static FlowData* get_flow_data(
-        PktType type, IpProtocol proto,
-        const snort::SfIp* a1, uint16_t p1, const snort::SfIp* a2, uint16_t p2,
-        uint16_t vlanId, uint32_t mplsId, unsigned flowdata_id, const DAQ_PktHdr_t&);
-
     // Get pointer to application data for a flow using the FlowKey as the lookup criteria
     static FlowData* get_flow_data(const FlowKey*, unsigned flowdata_id);
 
@@ -198,7 +202,11 @@ public:
         PktType type, IpProtocol proto,
         const snort::SfIp* a1, uint16_t p1, const snort::SfIp* a2, uint16_t p2,
         uint16_t vlanId, uint32_t mplsId, uint32_t addrSpaceId,
-        int16_t ingress_group = DAQ_PKTHDR_UNKNOWN, int16_t egress_group = DAQ_PKTHDR_UNKNOWN);
+#ifndef DISABLE_TENANT_ID
+        uint32_t tenant_id,
+#endif
+        bool significant_groups, int16_t ingress_group = DAQ_PKTHDR_UNKNOWN,
+        int16_t egress_group = DAQ_PKTHDR_UNKNOWN);
 
     static Flow* get_flow(
         PktType type, IpProtocol proto,
@@ -209,10 +217,6 @@ public:
     // Handle session block pending state
     static void check_flow_closed(Packet*);
 
-    //  Create a session key from the Packet
-    static FlowKey* get_flow_key(Packet*);
-
-    //  Populate a session key from the Packet
     static void populate_flow_key(const Packet*, FlowKey*);
 
     static void set_snort_protocol_id_from_ha(Flow*, const SnortProtocolId);
@@ -230,7 +234,7 @@ public:
 
     // extra data methods
     static void set_extra_data(Flow*, Packet*, uint32_t);
-    static void log_extra_data(Flow*, uint32_t mask, uint32_t id, uint32_t sec);
+    static void log_extra_data(Flow*, uint32_t mask, const AlertInfo&);
 
     static uint32_t reg_xtra_data_cb(LogFunction);
     static void reg_xtra_data_log(LogExtraData, void*);

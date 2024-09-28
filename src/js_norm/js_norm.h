@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -20,7 +20,7 @@
 #ifndef JS_NORM_H
 #define JS_NORM_H
 
-#include "utils/event_gen.h"
+#include "helpers/event_gen.h"
 
 #include "js_config.h"
 #include "js_enum.h"
@@ -39,7 +39,7 @@ namespace snort
 class SO_PUBLIC JSNorm
 {
 public:
-    JSNorm(JSNormConfig*, bool ext_script_type = false);
+    JSNorm(JSNormConfig*, bool ext_script_type = false, uint32_t generation_id = 0);
     JSNorm(const JSNorm&) = delete;
     virtual ~JSNorm();
 
@@ -50,6 +50,9 @@ public:
     void get_data(const void*&, size_t&);
     void flush_data(const void*&, size_t&);
     void flush_data();
+
+    uint32_t get_generation_id() const
+    { return generation_id; }
 
 protected:
     virtual bool pre_proc();
@@ -67,6 +70,7 @@ protected:
 
     JSEvents events;
     JSNormConfig* config;
+    uint32_t generation_id;
 };
 
 }

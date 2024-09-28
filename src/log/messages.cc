@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -22,6 +22,7 @@
 #endif
 
 #include "messages.h"
+#include "log_errors.h"
 
 #include <syslog.h>
 
@@ -29,6 +30,7 @@
 #include <cstring>
 
 #include "main/snort_config.h"
+#include "main/thread.h"
 #include "parser/parser.h"
 #include "time/packet_time.h"
 #include "utils/util_cstring.h"
@@ -222,12 +224,8 @@ void LogMessage(FILE* fh, const char* format,...)
 }
 
 // print a warning message to stderr or syslog
-void WarningMessage(const char* format,...)
+void WarningMessage(const char* format, va_list& ap)
 {
-    va_list ap;
-
-    va_start(ap, format);
-
     if ( SnortConfig::log_syslog() )
     {
         char buf[STD_BUF+1];
@@ -239,17 +237,21 @@ void WarningMessage(const char* format,...)
     {
         vfprintf(stderr, format, ap);
     }
+}
+
+void WarningMessage(const char* format, ...)
+{
+    va_list ap;
+    va_start(ap, format);
+
+    WarningMessage(format, ap);
 
     va_end(ap);
 }
 
-// print a warning message to stderr or syslog
-void ErrorMessage(const char* format,...)
+// print an error message to stderr or syslog
+void ErrorMessage(const char* format, va_list& ap)
 {
-    va_list ap;
-
-    va_start(ap, format);
-
     if ( SnortConfig::log_syslog() )
     {
         char buf[STD_BUF+1];
@@ -261,6 +263,16 @@ void ErrorMessage(const char* format,...)
     {
         vfprintf(stderr, format, ap);
     }
+}
+
+void ErrorMessage(const char* format,...)
+{
+    va_list ap;
+
+    va_start(ap, format);
+
+    ErrorMessage(format, ap);
+
     va_end(ap);
 }
 

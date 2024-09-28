@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2019-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2019-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,111 +26,110 @@
 
 #include "flow/flow_control.h"
 
+#include "control/control.h"
 #include "detection/detection_engine.h"
 #include "flow/expect_cache.h"
 #include "flow/flow_cache.h"
 #include "flow/ha.h"
 #include "flow/session.h"
+#include "main/analyzer.h"
+#include "main/thread_config.h"
+#include "managers/inspector_manager.h"
 #include "main/policy.h"
 #include "main/snort_config.h"
 #include "main/thread_config.h"
-#include "managers/inspector_manager.h"
 #include "packet_io/active.h"
-#include "packet_tracer/packet_tracer.h"
+#include "packet_io/packet_tracer.h"
 #include "protocols/icmp4.h"
-#include "protocols/packet.h"
 #include "protocols/tcp.h"
 #include "protocols/udp.h"
 #include "protocols/vlan.h"
-#include "stream/stream.h"
 #include "utils/util.h"
 #include "trace/trace_api.h"
 
 #include <CppUTest/CommandLineTestRunner.h>
 #include <CppUTest/TestHarness.h>
 
+#include "flow_stubs.h"
+
 using namespace snort;
 
-THREAD_LOCAL bool Active::s_suspend = false;
-THREAD_LOCAL Active::ActiveSuspendReason Active::s_suspend_reason = Active::ASP_NONE;
-
-THREAD_LOCAL PacketTracer* snort::s_pkt_trace = nullptr;
 THREAD_LOCAL const Trace* stream_trace = nullptr;
+THREAD_LOCAL FlowControl* flow_con = nullptr;
+
+Analyzer* Analyzer::get_local_analyzer() { return nullptr; }
+void Analyzer::resume(uint64_t) { }
 
 void Active::drop_packet(snort::Packet const*, bool) { }
-PacketTracer::~PacketTracer() = default;
-void PacketTracer::log(const char*, ...) { }
-void PacketTracer::open_file() { }
-void PacketTracer::dump_to_daq(Packet*) { }
-void PacketTracer::reset(bool) { }
-void PacketTracer::pause() { }
-void PacketTracer::unpause() { }
+void Active::suspend(ActiveSuspendReason) { }
+void Active::resume() { }
 void Active::set_drop_reason(char const*) { }
-Packet::Packet(bool) { }
-Packet::~Packet() = default;
-uint32_t Packet::get_flow_geneve_vni() const { return 0; }
-Flow::~Flow() = default;
+
 DetectionEngine::DetectionEngine() = default;
-ExpectCache::~ExpectCache() = default;
 DetectionEngine::~DetectionEngine() = default;
+void DetectionEngine::disable_all(Packet*) { }
+
+const SnortConfig* SnortConfig::get_conf() { return nullptr; }
+
+Flow* HighAvailabilityManager::import(Packet&, FlowKey&) { return nullptr; }
+bool HighAvailabilityManager::in_standby(Flow*) { return false; }
+
+uint8_t TraceApi::get_constraints_generation() { return 0; }
+void TraceApi::filter(const Packet&) {}
+
+void ThreadConfig::preemptive_kick() {}
+unsigned ThreadConfig::get_instance_max() { return 0; }
+
+SfIpRet SfIp::set(void const*, int) { return SFIP_SUCCESS; }
+SfIpRet SfIp::set(void const*) { return SFIP_SUCCESS; }
+SfIpRet SfIp::pton(const int, const char* ) { return SFIP_SUCCESS; }
+
+const char* SfIp::ntop(char* buf, int) const
+{ buf[0] = 0; return buf; }
+
+bool ControlConn::respond(const char*, ...) { return true; }
+
+class TcpStreamTracker;
+const char* stream_tcp_state_to_str(const TcpStreamTracker&) { return "error"; }
+
+void LogMessage(const char*, ...) { }
+
+namespace snort
+{
+Flow::~Flow() = default;
 void Flow::init(PktType) { }
 void Flow::flush(bool) { }
 void Flow::reset(bool) { }
 void Flow::free_flow_data() { }
-void DataBus::publish(unsigned, unsigned, DataEvent&, Flow*) { }
-void DataBus::publish(unsigned, unsigned, const uint8_t*, unsigned, Flow*) { }
-void DataBus::publish(unsigned, unsigned, Packet*, Flow*) { }
-const SnortConfig* SnortConfig::get_conf() { return nullptr; }
 void Flow::set_client_initiate(Packet*) { }
 void Flow::set_direction(Packet*) { }
-void set_network_policy(unsigned) { }
-void set_inspection_policy(unsigned) { }
-void set_ips_policy(const snort::SnortConfig*, unsigned) { }
 void Flow::set_mpls_layer_per_dir(Packet*) { }
-void DetectionEngine::disable_all(Packet*) { }
-void Stream::drop_traffic(const Packet*, char) { }
-bool Stream::blocked_flow(Packet*) { return true; }
-ExpectCache::ExpectCache(uint32_t) { }
-bool ExpectCache::check(Packet*, Flow*) { return true; }
-bool ExpectCache::is_expected(Packet*) { return true; }
-Flow* HighAvailabilityManager::import(Packet&, FlowKey&) { return nullptr; }
-bool HighAvailabilityManager::in_standby(Flow*) { return true; }
-SfIpRet SfIp::set(void const*, int) { return SFIP_SUCCESS; }
-void snort::trace_vprintf(const char*, TraceLevel, const char*, const Packet*, const char*, va_list) {}
-uint8_t snort::TraceApi::get_constraints_generation() { return 0; }
-void snort::TraceApi::filter(const Packet&) {}
-void ThreadConfig::preemptive_kick() {}
+void packet_gettimeofday(struct timeval* ) { }
 
-namespace snort
-{
-NetworkPolicy* get_network_policy() { return nullptr; }
-InspectionPolicy* get_inspection_policy() { return nullptr; }
-IpsPolicy* get_ips_policy() { return nullptr; }
-unsigned SnortConfig::get_thread_reload_id() { return 0; }
-
-namespace layer
-{
-const vlan::VlanTagHdr* get_vlan_layer(const Packet* const) { return nullptr; }
-}
 time_t packet_time() { return 0; }
-}
 
-namespace snort
-{
+void trace_vprintf(const char*, TraceLevel, const char*, const Packet*, const char*, va_list) {}
+
+unsigned get_instance_id() { return 0; }
+
 namespace ip
 {
 uint32_t IpApi::id() const { return 0; }
 }
 }
 
-void Stream::stop_inspection(Flow*, Packet*, char, int32_t, int) { }
+ExpectCache::ExpectCache(uint32_t) { }
+ExpectCache::~ExpectCache() = default;
 
+bool ExpectCache::check(Packet*, Flow*) { return true; }
 
 int ExpectCache::add_flow(const Packet*, PktType, IpProtocol, const SfIp*, uint16_t,
     const SfIp*, uint16_t, char, FlowData*, SnortProtocolId, bool, bool, bool, bool)
 {
     return 1;
 }
+unsigned int get_random_seed()
+{ return 3193; }
 
 TEST_GROUP(flow_prune) { };
 
@@ -263,6 +262,126 @@ TEST(flow_prune, prune_all_blocked_flows)
     cache->purge();
     CHECK(cache->get_flows_allocated() == 0);
     delete cache;
+}
+
+
+// prune base on the proto type of the flow
+TEST(flow_prune, prune_proto)
+{
+    FlowCacheConfig fcg;
+    fcg.max_flows = 5;
+    fcg.prune_flows = 3;
+
+    for(uint8_t i = to_utype(PktType::NONE); i <= to_utype(PktType::MAX); i++)
+        fcg.proto[i].nominal_timeout = 5;
+
+    FlowCache *cache = new FlowCache(fcg);
+    int port = 1;
+
+    for ( unsigned i = 0; i < 2; i++ )
+    {
+        FlowKey flow_key;
+        flow_key.port_l = port++;
+        flow_key.pkt_type = PktType::UDP;
+        cache->allocate(&flow_key);
+    }
+
+    CHECK (cache->get_count() == 2);
+
+    //pruning should not happen for all other proto except UDP
+    for(uint8_t i = 0; i < to_utype(PktType::MAX) - 1; i++)
+    {
+        if (i == to_utype(PktType::UDP))
+            continue;
+        CHECK(cache->prune_one(PruneReason::NONE, true, i) == false);
+    }
+
+    //pruning should happen for UDP
+    CHECK(cache->prune_one(PruneReason::NONE, true, to_utype(PktType::UDP)) == true);
+
+    FlowKey flow_key2;
+    flow_key2.port_l = port++;
+    flow_key2.pkt_type = PktType::ICMP;
+    cache->allocate(&flow_key2);
+
+    CHECK (cache->get_count() == 2);
+
+    //target flow is ICMP
+    CHECK(cache->prune_multiple(PruneReason::NONE, true) == 1);
+
+    //adding UDP flow it will become LRU
+    for ( unsigned i = 0; i < 2; i++ )
+    {
+        FlowKey flow_key;
+        flow_key.port_l = port++;
+        flow_key.pkt_type = PktType::UDP;
+        Flow* flow = cache->allocate(&flow_key);
+        flow->last_data_seen = 2+i;
+    }
+
+    //adding TCP flow it will become MRU and put UDP flow to LRU
+    for ( unsigned i = 0; i < 3; i++ )
+    {
+        FlowKey flow_key;
+        flow_key.port_l = port++;
+        flow_key.pkt_type = PktType::TCP;
+        Flow* flow = cache->allocate(&flow_key);
+        flow->last_data_seen = 4+i; //this will force to timeout later than UDP
+    }
+
+    //timeout should happen for 2 UDP and 1 TCP flow
+    CHECK( 3 == cache->timeout(5,9));
+
+    //target flow UDP flow and it will fail because no UDP flow is present
+    CHECK(cache->prune_one(PruneReason::NONE, true, to_utype(PktType::UDP)) == false);
+
+    cache->purge();
+    CHECK(cache->get_flows_allocated() == 0);
+    delete cache;
+}
+
+TEST(flow_prune, prune_counts)
+{
+    PruneStats stats;
+
+    // Simulate a few prunes for different reasons and protocol types
+    stats.update(PruneReason::IDLE_PROTOCOL_TIMEOUT, PktType::IP);
+    stats.update(PruneReason::IDLE_PROTOCOL_TIMEOUT, PktType::TCP);
+    stats.update(PruneReason::IDLE_PROTOCOL_TIMEOUT, PktType::UDP);
+    stats.update(PruneReason::MEMCAP, PktType::ICMP);
+    stats.update(PruneReason::MEMCAP, PktType::USER);
+
+    // Check the total prunes
+    CHECK_EQUAL(5, stats.get_total());
+
+    // Check individual protocol prunes
+    CHECK_EQUAL(1, stats.get_proto_prune_count(PruneReason::IDLE_PROTOCOL_TIMEOUT, PktType::IP));
+    CHECK_EQUAL(1, stats.get_proto_prune_count(PruneReason::IDLE_PROTOCOL_TIMEOUT, PktType::TCP));
+    CHECK_EQUAL(1, stats.get_proto_prune_count(PruneReason::IDLE_PROTOCOL_TIMEOUT, PktType::UDP));
+    CHECK_EQUAL(1, stats.get_proto_prune_count(PruneReason::MEMCAP, PktType::ICMP));
+    CHECK_EQUAL(1, stats.get_proto_prune_count(PruneReason::MEMCAP, PktType::USER));
+
+    // Check prunes for a specific protocol across all reasons
+    CHECK_EQUAL(1, stats.get_proto_prune_count(PktType::IP));
+    CHECK_EQUAL(1, stats.get_proto_prune_count(PktType::TCP));
+    CHECK_EQUAL(1, stats.get_proto_prune_count(PktType::UDP));
+    CHECK_EQUAL(1, stats.get_proto_prune_count(PktType::ICMP));
+    CHECK_EQUAL(1, stats.get_proto_prune_count(PktType::USER));
+
+    // Reset the counts
+    stats = PruneStats();
+
+    // Ensure that the counts have been reset
+    CHECK_EQUAL(0, stats.get_total());
+    CHECK_EQUAL(0, stats.get_proto_prune_count(PruneReason::IDLE_PROTOCOL_TIMEOUT, PktType::IP));
+    CHECK_EQUAL(0, stats.get_proto_prune_count(PruneReason::MEMCAP, PktType::TCP));
+
+     // Update the same protocol and reason multiple times
+    stats.update(PruneReason::IDLE_PROTOCOL_TIMEOUT, PktType::IP);
+    stats.update(PruneReason::IDLE_PROTOCOL_TIMEOUT, PktType::IP);
+    stats.update(PruneReason::IDLE_PROTOCOL_TIMEOUT, PktType::IP);
+
+    CHECK_EQUAL(3, stats.get_proto_prune_count(PruneReason::IDLE_PROTOCOL_TIMEOUT, PktType::IP));
 }
 
 int main(int argc, char** argv)

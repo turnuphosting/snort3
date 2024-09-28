@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -30,12 +30,15 @@
 #include "main/snort_config.h"
 #include "main/thread_config.h"
 #include "packet_io/active.h"
-#include "packet_tracer/packet_tracer.h"
+#include "packet_io/packet_tracer.h"
 #include "time/packet_time.h"
 
 #include "file_flows.h"
+#include "file_module.h"
 #include "file_service.h"
 #include "file_stats.h"
+
+#define DEFAULT_FILE_LOOKUP_TIMEOUT_CACHED_ITEM 3600    // 1 hour
 
 using namespace snort;
 
@@ -245,7 +248,7 @@ FileContext* FileCache::find(const FileHashKey& hashKey, int64_t timeout)
 }
 
 FileContext* FileCache::get_file(Flow* flow, uint64_t file_id, bool to_create,
-    int64_t timeout)
+    int64_t timeout, bool using_cache_entry)
 {
     FileHashKey hashKey;
     hashKey.dip = flow->client_ip;
@@ -255,16 +258,22 @@ FileContext* FileCache::get_file(Flow* flow, uint64_t file_id, bool to_create,
     hashKey.file_id = file_id;
     hashKey.asid = flow->key->addressSpaceId;
     hashKey.padding[0] = hashKey.padding[1] = hashKey.padding[2] = 0;
-    FileContext* file = find(hashKey, timeout);
+    
+    FileContext* file = nullptr;
+    if (using_cache_entry)
+        file = find(hashKey, DEFAULT_FILE_LOOKUP_TIMEOUT_CACHED_ITEM);
+    else
+        file = find(hashKey, timeout);
+    
     if (to_create and !file)
         file = add(hashKey, timeout);
 
     return file;
 }
 
-FileContext* FileCache::get_file(Flow* flow, uint64_t file_id, bool to_create)
+FileContext* FileCache::get_file(Flow* flow, uint64_t file_id, bool to_create, bool using_cache_entry)
 {
-    return get_file(flow, file_id, to_create, lookup_timeout);
+    return get_file(flow, file_id, to_create, lookup_timeout, using_cache_entry);
 }
 
 FileVerdict FileCache::check_verdict(Packet* p, FileInfo* file,
@@ -284,7 +293,7 @@ FileVerdict FileCache::check_verdict(Packet* p, FileInfo* file,
         verdict = FILE_VERDICT_UNKNOWN;
     }
 
-    if ( file->get_file_sig_sha256() and verdict == FILE_VERDICT_UNKNOWN )
+    if ( file->get_file_sig_sha256() and verdict <= FILE_VERDICT_LOG )
     {
         file->user_file_data_mutex.lock();
         verdict = policy->signature_lookup(p, file);
@@ -308,7 +317,7 @@ int FileCache::store_verdict(Flow* flow, FileInfo* file, int64_t timeout)
         return 0;
     }
 
-    FileContext* file_got = get_file(flow, file_id, true, timeout);
+    FileContext* file_got = get_file(flow, file_id, true, timeout, false);
     if (file_got)
     {
         *((FileInfo*)(file_got)) = *file;
@@ -500,7 +509,7 @@ FileVerdict FileCache::cached_verdict_lookup(Packet* p, FileInfo* file,
         return verdict;
     }
 
-    FileContext* file_found = get_file(flow, file_id, false);
+    FileContext* file_found = get_file(flow, file_id, false, false);
 
     if (file_found)
     {
@@ -510,7 +519,7 @@ FileVerdict FileCache::cached_verdict_lookup(Packet* p, FileInfo* file,
             "cached_verdict_lookup:Verdict received from cached_verdict_lookup %d\n", verdict);
         apply_verdict(p, file_found, verdict, true, policy);
         // Update the current file context from cached context
-        *file = *(FileInfo*)file_found;
+        file->copy(*(FileInfo*)file_found, false);
     }
 
     return verdict;

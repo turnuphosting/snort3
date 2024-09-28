@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -44,9 +44,8 @@ static THREAD_LOCAL ProfileStats streamSizePerfStats;
 class SizeOption : public IpsOption
 {
 public:
-    SizeOption(const RangeCheck& c, int dir) :
-        IpsOption(s_name)
-    { ssod = c; direction = dir; }
+    SizeOption(const RangeCheck& c, int dir) : IpsOption(s_name), ssod(c), direction(dir)
+    { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -183,7 +182,7 @@ public:
 
 public:
     RangeCheck ssod;
-    int direction;
+    int direction = 0;
 };
 
 bool SizeModule::begin(const char*, int, SnortConfig*)
@@ -214,7 +213,7 @@ static Module* size_mod_ctor()
 static void mod_dtor(Module* m)
 {  delete m; }
 
-static IpsOption* size_ctor(Module* p, OptTreeNode*)
+static IpsOption* size_ctor(Module* p, IpsInfo&)
 {
     SizeModule* m = (SizeModule*)p;
     return new SizeOption(m->ssod, m->direction);

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -24,7 +24,6 @@
 
 #include "modbus.h"
 
-#include "events/event_queue.h"
 #include "detection/detection_engine.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
@@ -36,6 +35,23 @@
 using namespace snort;
 
 THREAD_LOCAL ModbusStats modbus_stats;
+
+// Indices in the buffer array exposed by InspectApi
+// Must remain synchronized with modbus_bufs
+enum ModbusBufId
+{
+     MODBUS_DATA_BUFID = 1
+};
+
+bool get_buf_modbus_data(Packet* p, InspectionBuffer& b)
+{
+    if ( !p->is_full_pdu() or p->dsize < MODBUS_MIN_LEN )
+        return false;
+
+    b.data = p->data + MODBUS_MIN_LEN;
+    b.len = p->dsize - MODBUS_MIN_LEN;
+    return true;
+}
 
 //-------------------------------------------------------------------------
 // flow stuff
@@ -71,7 +87,10 @@ class Modbus : public Inspector
 public:
     // default ctor / dtor
     void eval(Packet*) override;
-    bool get_buf(InspectionBuffer::Type, Packet*, InspectionBuffer&) override;
+    bool get_buf(InspectionBuffer::Type ibt, Packet* p, InspectionBuffer& b) override
+    { return (ibt == InspectionBuffer::IBT_BODY) ? get_buf_modbus_data(p, b) : false; }
+    bool get_buf(unsigned id, snort::Packet* p, snort::InspectionBuffer& b) override
+    { return (id == MODBUS_DATA_BUFID) ? get_buf_modbus_data(p, b) : false; }
 
     int get_message_type(int version, const char* name);
     int get_info_type(int version, const char* name);
@@ -82,7 +101,7 @@ public:
 
 void Modbus::eval(Packet* p)
 {
-    Profile profile(modbus_prof);
+    Profile profile(modbus_prof);   // cppcheck-suppress unreadVariable
 
     // preconditions - what we registered for
     assert(p->has_tcp_data());
@@ -117,16 +136,6 @@ void Modbus::eval(Packet* p)
 
     if ( !ModbusDecode(p, mfd) )
         mfd->reset();
-}
-
-bool Modbus::get_buf(InspectionBuffer::Type ibt, Packet* p, InspectionBuffer& b)
-{
-    if ( ibt !=  InspectionBuffer::IBT_BODY or p->dsize <= MODBUS_MIN_LEN )
-        return false;
-
-    b.data = p->data + MODBUS_MIN_LEN;
-    b.len = p->dsize - MODBUS_MIN_LEN;
-    return true;
 }
 
 //-------------------------------------------------------------------------

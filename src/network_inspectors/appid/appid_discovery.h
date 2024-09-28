@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -116,12 +116,12 @@ public:
 
     virtual void initialize(AppIdInspector&) = 0;
     virtual void reload() = 0;
-    virtual void register_detector(const std::string&, AppIdDetector*,  IpProtocol);
-    virtual void add_pattern_data(AppIdDetector*, snort::SearchTool&, int position,
+    void register_detector(const std::string&, AppIdDetector*,  IpProtocol);
+    void add_pattern_data(AppIdDetector*, snort::SearchTool&, int position,
         const uint8_t* const pattern, unsigned size, unsigned nocase);
-    virtual void register_tcp_pattern(AppIdDetector*, const uint8_t* const pattern, unsigned size,
+    void register_tcp_pattern(AppIdDetector*, const uint8_t* const pattern, unsigned size,
         int position, unsigned nocase);
-    virtual void register_udp_pattern(AppIdDetector*, const uint8_t* const pattern, unsigned size,
+    void register_udp_pattern(AppIdDetector*, const uint8_t* const pattern, unsigned size,
         int position, unsigned nocase);
     virtual int add_service_port(AppIdDetector*, const ServiceDetectorPort&);
 

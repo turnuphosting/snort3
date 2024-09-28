@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -74,17 +74,11 @@ static const RuleMap s_rules[] =
 // arp_spoof module
 //-------------------------------------------------------------------------
 
-ArpSpoofModule::ArpSpoofModule() :
-    Module(MOD_NAME, MOD_HELP, s_params)
-{
-    config = nullptr;
-}
+ArpSpoofModule::ArpSpoofModule() : Module(MOD_NAME, MOD_HELP, s_params)
+{ }
 
 ArpSpoofModule::~ArpSpoofModule()
-{
-    if ( config )
-        delete config;
-}
+{ delete config; }
 
 const RuleMap* ArpSpoofModule::get_rules() const
 { return s_rules; }

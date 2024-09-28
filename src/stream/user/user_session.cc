@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,7 +25,7 @@
 
 #include "detection/detection_engine.h"
 #include "detection/rules.h"
-#include "main/analyzer.h"
+#include "framework/pig_pen.h"
 #include "profiler/profiler_defs.h"
 #include "protocols/packet.h"
 #include "trace/trace_api.h"
@@ -74,8 +74,8 @@ void UserSegment::term(UserSegment* us)
 
 unsigned UserSegment::avail()
 {
-    unsigned size = offset + len;
-    return (BUCKET > size) ? BUCKET - size : 0;
+    unsigned tmp_size = offset + len;
+    return (BUCKET > tmp_size) ? BUCKET - tmp_size : 0;
 }
 
 void UserSegment::copy(const uint8_t* p, unsigned n)
@@ -165,7 +165,7 @@ void UserTracker::detect(
     up->packet_flags |= (p->packet_flags & (PKT_STREAM_EST|PKT_STREAM_UNEST_UNI));
 
     debug_logf(stream_user_trace, up, "detect[%d]\n", up->dsize);
-    Analyzer::get_local_analyzer()->inspect_rebuilt(up);
+    PigPen::inspect_rebuilt(up);
 }
 
 int UserTracker::scan(Packet* p, uint32_t& flags)
@@ -468,7 +468,7 @@ StreamSplitter* UserSession::get_splitter(bool c2s)
 
 int UserSession::process(Packet* p)
 {
-    Profile profile(user_perf_stats);
+    Profile profile(user_perf_stats);   // cppcheck-suppress unreadVariable
 
     if ( Stream::expired_flow(flow, p) )
     {
@@ -493,6 +493,7 @@ int UserSession::process(Packet* p)
     if ( !ut.splitter or p->ptrs.decode_flags & DECODE_SOF )
         start(p, flow);
 
+    //coverity[forward_null]
     if ( p->data && p->dsize )
         ut.add_data(p);
 
@@ -515,7 +516,4 @@ int UserSession::update_alert(
     Packet*, uint32_t /*gid*/, uint32_t /*sid*/,
     uint32_t /*event_id*/, uint32_t /*event_second*/)
 { return 0; }
-
-uint8_t UserSession::get_reassembly_direction()
-{ return SSN_DIR_NONE; }
 

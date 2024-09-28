@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -81,9 +81,7 @@ static const Parameter ftp_client_params[] =
 
 FtpClientModule::FtpClientModule() :
     Module(FTP_CLIENT_NAME, ftp_client_help, ftp_client_params)
-{
-    conf = nullptr;
-}
+{ }
 
 FtpClientModule::~FtpClientModule()
 {
@@ -123,12 +121,8 @@ bool FtpClientModule::set(const char*, Value& v, SnortConfig*)
     return true;
 }
 
-BounceTo::BounceTo(const string& a, Port l, Port h)
-{
-    address = a;
-    low = l;
-    high = h;
-}
+BounceTo::BounceTo(const string& a, Port l, Port h) : address(a), low(l), high(h)
+{ }
 
 const BounceTo* FtpClientModule::get_bounce(unsigned idx)
 {
@@ -173,7 +167,7 @@ bool FtpClientModule::end(const char* fqn, int idx, SnortConfig*)
     if ( strcmp(fqn, "ftp_client.bounce_to") )
         return true;
 
-    if ( idx && !strcmp(fqn, "ftp_client.bounce_to") )
+    if ( idx )
     {
         if ( address.empty() || (last_port && (port > last_port)) )
         {
@@ -189,21 +183,12 @@ bool FtpClientModule::end(const char* fqn, int idx, SnortConfig*)
 // server stuff
 //-------------------------------------------------------------------------
 
-FtpCmd::FtpCmd(const std::string& key, uint32_t flg, int num)
-{
-    name = key;
-    flags = flg;
-    number = num;
-}
+FtpCmd::FtpCmd(const std::string& key, uint32_t flg, int num) : name(key), flags(flg), number(num)
+{ }
 
 FtpCmd::FtpCmd(const std::string& key, const std::string& fmt, int num)
+    : name(key), format(fmt), flags(CMD_VALID), number(0)
 {
-    name = key;
-    format = fmt;
-
-    flags = CMD_VALID;
-    number = 0;
-
     if ( num >= 0 )
     {
         number = num;
@@ -353,9 +338,7 @@ static const PegInfo ftp_pegs[] =
 
 FtpServerModule::FtpServerModule() :
     Module(FTP_SERVER_NAME, ftp_server_help, ftp_server_params)
-{
-    conf = nullptr;
-}
+{ }
 
 FtpServerModule::~FtpServerModule()
 {
@@ -601,12 +584,9 @@ bool FtpServerModule::end(const char* fqn, int idx, SnortConfig*)
     if ( !idx && !strcmp(fqn, "ftp_server") )
     {
         cmds.emplace_back(new FtpCmd("PROT", CMD_PROT, 0));
-        for( auto cmd : cmds)
-        {
-            if ( FTPP_SUCCESS !=  ProcessFTPDataChanCmdsList(conf, cmd) )
-                return false;
-        }
-        return true;
+        return std::none_of(cmds.cbegin(), cmds.cend(),
+            [this](const FtpCmd* cmd)
+            { return FTPP_SUCCESS !=  ProcessFTPDataChanCmdsList(conf, cmd); });
     }
 
     if ( !strcmp(fqn, "ftp_server.cmd_validity") )

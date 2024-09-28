@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -28,12 +28,13 @@
 #include "control/control.h"
 #include "detection/signature.h"
 #include "framework/module.h"
-#include "helpers/process.h"
 #include "helpers/ring.h"
+#include "log/log_errors.h"
 #include "log/messages.h"
 #include "lua/lua.h"
 #include "main/analyzer.h"
 #include "main/analyzer_command.h"
+#include "main/process.h"
 #include "main/reload_tracker.h"
 #include "main/shell.h"
 #include "main/snort.h"
@@ -54,8 +55,9 @@
 #include "trace/trace_api.h"
 #include "trace/trace_config.h"
 #include "trace/trace_logger.h"
-#include "utils/util.h"
 #include "utils/safec.h"
+#include "utils/stats.h"
+#include "utils/util.h"
 
 #if defined(UNIT_TEST) || defined(BENCHMARK_TEST)
 #include "catch/unit_test.h"
@@ -70,10 +72,11 @@
 
 using namespace snort;
 
-static bool exit_requested = false;
+bool exit_requested = false;
 static int main_exit_code = 0;
 static bool paused = false;
-static bool all_pthreads_started = false;
+static bool pthreads_started = false;
+static bool pthreads_running = false;
 static std::queue<AnalyzerCommand*> orphan_commands;
 
 static std::mutex poke_mutex;
@@ -82,6 +85,17 @@ static Ring<unsigned>* pig_poke = nullptr;
 const struct timespec main_sleep = { 0, 1000000 }; // 0.001 sec
 
 static const char* prompt = "o\")~ ";
+
+static const std::map<std::string, clear_counter_type_t> counter_name_to_id =
+{
+	{"daq", clear_counter_type_t::TYPE_DAQ},
+	{"module", clear_counter_type_t::TYPE_MODULE},
+	{"appid", clear_counter_type_t::TYPE_APPID},
+	{"file_id", clear_counter_type_t::TYPE_FILE_ID},
+	{"snort", clear_counter_type_t::TYPE_SNORT},
+	{"ha", clear_counter_type_t::TYPE_HA},
+	{"all", clear_counter_type_t::TYPE_ALL}
+};
 
 const char* get_prompt()
 { return prompt; }
@@ -271,8 +285,10 @@ void Pig::reap_commands()
 
 
 static bool* pigs_started = nullptr;
+static bool* pigs_running = nullptr;
 static Pig* pigs = nullptr;
 static unsigned max_pigs = 0;
+static unsigned pigs_failed = 0;
 
 static Pig* get_lazy_pig(unsigned max)
 {
@@ -353,12 +369,29 @@ int main_dump_heap_stats(lua_State* L)
     return 0;
 }
 
+int convert_counter_type(const char* type)
+{
+	auto it = counter_name_to_id.find(type);
+	if ( it != counter_name_to_id.end() )
+		return it->second;
+	else
+		return clear_counter_type_t::TYPE_INVALID;
+}
+
 int main_reset_stats(lua_State* L)
 {
     ControlConn* ctrlcon = ControlConn::query_from_lua(L);
-    int type = luaL_optint(L, 1, 0);
+    const char* command;
+    int type;
+    if ( lua_gettop(L) == 0 )
+    	command = "all";
+    else
+    	command = luaL_checkstring(L, 1);
     ctrlcon->respond("== clearing stats\n");
-    main_broadcast_command(new ACResetStats(static_cast<clear_counter_type_t>(type)), ctrlcon);
+    if ((type = convert_counter_type(command)) != clear_counter_type_t::TYPE_INVALID)
+    	main_broadcast_command(new ACResetStats(static_cast<clear_counter_type_t>(type)), ctrlcon);
+    else
+    	LogRespond(ctrlcon, "Available options to use: all, daq, module, appid, file_id, snort, ha\n");
     return 0;
 }
 
@@ -779,6 +812,14 @@ int main_help(lua_State* L)
     return 0;
 }
 
+int show_snort_cpu(lua_State* L)
+{
+    ControlConn* ctrlconn = ControlConn::query_from_lua(L);
+    send_response(ctrlconn, "Id \tPid \t30sec \t2min \t5min\n\n");
+    main_broadcast_command(new ACShowSnortCPU(ctrlconn), ctrlconn);
+    return 0;
+}
+
 //-------------------------------------------------------------------------
 // housekeeping foo
 //-------------------------------------------------------------------------
@@ -845,7 +886,7 @@ static void reap_commands()
 // FIXIT-L return true if something was done to avoid sleeping
 static bool house_keeping()
 {
-    if (all_pthreads_started)
+    if (pthreads_started)
         signal_check();
 
     reap_commands();
@@ -860,7 +901,7 @@ static bool house_keeping()
 static void service_check()
 {
 #ifdef SHELL
-    if (all_pthreads_started && ControlMgmt::service_users() )
+    if (pthreads_running && ControlMgmt::service_users())
         return;
 #endif
 
@@ -1021,6 +1062,9 @@ static void handle(Pig& pig, unsigned& swine, unsigned& pending_privileges)
         }
         break;
 
+    case Analyzer::State::FAILED:
+        pigs_failed++;
+        // fallthrough
     case Analyzer::State::STOPPED:
         pig.stop();
         --swine;
@@ -1033,7 +1077,7 @@ static void handle(Pig& pig, unsigned& swine, unsigned& pending_privileges)
 
 static void main_loop()
 {
-    unsigned swine = 0, pending_privileges = 0;
+    unsigned max_swine = 0, swine = 0, pending_privileges = 0;
 
     if (SnortConfig::get_conf()->change_privileges())
         pending_privileges = max_pigs;
@@ -1047,7 +1091,7 @@ static void main_loop()
                 return;
         }
 
-        swine += max_pigs;
+        max_swine = swine += max_pigs;
     }
 
     // Iterate over the drove, spawn them as allowed, and handle their deaths.
@@ -1065,9 +1109,17 @@ static void main_loop()
             if ( pig.analyzer )
             {
                 handle(pig, swine, pending_privileges);
-                if (!pigs_started[idx] && pig.analyzer && (pig.analyzer->get_state() ==
-                    Analyzer::State::STARTED))
+
+                if (!pigs_started[idx] && pig.analyzer && ((pig.analyzer->get_state() == Analyzer::State::STARTED)))
                     pigs_started[idx] = true;
+
+                if (!pigs_running[idx] && pig.analyzer && ((pig.analyzer->get_state() == Analyzer::State::PAUSED) ||
+                    (pig.analyzer->get_state() == Analyzer::State::RUNNING)))
+                    pigs_running[idx] = true;
+
+                if (pigs_started[idx] && (!pig.analyzer || pig.analyzer->get_state() ==
+                    Analyzer::State::FAILED))
+                    pigs_started[idx] = false;
             }
             else if ( pending_privileges )
                 pending_privileges--;
@@ -1078,17 +1130,24 @@ static void main_loop()
             continue;
         }
 
-        if (!all_pthreads_started)
+        if (!pthreads_started)
         {
-            all_pthreads_started = true;
-            const unsigned num_threads = (!Trough::has_next()) ? swine : max_pigs;
+            const unsigned num_threads = (!Trough::has_next()) ? max_swine : max_pigs;
+            unsigned pigs_started_count = 0;
             for (unsigned i = 0; i < num_threads; i++)
-                all_pthreads_started &= pigs_started[i];
-            if (all_pthreads_started)
+            {
+                if (pigs_started[i])
+                    pigs_started_count++;
+            }
+
+            pthreads_started = pigs_started_count && num_threads <= pigs_started_count + pigs_failed;
+            
+            if (pthreads_started)
             {
 #ifdef REG_TEST
                 LogMessage("All pthreads started\n");
 #endif
+
 #ifdef SHELL
                 if (use_shell(SnortConfig::get_conf()))
                 {
@@ -1099,11 +1158,29 @@ static void main_loop()
             }
         }
 
+        if (!pthreads_running)
+        {
+            const unsigned num_threads = (!Trough::has_next()) ? max_swine : max_pigs;
+            unsigned pigs_running_count = 0;
+
+            for (unsigned i = 0; i < num_threads; i++)
+            {
+                if(pigs_running[i])
+                    pigs_running_count++;
+            }
+
+            pthreads_running = pigs_running_count && num_threads <= pigs_running_count + pigs_failed;
+        }
+
         if ( !exit_requested and (swine < max_pigs) and (src = Trough::get_next()) )
         {
             Pig* pig = get_lazy_pig(max_pigs);
             if (pig->prep(src))
+            {
                 ++swine;
+                if (max_swine < swine)
+                    max_swine = swine;
+            }
             continue;
         }
         service_check();
@@ -1129,12 +1206,14 @@ static void snort_main()
     pig_poke = new Ring<unsigned>((max_pigs*max_grunts)+1);
     pigs = new Pig[max_pigs];
     pigs_started = new bool[max_pigs];
+    pigs_running = new bool[max_pigs];
 
     for (unsigned idx = 0; idx < max_pigs; idx++)
     {
         Pig& pig = pigs[idx];
         pig.set_index(idx);
         pigs_started[idx] = false;
+        pigs_running[idx] = false;
     }
 
     main_loop();
@@ -1144,6 +1223,8 @@ static void snort_main()
     pigs = nullptr;
     delete[] pigs_started;
     pigs_started = nullptr;
+    delete[] pigs_running;
+    pigs_running = nullptr;
 
 #ifdef SHELL
     ControlMgmt::socket_term();

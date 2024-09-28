@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -22,7 +22,7 @@
 #ifndef TCP_DEFS_H
 #define TCP_DEFS_H
 
-#include "main/thread.h"
+#include <cstdint>
 
 namespace snort
 {
@@ -49,19 +49,13 @@ struct Packet;
 #define PAWS_WINDOW         60
 #define PAWS_24DAYS         2073600         /* 24 days in seconds */
 
-#define STREAM_UNALIGNED       0
-#define STREAM_ALIGNED         1
-
-#define MQ_NONE    0
-#define MQ_BYTES   1
-#define MQ_SEGS    2
-
 #define STREAM_DEFAULT_MAX_SMALL_SEG_SIZE 0    /* disabled */
 #define STREAM_DEFAULT_CONSEC_SMALL_SEGS 0     /* disabled */
 
 #define SLAM_MAX 4
 
-#define ZERO_WIN_PROBE_LEN 1
+#define MAX_ZERO_WIN_PROBE_LEN 1
+#define MAX_KEEP_ALIVE_PROBE_LEN 1
 
 // target-based policy types - changes to this enum require changes to stream.h::TCP_POLICIES
 enum StreamPolicy : uint8_t
@@ -80,6 +74,7 @@ enum StreamPolicy : uint8_t
     OS_WINDOWS2K3,
     OS_VISTA,
     OS_PROXY,
+    MISSED_3WHS,
     OS_END_OF_LIST,
     OS_DEFAULT = OS_BSD
 };

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2010-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -216,10 +216,8 @@ private:
     NormalizerConfig config;
 };
 
-Normalizer::Normalizer(const NormalizerConfig& nc)
-{
-    config = nc;
-}
+Normalizer::Normalizer(const NormalizerConfig& nc) : config(nc)
+{ }
 
 // FIXIT-L this works with one normalizer per policy
 // but would be better if binder could select
@@ -286,6 +284,7 @@ void Normalizer::show(const SnortConfig*) const
 
 void Normalizer::eval(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(norm_perf_stats);
 
     if ( !p->is_rebuilt() && !p->active->packet_was_dropped() )

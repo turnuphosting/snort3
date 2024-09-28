@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -79,6 +79,7 @@ bool Dnp3FuncOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus Dnp3FuncOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(dnp3_func_perf_stats);
 
     if ((p->has_tcp_data() && !p->is_full_pdu()) || !p->flow || !p->dsize)
@@ -130,7 +131,7 @@ public:
     { return DETECT; }
 
 public:
-    uint16_t func;
+    uint16_t func = 0;
 };
 
 ProfileStats* Dnp3FuncModule::get_profile() const
@@ -175,7 +176,7 @@ static void dnp3_func_mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* dnp3_func_ctor(Module* p, OptTreeNode*)
+static IpsOption* dnp3_func_ctor(Module* p, IpsInfo&)
 {
     Dnp3FuncModule* m = (Dnp3FuncModule*)p;
     return new Dnp3FuncOption(m->func);

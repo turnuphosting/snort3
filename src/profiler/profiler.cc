@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -22,20 +22,23 @@
 #include "config.h"
 #endif
 
-#include "profiler.h"
+#include "profiler_impl.h"
 
 #include <cassert>
+#include <numeric>
 
 #include "framework/module.h"
 #include "main/snort_config.h"
 #include "main/thread_config.h"
 #include "time/stopwatch.h"
+#include "utils/stats.h"
 
 #include "memory_context.h"
 #include "memory_profiler.h"
 #include "profiler_nodes.h"
 #include "rule_profiler.h"
 #include "time_profiler.h"
+#include <network_inspectors/appid/appid_api.h>
 
 #ifdef UNIT_TEST
 #include "catch/snort_catch.h"
@@ -43,15 +46,32 @@
 
 using namespace snort;
 
-THREAD_LOCAL ProfileStats totalPerfStats;
-THREAD_LOCAL ProfileStats otherPerfStats;
+static THREAD_LOCAL ProfileStats totalPerfStats;
+static THREAD_LOCAL ProfileStats otherPerfStats;
 
-THREAD_LOCAL TimeContext* ProfileContext::curr_time = nullptr;
 THREAD_LOCAL Stopwatch<SnortClock>* run_timer = nullptr;
 THREAD_LOCAL uint64_t first_pkt_num = 0;
 THREAD_LOCAL bool consolidated_once = false;
 
 static ProfilerNodeMap s_profiler_nodes;
+
+#ifndef _WIN64
+THREAD_LOCAL TimeContext* ProfileContext::curr_time = nullptr;
+#else
+static THREAD_LOCAL TimeContext* curr_time = nullptr;
+
+TimeContext* ProfileContext::get_curr_time()
+{ return curr_time; }
+
+void ProfileContext::set_curr_time(TimeContext* t)
+{ curr_time = t; }
+#endif
+
+ProfileStats* Profiler::get_total_perf_stats()
+{ return &totalPerfStats; }
+
+ProfileStats* Profiler::get_other_perf_stats()
+{ return &otherPerfStats; }
 
 void Profiler::register_module(Module* m)
 {
@@ -76,7 +96,7 @@ void Profiler::register_module(const char* n, const char* pn, Module* m)
 
 void Profiler::start()
 {
-    first_pkt_num = (uint64_t)get_packet_number();
+    first_pkt_num = pc.analyzed_pkts;
     run_timer = new Stopwatch<SnortClock>;
     run_timer->start();
     consolidated_once = false;
@@ -130,6 +150,7 @@ void Profiler::reset_stats(snort::ProfilerType type)
     }
 
     s_profiler_nodes.reset_nodes(type);
+    appid_api.reset_appid_cpu_profiler_stats();
 }
 
 void Profiler::prepare_stats()
@@ -138,12 +159,11 @@ void Profiler::prepare_stats()
     auto children = root.get_children();
 
     hr_duration runtime = root.get_stats().time.elapsed;
-    hr_duration sum = 0_ticks;
 
     s_profiler_nodes.clear_flex();
 
-    for ( auto pn : children )
-        sum += pn->get_stats().time.elapsed;
+    hr_duration sum = std::accumulate(children.cbegin(), children.cend(), 0_ticks,
+        [](const hr_duration& s, const ProfilerNode* pn){ return s + pn->get_stats().time.elapsed; });
 
     otherPerfStats.time.checks = root.get_stats().time.checks;
     otherPerfStats.time.elapsed = (runtime > sum) ?  (runtime - sum) : 0_ticks;
@@ -169,6 +189,11 @@ void Profiler::show_stats()
     show_rule_profiler_stats(config->rule);
 }
 
+void Profiler::show_runtime_memory_stats()
+{
+    s_profiler_nodes.print_runtime_memory_stats();
+}
+
 #ifdef UNIT_TEST
 
 TEST_CASE( "profile stats", "[profiler]" )
@@ -186,11 +211,7 @@ TEST_CASE( "profile stats", "[profiler]" )
         SECTION( "il" )
         {
             TimeProfilerStats time_stats = { 12_ticks, 2 };
-            MemoryTracker memory_stats =
-            {{
-                { 1, 2, 3, 4 },
-                { 5, 6, 7, 8 }
-            }};
+            MemoryTracker memory_stats = {{ 1, 2, 3, 4 }};
 
             ProfileStats stats(time_stats, memory_stats);
 
@@ -203,10 +224,7 @@ TEST_CASE( "profile stats", "[profiler]" )
     {
         ProfileStats stats {
             { 1_ticks, 2 },
-            {{
-                { 1, 2, 3, 4 },
-                { 5, 6, 7, 8 },
-            }}
+            {{ 1, 2, 3, 4 }}
         };
 
         SECTION( "reset" )
@@ -219,10 +237,7 @@ TEST_CASE( "profile stats", "[profiler]" )
 
         ProfileStats other_stats {
             { 12_ticks, 12 },
-            {{
-                { 5, 6, 7, 8 },
-                { 9, 10, 11, 12 }
-            }}
+            {{ 5, 6, 7, 8 }}
         };
 
         SECTION( "==/!=" )
@@ -236,10 +251,7 @@ TEST_CASE( "profile stats", "[profiler]" )
         {
             stats += other_stats;
             CHECK( stats.time == TimeProfilerStats(13_ticks, 14) );
-            CombinedMemoryStats memory_result = {
-                { 6, 8, 10, 12 },
-                { 14, 16, 18, 20 }
-            };
+            MemoryStats memory_result = { 6, 8, 10, 12 };
 
             CHECK( stats.memory.stats == memory_result );
         }

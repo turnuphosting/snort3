@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -20,9 +20,10 @@
 #ifndef PACKET_CAPTURE_H
 #define PACKET_CAPTURE_H
 
+#include <cstdint>
 #include <string>
 
-void packet_capture_enable(const std::string&, const int16_t g = -1);
+void packet_capture_enable(const std::string&, const int16_t g = -1, const std::string& t = "");
 void packet_capture_disable();
 
 #endif

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -23,6 +23,9 @@
 // Connector provides out-of-band communications among packet processing
 // threads, high-availability partners, and other threads.
 
+// the CONNECTOR_API_VERSION will change if anything in this file changes.
+// see also framework/base_api.h.
+
 #include <string>
 #include <vector>
 
@@ -32,7 +35,7 @@
 namespace snort
 {
 // this is the current version of the api
-#define CONNECTOR_API_VERSION ((BASE_API_VERSION << 16) | 0)
+#define CONNECTOR_API_VERSION ((BASE_API_VERSION << 16) | 1)
 
 //-------------------------------------------------------------------------
 // api for class
@@ -40,7 +43,6 @@ namespace snort
 // other methods are packet thread specific
 //-------------------------------------------------------------------------
 
-struct ConnectorApi;
 class ConnectorConfig;
 
 struct ConnectorMsg
@@ -74,7 +76,7 @@ public:
     virtual Direction get_connector_direction() = 0;
 
     const std::string connector_name;
-    const ConnectorConfig* config;
+    const ConnectorConfig* config = nullptr;
 
 protected:
     Connector() = default;

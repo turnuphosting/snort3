@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 // Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 //
@@ -32,8 +32,8 @@
 
 #include "pp_telnet.h"
 
+#include "detection/detection_buf.h"
 #include "detection/detection_engine.h"
-#include "detection/detection_util.h"
 #include "protocols/packet.h"
 #include "stream/stream.h"
 
@@ -54,14 +54,7 @@ using namespace snort;
 
 void reset_telnet_buffer(Packet* p)
 {
-    DetectionEngine::get_alt_buffer(p).len = 0;
-}
-
-const uint8_t* get_telnet_buffer(Packet* p, unsigned& len)
-{
-    const DataBuffer& buf = DetectionEngine::get_alt_buffer(p);
-    len = buf.len;
-    return len ? buf.data : nullptr;
+    DetectionEngine::reset_alt_buffer(p);
 }
 
 int normalize_telnet(
@@ -167,7 +160,7 @@ int normalize_telnet(
 
     /* walk thru the remainder of the packet */
     while ((read_ptr < end) &&
-        (write_ptr < ((unsigned char*)buf.data) + sizeof(buf.data)))
+        (write_ptr < ((unsigned char*)buf.data) + buf.decode_blen))
     {
         /* if the following byte isn't a subnegotiation initialization */
         if (((read_ptr + 1) < end) &&

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -164,6 +164,7 @@ void show_rule_profiler_stats(const RuleProfilerConfig& config)
     for ( unsigned i = 0; i < ThreadConfig::get_instance_max(); ++i )
         prepare_rule_profiler_stats(nodes, stats, i);
 
+    RuleContext::set_end_time(get_time_curr());
     print_rule_profiler_stats(config, stats, nullptr);
 }
 
@@ -646,10 +647,10 @@ TEST_CASE( "rule pause", "[profiler][rule_profiler]" )
 
     {
         RulePause pause(ctx);
-        CHECK_FALSE( ctx.active() );
+        CHECK( false == ctx.active() );
     }
 
-    CHECK( ctx.active() );
+    CHECK( true == ctx.active() );
     RuleContext::set_enabled(false);
 }
 

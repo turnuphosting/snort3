@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -96,6 +96,11 @@ const uint8_t* HttpEvent::get_uri_host(int32_t &length)
         length = 0;
         return nullptr;
     }
+}
+
+const uint8_t* HttpEvent::get_uri_query(int32_t& length)
+{
+    return get_header(HttpEnums::HTTP_BUFFER_URI, HttpEnums::UC_QUERY, length);
 }
 
 const uint8_t* HttpEvent::get_location(int32_t& length)

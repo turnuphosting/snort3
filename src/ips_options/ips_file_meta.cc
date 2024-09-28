@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -22,17 +22,9 @@
 #include "config.h"
 #endif
 
-#include <unordered_map>
-
-#include "detection/detection_engine.h"
-#include "detection/treenodes.h"
 #include "file_api/file_flows.h"
-#include "framework/cursor.h"
 #include "framework/ips_option.h"
 #include "framework/module.h"
-#include "main/thread_config.h"
-#include "profiler/profiler.h"
-#include "protocols/packet.h"
 
 using namespace snort;
 
@@ -44,7 +36,7 @@ using namespace snort;
 
 struct FileMetaData
 {
-    uint32_t file_id;
+    uint32_t file_id = 0;
     std::string file_type;
     std::string category;
     std::string version;
@@ -127,7 +119,7 @@ bool FileMetaModule::set(const char*, Value& v, SnortConfig*)
 
 bool FileMetaModule::end(const char*, int, SnortConfig* sc)
 {
-    set_rule_id_from_type(sc, fmc.file_id, fmc.file_type,fmc.category, fmc.version, fmc.groups);
+    set_rule_id_from_type(sc, fmc.file_id, fmc.file_type, fmc.category, fmc.version, fmc.groups);
     return true;
 }
 
@@ -145,10 +137,10 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* file_meta_ctor(Module* p, OptTreeNode* otn)
+static IpsOption* file_meta_ctor(Module* p, IpsInfo& info)
 {
     FileMetaModule* m = (FileMetaModule*)p;
-    otn->sigInfo.file_id = m->fmc.file_id;
+    IpsOption::set_file_id(info, m->fmc.file_id);
     return nullptr;
 }
 
@@ -178,5 +170,13 @@ static const IpsApi file_meta_api =
     nullptr
 };
 
-const BaseApi* ips_file_meta = &file_meta_api.base;
+#ifdef BUILDING_SO
+SO_PUBLIC const BaseApi* snort_plugins[] =
+#else
+const BaseApi* ips_file_meta[] =
+#endif
+{
+    &file_meta_api.base,
+    nullptr
+};
 

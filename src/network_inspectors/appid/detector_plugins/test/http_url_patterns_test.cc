@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2018-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2018-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -23,6 +23,7 @@
 
 #include "network_inspectors/appid/detector_plugins/http_url_patterns.cc"
 
+#include "main/thread_config.h"
 #include "protocols/protocol_ids.h"
 #include "framework/module.cc"
 #include "network_inspectors/appid/appid_utils/sf_mlmp.cc"
@@ -42,7 +43,11 @@ static Packet pkt;
 static SfIp sfip;
 static AppIdModule appid_mod;
 static AppIdInspector appid_inspector(appid_mod);
-static AppIdSession session(IpProtocol::IP, &sfip, 0, appid_inspector, odpctxt);
+static AppIdSession session(IpProtocol::IP, &sfip, 0, appid_inspector, odpctxt, 0
+#ifndef DISABLE_TENANT_ID
+,0
+#endif
+);
 static AppIdHttpSession mock_hsession(session, 0);
 static ChpMatchDescriptor cmd_test;
 static MatchedCHPAction mchp;
@@ -60,18 +65,21 @@ namespace snort
 {
 AppIdSessionApi::AppIdSessionApi(const AppIdSession*, const SfIp&) :
     StashGenericObject(STASH_GENERIC_OBJECT_APPID) {}
-SearchTool::SearchTool(bool) { }
+SearchTool::SearchTool(bool, const char*) { }
 void SearchTool::reload() { }
 static bool test_find_all_done = false;
 static bool test_find_all_enabled = false;
 static MatchedPatterns* mock_mp = nullptr;
-int SearchTool::find_all(const char*, unsigned, MpseMatch, bool, void* mp_arg)
+int SearchTool::find_all(const char*, unsigned, MpseMatch, bool, void* mp_arg, const SnortConfig*)
 {
     test_find_all_done = true;
     if (test_find_all_enabled)
         memcpy(mp_arg, &mock_mp, sizeof(MatchedPatterns*));
     return 0;
 }
+unsigned get_instance_id()
+{ return 0; }
+unsigned ThreadConfig::get_instance_max() { return 1; }
 }
 
 void ApplicationDescriptor::set_id(const Packet&, AppIdSession&, AppidSessionDirection, AppId, AppidChangeBits&) { }
@@ -91,6 +99,7 @@ AlpnPatternMatchers::~AlpnPatternMatchers() = default;
 CipPatternMatchers::~CipPatternMatchers() = default;
 void AppIdModule::reset_stats() {}
 bool AppIdInspector::configure(snort::SnortConfig*) { return true; }
+void appid_log(const snort::Packet*, unsigned char, char const*, ...) { }
 
 TEST_GROUP(http_url_patterns_tests)
 {

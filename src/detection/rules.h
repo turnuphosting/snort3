@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 // Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 //
@@ -27,13 +27,13 @@
 #include <map>
 #include <string>
 
-#include "actions/actions.h"
+#include "framework/ips_action.h"
 #include "main/policy.h"
 
 #define GID_DEFAULT          1
 #define GID_SESSION        135
 
-#define GID_BUILTIN_MIN    100
+#define GID_BUILTIN_MIN     40
 #define GID_BUILTIN_MAX    999
 
 #define SESSION_EVENT_SYN_RX 1
@@ -61,7 +61,7 @@ struct ListHead
 struct RuleListNode
 {
     ListHead* RuleList;   /* The rule list associated with this node */
-    Actions::Type mode;        /* the rule mode */
+    snort::IpsAction::Type mode;        /* the rule mode */
     unsigned evalIndex;        /* eval index for this rule set */
     char* name;           /* name of this rule list */
     RuleListNode* next;   /* the next RuleListNode */
@@ -94,7 +94,7 @@ public:
 private:
     RuleTreeNode* dup_rtn(RuleTreeNode*, IpsPolicy*);
     void update_rtn(snort::SnortConfig*, RuleTreeNode*, const RuleState&);
-    void apply(snort::SnortConfig*, OptTreeNode*, unsigned ips_num, const RuleState&);
+    void apply(snort::SnortConfig*, struct OptTreeNode*, unsigned ips_num, const RuleState&);
 
 private:
     std::map<RuleKey, RuleState> map;

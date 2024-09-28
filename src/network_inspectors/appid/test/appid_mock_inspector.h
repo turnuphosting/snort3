@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,7 +27,7 @@ class Value;
 
 namespace snort
 {
-Inspector::Inspector()
+Inspector::Inspector() : ref_count(nullptr)
 {
     set_api(nullptr);
 }
@@ -39,14 +39,16 @@ class StreamSplitter* Inspector::get_splitter(bool) { return nullptr; }
 
 Module::Module(char const*, char const*) {}
 void Module::sum_stats(bool) {}
+void Module::main_accumulate_stats() { }
 void Module::show_interval_stats(std::vector<unsigned int, std::allocator<unsigned int> >&, FILE*) {}
 void Module::show_stats() {}
+void Module::init_stats(bool) {}
 void Module::reset_stats() {}
 PegCount Module::get_global_count(char const*) const { return 0; }
 
 }
 
-AppIdModule::AppIdModule(): snort::Module("appid_mock", "appid_mock_help") {}
+AppIdModule::AppIdModule(): snort::Module("appid_mock", "appid_mock_help") { }
 AppIdModule::~AppIdModule() = default;
 void AppIdModule::sum_stats(bool) {}
 void AppIdModule::show_dynamic_stats() {}
@@ -56,10 +58,14 @@ bool AppIdModule::set(char const*, snort::Value&, snort::SnortConfig*) { return 
 const snort::Command* AppIdModule::get_commands() const { return nullptr; }
 const PegInfo* AppIdModule::get_pegs() const { return nullptr; }
 PegCount* AppIdModule::get_counts() const { return nullptr; }
-snort::ProfileStats* AppIdModule::get_profile() const { return nullptr; }
+snort::ProfileStats* AppIdModule::get_profile(
+        unsigned, const char*&, const char*& ) const { return nullptr; }
 void AppIdModule::set_trace(const Trace*) const { }
 const TraceOption* AppIdModule::get_trace_options() const { return nullptr; }
 
+AppIdConfig appid_config;
+AppIdInspector::AppIdInspector(AppIdModule&) : config(&appid_config), ctxt(appid_config)
+{ }
 AppIdInspector::~AppIdInspector() = default;
 void AppIdInspector::eval(snort::Packet*) { }
 bool AppIdInspector::configure(snort::SnortConfig*) { return true; }
@@ -67,19 +73,9 @@ void AppIdInspector::show(const SnortConfig*) const { }
 void AppIdInspector::tinit() { }
 void AppIdInspector::tterm() { }
 void AppIdInspector::tear_down(snort::SnortConfig*) { }
-AppIdContext& AppIdInspector::get_ctxt() const { return *ctxt; }
 
 AppIdModule appid_mod;
-AppIdConfig appid_config;
-AppIdContext appid_ctxt(appid_config);
-THREAD_LOCAL OdpContext* pkt_thread_odp_ctxt = nullptr;
 AppIdInspector dummy_appid_inspector( appid_mod );
-
-AppIdInspector::AppIdInspector(AppIdModule& )
-{
-    ctxt = &appid_ctxt;
-    appid_config.app_detector_dir = "/path/to/appid/detectors/";
-    config = &appid_config;
-}
+THREAD_LOCAL OdpContext* pkt_thread_odp_ctxt = nullptr;
 
 #endif

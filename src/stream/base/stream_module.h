@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -21,8 +21,11 @@
 #ifndef STREAM_MODULE_H
 #define STREAM_MODULE_H
 
+#include <map>
+
 #include "flow/flow_config.h"
 #include "flow/flow_control.h"
+#include "framework/decode_data.h"
 #include "framework/module.h"
 #include "main/analyzer.h"
 #include "main/reload_tuner.h"
@@ -36,6 +39,15 @@ struct SnortConfig;
 extern THREAD_LOCAL snort::ProfileStats s5PerfStats;
 extern THREAD_LOCAL class FlowControl* flow_con;
 extern THREAD_LOCAL const snort::Trace* stream_trace;
+
+static const std::map<std::string, PktType> protocol_to_type =
+{
+    {"TCP", PktType::TCP},
+    {"UDP", PktType::UDP},
+    {"IP", PktType::IP},
+    {"ICMP", PktType::ICMP},
+};
+
 
 #ifdef DEBUG_MSGS
 enum
@@ -75,6 +87,20 @@ struct BaseStats
      PegCount reload_allowed_flow_deletes;
      PegCount reload_blocked_flow_deletes;
      PegCount reload_offloaded_flow_deletes;
+     PegCount ip_timeout_prunes;
+     PegCount tcp_timeout_prunes;
+     PegCount udp_timeout_prunes;
+     PegCount icmp_timeout_prunes;
+     PegCount user_timeout_prunes;
+     PegCount file_timeout_prunes;
+     PegCount pdu_timeout_prunes;  
+     PegCount ip_memcap_prunes;
+     PegCount tcp_memcap_prunes;
+     PegCount udp_memcap_prunes;
+     PegCount icmp_memcap_prunes;
+     PegCount user_memcap_prunes;
+     PegCount file_memcap_prunes;
+     PegCount pdu_memcap_prunes;
 
      // Keep the NOW stats at the bottom as it requires special sum_stats logic
      PegCount current_flows;
@@ -152,6 +178,7 @@ public:
     bool set(const char*, snort::Value&, snort::SnortConfig*) override;
     bool end(const char*, int, snort::SnortConfig*) override;
 
+    const snort::Command* get_commands() const override;
     const PegInfo* get_pegs() const override;
     PegCount* get_counts() const override;
     snort::ProfileStats* get_profile() const override;

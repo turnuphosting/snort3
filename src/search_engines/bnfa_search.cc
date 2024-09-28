@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2005-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -148,8 +148,8 @@
 
 #include <list>
 
+#include "log/log_stats.h"
 #include "log/messages.h"
-#include "utils/stats.h"
 #include "utils/util.h"
 
 using namespace snort;
@@ -840,7 +840,7 @@ static int _bnfa_conv_list_to_csparse_array(bnfa_struct_t* bnfa)
     bnfa_state_t* pi;     /* state indexes into ps */
     bnfa_state_t ps_index=0;
     unsigned nps;
-    bnfa_state_t full[BNFA_MAX_ALPHABET_SIZE];
+    bnfa_state_t full[BNFA_MAX_ALPHABET_SIZE] = {};
 
     /* count total state transitions, account for state and control words  */
     nps = 0;
@@ -1198,16 +1198,6 @@ bnfa_struct_t* bnfaNew(const MpseAgent* agent)
     }
 
     return p;
-}
-
-void bnfaSetCase(bnfa_struct_t* p, int flag)
-{
-    if ( flag == BNFA_PER_PAT_CASE )
-        p->bnfaCaseMode = flag;
-    if ( flag == BNFA_CASE    )
-        p->bnfaCaseMode = flag;
-    if ( flag == BNFA_NOCASE  )
-        p->bnfaCaseMode = flag;
 }
 
 /*

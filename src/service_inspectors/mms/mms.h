@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -108,6 +108,7 @@ enum MmsMsgType
 };
 
 extern THREAD_LOCAL MmsStats mms_stats;
+bool get_buf_mms_data(snort::Packet* p, snort::InspectionBuffer& b);
 
 #endif
 

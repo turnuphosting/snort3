@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -26,6 +26,7 @@
 #include "dce_tcp.h"
 
 #include "detection/detection_engine.h"
+#include "main/snort_config.h"
 #include "pub_sub/dcerpc_events.h"
 #include "utils/util.h"
 
@@ -37,7 +38,7 @@ using namespace snort;
 Dce2TcpFlowData::Dce2TcpFlowData() : FlowData(inspector_id)
 {
     dce2_tcp_stats.concurrent_sessions++;
-    if(dce2_tcp_stats.max_concurrent_sessions < dce2_tcp_stats.concurrent_sessions)
+    if (dce2_tcp_stats.max_concurrent_sessions < dce2_tcp_stats.concurrent_sessions)
         dce2_tcp_stats.max_concurrent_sessions = dce2_tcp_stats.concurrent_sessions;
 }
 
@@ -113,7 +114,7 @@ static DCE2_TcpSsnData* dce2_handle_tcp_session(Packet* p, dce2TcpProtoConf* con
 // class stuff
 //-------------------------------------------------------------------------
 Dce2Tcp::Dce2Tcp(const dce2TcpProtoConf& pc) :
-    config(pc), esm(config) {}
+    config(pc), esm(config) { }
 
 bool Dce2Tcp::configure(snort::SnortConfig* sc)
 {
@@ -130,10 +131,13 @@ void Dce2Tcp::show(const SnortConfig*) const
 void Dce2Tcp::eval(Packet* p)
 {
     DCE2_TcpSsnData* dce2_tcp_sess;
+    // cppcheck-suppress unreadVariable
     Profile profile(dce2_tcp_pstat_main);
 
     assert(p->has_tcp_data());
     assert(p->flow);
+
+    reset_using_rpkt();
 
     if ( p->test_session_flags(SSNFLAG_MIDSTREAM) )
     {
@@ -165,7 +169,6 @@ void Dce2Tcp::clear(Packet* p)
     {
         DCE2_ResetRopts(&dce2_tcp_sess->sd, p);
     }
-
 }
 
 //-------------------------------------------------------------------------

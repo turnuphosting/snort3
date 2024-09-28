@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 // Copyright (C) 1998-2002 Martin Roesch <roesch@sourcefire.com>
 //
@@ -315,6 +315,7 @@ bool FragBitsOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus FragBitsOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(fragBitsPerfStats);
 
     if ( !p->has_ip() )
@@ -399,7 +400,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* fragbits_ctor(Module* p, OptTreeNode*)
+static IpsOption* fragbits_ctor(Module* p, IpsInfo&)
 {
     FragBitsModule* fragBitsModule = (FragBitsModule*)p;
     return new FragBitsOption( fragBitsModule->get_fragBits_data() );

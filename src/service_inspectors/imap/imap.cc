@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2015-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2015-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -39,6 +39,13 @@
 #include "imap_paf.h"
 
 using namespace snort;
+
+// Indices in the buffer array exposed by InspectApi
+// Must remain synchronized with imap_bufs
+enum ImapBufId
+{
+    IMAP_FILE_DATA_ID = 1, IMAP_VBA_DATA_ID, IMAP_JS_DATA_ID
+};
 
 THREAD_LOCAL ProfileStats imapPerfStats;
 THREAD_LOCAL ImapStats imapstats;
@@ -173,13 +180,18 @@ static IMAPData* get_session_data(Flow* flow)
 
 static inline PDFJSNorm* acquire_js_ctx(IMAPData& imap_ssn, const void* data, size_t len)
 {
-    if (imap_ssn.jsn)
+    auto reload_id = SnortConfig::get_conf()->get_reload_id();
+
+    if (imap_ssn.jsn and imap_ssn.jsn->get_generation_id() == reload_id)
         return imap_ssn.jsn;
+
+    delete imap_ssn.jsn;
+    imap_ssn.jsn = nullptr;
 
     JSNormConfig* cfg = get_inspection_policy()->jsn_config;
     if (cfg and PDFJSNorm::is_pdf(data, len))
     {
-        imap_ssn.jsn = new PDFJSNorm(cfg);
+        imap_ssn.jsn = new PDFJSNorm(cfg, reload_id);
         ++imapstats.js_pdf_scripts;
     }
 
@@ -758,6 +770,7 @@ public:
     bool get_buf(InspectionBuffer::Type, Packet*, InspectionBuffer&) override;
     bool get_fp_buf(snort::InspectionBuffer::Type ibt, snort::Packet* p,
         snort::InspectionBuffer& b) override;
+    bool get_buf(unsigned id, snort::Packet* p, snort::InspectionBuffer& b) override;
 
 private:
     IMAP_PROTO_CONF* config;
@@ -774,9 +787,9 @@ Imap::~Imap()
         delete config;
 }
 
-bool Imap::configure(SnortConfig*)
+bool Imap::configure(SnortConfig* sc)
 {
-    config->decode_conf.sync_all_depths();
+    config->decode_conf.sync_all_depths(sc);
 
     if (config->decode_conf.get_file_depth() > -1)
         config->log_config.log_filename = true;
@@ -793,6 +806,7 @@ void Imap::show(const SnortConfig*) const
 
 void Imap::eval(Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(imapPerfStats);
 
     // precondition - what we registered for
@@ -852,6 +866,21 @@ bool Imap::get_fp_buf(InspectionBuffer::Type ibt, Packet* p, InspectionBuffer& b
 {
     // Fast pattern buffers only supplied at specific times
     return get_buf(ibt, p, b);
+}
+
+bool Imap::get_buf(unsigned id, snort::Packet* p, snort::InspectionBuffer& b)
+{
+    switch (id)
+    {
+    case IMAP_FILE_DATA_ID:
+        return false;
+    case IMAP_VBA_DATA_ID:
+        return get_buf(InspectionBuffer::IBT_VBA, p, b);
+    case IMAP_JS_DATA_ID:
+        return get_buf(InspectionBuffer::IBT_JS_DATA, p, b);
+    default:
+        return false;
+    }
 }
 
 //-------------------------------------------------------------------------

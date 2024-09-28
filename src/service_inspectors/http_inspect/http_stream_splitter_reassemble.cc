@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -141,11 +141,12 @@ void HttpStreamSplitter::chunk_spray(HttpFlowData* session_data, uint8_t* buffer
     }
 }
 
-void HttpStreamSplitter::process_gzip_header(const uint8_t* data,
+uint8_t* HttpStreamSplitter::process_gzip_header(const uint8_t* data,
     uint32_t length, HttpFlowData* session_data) const
 {
     uint32_t& header_bytes_processed = session_data->gzip_header_bytes_processed[source_id];
     uint32_t input_bytes_processed = 0;
+    uint8_t* modified_data = nullptr;
     if (session_data->gzip_state[source_id] == GZIP_TBD)
     {
         static const uint8_t gzip_magic[] = {0x1f, 0x8b, 0x08};
@@ -168,9 +169,18 @@ void HttpStreamSplitter::process_gzip_header(const uint8_t* data,
             *session_data->get_infractions(source_id) += INF_GZIP_FEXTRA;
             session_data->events[source_id]->create_event(EVENT_GZIP_FEXTRA);
         }
+        if (gzip_flags & GZIP_RESERVED_FLAGS)
+        {
+            *session_data->get_infractions(source_id) += INF_GZIP_RESERVED_FLAGS;
+            session_data->events[source_id]->create_event(EVENT_GZIP_RESERVED_FLAGS);
+            modified_data = new uint8_t[length];
+            memcpy(modified_data, data, length);
+            modified_data[input_bytes_processed] &= ~GZIP_RESERVED_FLAGS;
+        }
         header_bytes_processed++;
         session_data->gzip_state[source_id] = GZIP_FLAGS_PROCESSED;
     }
+    return modified_data;
 }
 
 bool HttpStreamSplitter::gzip_header_check_done(HttpFlowData* session_data) const
@@ -185,15 +195,21 @@ void HttpStreamSplitter::decompress_copy(uint8_t* buffer, uint32_t& offset, cons
 {
     if ((compression == CMP_GZIP) || (compression == CMP_DEFLATE))
     {
+        uint8_t* data_w_updated_hdr = nullptr;
         if (compression == CMP_GZIP and !gzip_header_check_done(session_data))
-            process_gzip_header(data, length, session_data);
+            data_w_updated_hdr = process_gzip_header(data, length, session_data);
 
-        compress_stream->next_in = const_cast<Bytef*>(data);
+        if (data_w_updated_hdr != nullptr)
+            compress_stream->next_in = const_cast<Bytef*>(data_w_updated_hdr);
+        else 
+            compress_stream->next_in = const_cast<Bytef*>(data);
         compress_stream->avail_in = length;
         compress_stream->next_out = buffer + offset;
         compress_stream->avail_out = MAX_OCTETS - offset;
         int ret_val = inflate(compress_stream, Z_SYNC_FLUSH);
 
+        delete[] data_w_updated_hdr;
+        
         if ((ret_val == Z_OK) || (ret_val == Z_STREAM_END))
         {
             offset = MAX_OCTETS - compress_stream->avail_out;
@@ -236,11 +252,13 @@ void HttpStreamSplitter::decompress_copy(uint8_t* buffer, uint32_t& offset, cons
             inflateReset(compress_stream);
             compress_stream->next_in = const_cast<Bytef*>(zlib_header);
             compress_stream->avail_in = sizeof(zlib_header);
-            inflate(compress_stream, Z_SYNC_FLUSH);
-
-            // Start over at the beginning
-            decompress_copy(buffer, offset, data, length, compression, compress_stream, false,
-                infractions, events, session_data);
+            int ret = inflate(compress_stream, Z_SYNC_FLUSH);
+            if ( ret == Z_OK or ret == Z_STREAM_END)
+            { 
+                // Start over at the beginning
+                decompress_copy(buffer, offset, data, length, compression, compress_stream, false,
+                    infractions, events, session_data);
+            }
             return;
         }
         else
@@ -270,6 +288,7 @@ void HttpStreamSplitter::decompress_copy(uint8_t* buffer, uint32_t& offset, cons
 const StreamBuffer HttpStreamSplitter::reassemble(Flow* flow, unsigned total,
     unsigned, const uint8_t* data, unsigned len, uint32_t flags, unsigned& copied)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(HttpModule::get_profile_stats());
 
     copied = len;

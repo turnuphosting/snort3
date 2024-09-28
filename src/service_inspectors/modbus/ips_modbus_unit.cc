@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2011-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -77,7 +77,7 @@ bool ModbusUnitOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus ModbusUnitOption::eval(Cursor&, Packet* p)
 {
-    RuleProfile profile(modbus_unit_prof);
+    RuleProfile profile(modbus_unit_prof);  // cppcheck-suppress unreadVariable
 
     if ( !p->flow )
         return NO_MATCH;
@@ -123,7 +123,7 @@ public:
     { return DETECT; }
 
 public:
-    uint8_t unit;
+    uint8_t unit = 0;
 };
 
 bool ModbusUnitModule::set(const char*, Value& v, SnortConfig*)
@@ -147,7 +147,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* opt_ctor(Module* m, OptTreeNode*)
+static IpsOption* opt_ctor(Module* m, IpsInfo&)
 {
     ModbusUnitModule* mod = (ModbusUnitModule*)m;
     return new ModbusUnitOption(mod->unit);

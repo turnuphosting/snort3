@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2020-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2020-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -81,7 +81,7 @@ static int cname_pattern_match(void* id, void*, int match_end_pos, void* data, v
     }
     return 0;
 }
-/*  
+/*
 Only patterns that match end of the payload AND
 (match the start of the payload
 or match after '.'
@@ -116,7 +116,7 @@ static bool scan_patterns(SearchTool& matcher, const uint8_t* data, size_t size,
 
     if (!mp)
         return false;
-    
+
     MatchedSslPatterns* tmp = mp;
 
     while (tmp)

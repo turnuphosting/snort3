@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2017-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2017-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -36,6 +36,7 @@
 #include "log/messages.h"
 #include "main/shell.h"
 #include "main/snort_config.h"
+#include "main/thread.h"
 #include "utils/stats.h"
 #include "utils/util.h"
 #include "utils/util_cstring.h"
@@ -337,6 +338,35 @@ static void delete_control(int fd)
         delete_control(iter);
 }
 
+static int execute_control_commands(ControlConn *ctrlcon)
+{
+    int executed = 0;
+    if (!ctrlcon)
+        return executed;
+
+    executed = ctrlcon->execute_commands();
+    if (executed > 0)
+    {
+        if (ctrlcon->is_local())
+            proc_stats.local_commands += executed;
+        else
+            proc_stats.remote_commands += executed;
+    }
+    return executed;
+}
+
+static void process_pending_control_commands()
+{
+    for (auto it : controls)
+    {
+        if (it.second->has_pending_command())
+        {
+            ControlConn* ctrlcon = it.second;
+            execute_control_commands(ctrlcon);
+        }
+    }
+}
+
 static bool process_control_commands(int fd)
 {
     const auto iter = controls.find(fd);
@@ -353,14 +383,7 @@ static bool process_control_commands(int fd)
         return false;
     }
 
-    int executed = ctrlcon->execute_commands();
-    if (executed > 0)
-    {
-        if (ctrlcon->is_local())
-            proc_stats.local_commands += executed;
-        else
-            proc_stats.remote_commands += executed;
-    }
+    int executed = execute_control_commands(ctrlcon);
 
     if (ctrlcon->is_closed())
         delete_control(iter);
@@ -490,6 +513,8 @@ bool ControlMgmt::service_users()
     static FdEvents event[MAX_CONTROL_FDS];
     unsigned nevent;
 
+    process_pending_control_commands();
+
     if (!poll_control_fds(event, nevent))
         return false;
 
@@ -519,3 +544,76 @@ bool ControlMgmt::service_users()
     return (serviced > 0);
 }
 
+
+// -----------------------------------------------------------------------------
+// unit tests
+// -----------------------------------------------------------------------------
+
+
+#ifdef UNIT_TEST
+#include "catch/snort_catch.h"
+#include "main/ac_shell_cmd.h"
+
+class ACExample : public AnalyzerCommand
+{
+    bool execute(Analyzer &, void **) override { return true; }
+    const char * stringify() override { return "ACExample"; }
+    ~ACExample() override {}
+};
+
+TEST_CASE("Do not delete ctrlcon if its in use by another ACShellCmd")
+{
+    int pipefd[2];
+    pipe(pipefd);
+
+    ControlConn* ctrlcon = new ControlConn(pipefd[1], false);
+
+    auto iter = controls.insert({pipefd[1], ctrlcon});
+
+    ACShellCmd* acshell1 = new ACShellCmd(ctrlcon, new ACExample());
+    ACShellCmd* acshell2 = new ACShellCmd(ctrlcon, new ACExample());
+
+    delete_control(iter.first);
+
+    delete acshell1;
+
+    CHECK((ctrlcon->is_blocked() == true));
+    CHECK((ctrlcon->is_closed() == false));
+
+    delete acshell2;
+
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+};
+
+TEST_CASE("Do not unblock ctrlcon if its in use by another ACShellCmd")
+{
+    int pipefd[2];
+    pipe(pipefd);
+
+    ControlConn* ctrlcon = new ControlConn(pipefd[1], false);
+
+    auto iter = controls.insert({pipefd[1], ctrlcon});
+
+    ACShellCmd* acshell1 = new ACShellCmd(ctrlcon, new ACExample());
+    ACShellCmd* acshell2 = new ACShellCmd(ctrlcon, new ACExample());
+
+    CHECK((ctrlcon->is_blocked() == true));
+
+    delete acshell1;
+
+    CHECK((ctrlcon->is_blocked() == true));
+
+    delete acshell2;
+
+    CHECK((ctrlcon->is_blocked() == false));
+
+    delete_control(iter.first);
+
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+};
+
+#endif

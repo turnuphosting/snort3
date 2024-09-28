@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -25,9 +25,9 @@
 
 #include "daq_common.h"
 
-#include "actions/actions.h"
 #include "detection/detection_engine.h"
-#include "framework/file_policy.h"
+#include "file_api/file_policy.h"
+#include "framework/ips_action.h"
 #include "framework/policy_selector.h"
 #include "js_norm/js_config.h"
 #include "log/messages.h"
@@ -123,7 +123,13 @@ FilePolicy* NetworkPolicy::get_file_policy() const
 void NetworkPolicy::add_file_policy_rule(FileRule& file_rule)
 { file_policy->add_file_id(file_rule); }
 
-InspectionPolicy* NetworkPolicy::get_user_inspection_policy(unsigned user_id)
+void NetworkPolicy::setup_inspection_policies()
+{
+    std::for_each(inspection_policy.begin(), inspection_policy.end(),
+        [this](InspectionPolicy* ip){ set_user_inspection(ip); });
+}
+
+InspectionPolicy* NetworkPolicy::get_user_inspection_policy(uint64_t user_id) const
 {
     auto it = user_inspection.find(user_id);
     return it == user_inspection.end() ? nullptr : it->second;
@@ -182,7 +188,7 @@ void InspectionPolicy::configure()
 // detection policy
 //-------------------------------------------------------------------------
 
-IpsPolicy::IpsPolicy(PolicyId id) : action(Actions::get_max_types(), nullptr)
+IpsPolicy::IpsPolicy(PolicyId id) : action(IpsAction::get_max_types(), nullptr)
 {
     policy_id = id;
     policy_mode = POLICY_MODE__MAX;
@@ -276,12 +282,8 @@ PolicyMap::~PolicyMap()
 
 bool PolicyMap::setup_network_policies()
 {
-    for (auto* np : network_policy)
-    {
-        if (!set_user_network(np))
-            return false;
-    }
-    return true;
+    return std::none_of(network_policy.begin(), network_policy.end(),
+        [this](NetworkPolicy* np){ return !set_user_network(np); });
 }
 
 void PolicyMap::clone(PolicyMap *other_map, const char* exclude_name)
@@ -386,9 +388,10 @@ NetworkPolicy* PolicyMap::get_user_network(uint64_t user_id) const
 bool PolicyMap::set_user_network(NetworkPolicy* p)
 {
     NetworkPolicy* current_np = get_user_network(p->user_policy_id);
-    if (current_np && p != current_np)
-        return false;
+    if (current_np)
+        return p == current_np;
     user_network[p->user_policy_id] = p;
+    p->setup_inspection_policies();
     return true;
 }
 
@@ -428,7 +431,7 @@ void set_inspection_policy(InspectionPolicy* p)
 void set_ips_policy(IpsPolicy* p)
 { s_detection_policy = p; }
 
-InspectionPolicy* get_user_inspection_policy(unsigned policy_id)
+InspectionPolicy* get_user_inspection_policy(uint64_t policy_id)
 {
     NetworkPolicy* np = get_network_policy();
     assert(np);

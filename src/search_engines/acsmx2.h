@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2004-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -140,7 +140,6 @@ void acsmPrintInfo2(ACSM_STRUCT2* p);
 
 int acsmPrintDetailInfo2(ACSM_STRUCT2*);
 int acsmPrintSummaryInfo2();
-void acsmx2_print_qinfo();
 void acsm_init_summary();
 
 #endif

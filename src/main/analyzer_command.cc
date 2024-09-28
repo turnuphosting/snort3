@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -32,12 +32,14 @@
 #include "protocols/packet_manager.h"
 #include "target_based/host_attributes.h"
 #include "utils/stats.h"
+#include "packet_io/sfdaq_instance.h"
 
 #include "analyzer.h"
 #include "reload_tracker.h"
 #include "reload_tuner.h"
 #include "snort.h"
 #include "snort_config.h"
+#include "thread_config.h"
 #include "swapper.h"
 
 using namespace snort;
@@ -119,7 +121,7 @@ bool ACGetStats::execute(Analyzer&, void**)
 
 ACGetStats::~ACGetStats()
 {
-
+    ModuleManager::accumulate_module("memory");
     // FIXIT-L This should track the owner so it can dump stats to the
     // shell instead of the logs when initiated by a shell command
     DropStats(ctrlcon);
@@ -137,8 +139,24 @@ bool ACResetStats::execute(Analyzer&, void**)
 ACResetStats::ACResetStats(clear_counter_type_t requested_type_l) : requested_type(
         requested_type_l) { }
 
+ACResetStats::~ACResetStats()
+{
+    // Destructor is called only from main thread,
+    // main-thread stats are reset here.
+
+    if (requested_type == TYPE_MODULE or requested_type == TYPE_ALL)
+        ModuleManager::reset_module_stats("memory");
+
+    if (requested_type == TYPE_SNORT or requested_type == TYPE_ALL)
+        ModuleManager::reset_module_stats("snort");
+}
+
 bool ACSwap::execute(Analyzer& analyzer, void** ac_state)
 {
+    if (analyzer.get_state() != Analyzer::State::PAUSED and
+        analyzer.get_state() != Analyzer::State::RUNNING)
+        return false;
+
     if (ps)
     {
         ps->apply(analyzer);
@@ -252,4 +270,56 @@ ACScratchUpdate::~ACScratchUpdate()
 SFDAQInstance* AnalyzerCommand::get_daq_instance(Analyzer& analyzer)
 {
     return analyzer.get_daq_instance();
+}
+
+ACShowSnortCPU::~ACShowSnortCPU()
+{
+    if (DAQ_SUCCESS == status)
+    {
+        LogRespond(ctrlcon, "\nSummary \t%.1f%% \t%.1f%% \t%.1f%%\n",
+            cpu_usage_30s/instance_num, cpu_usage_120s/instance_num,
+            cpu_usage_300s/instance_num);
+    }
+}
+
+bool ACShowSnortCPU::execute(Analyzer& analyzer, void**)
+{
+    DIOCTL_GetCpuProfileData get_data = {};
+
+    {
+        std::lock_guard<std::mutex> lock(cpu_usage_mutex);
+        assert(DAQ_SUCCESS == status);
+
+        SFDAQInstance* instance = get_daq_instance(analyzer);
+        ThreadConfig *thread_config = SnortConfig::get_conf()->thread_config;
+        int tid = thread_config->get_instance_tid(get_instance_id());
+
+        status = instance->ioctl(
+                     (DAQ_IoctlCmd)DIOCTL_GET_CPU_PROFILE_DATA,
+                     (void *)(&get_data),
+                     sizeof(DIOCTL_GetCpuProfileData));
+
+        if (DAQ_SUCCESS != status)
+        {
+            LogRespond(ctrlcon, "Fetching profile data failed from DAQ instance\n");
+            return true; 
+        }
+
+        double cpu_30s = static_cast<double> (get_data.cpu_usage_percent_30s);
+        double cpu_120s = static_cast<double> (get_data.cpu_usage_percent_120s);
+        double cpu_300s = static_cast<double> (get_data.cpu_usage_percent_300s);
+
+        // Print CPU usage
+        LogRespond(ctrlcon, "%-3d \t%-6d \t%.1f%% \t%.1f%% \t%.1f%%\n",
+            instance_num, tid, cpu_30s, cpu_120s, cpu_300s);
+
+        // Add CPU usage data
+        cpu_usage_30s += cpu_30s;
+        cpu_usage_120s += cpu_120s;
+        cpu_usage_300s += cpu_300s;
+        instance_num++;
+
+    }
+
+    return true;
 }

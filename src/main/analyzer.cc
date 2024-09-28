@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -35,6 +35,7 @@
 #include "detection/detect.h"
 #include "detection/detection_engine.h"
 #include "detection/ips_context.h"
+#include "detection/event_trace.h"
 #include "detection/tag.h"
 #include "file_api/file_service.h"
 #include "filters/detection_filter.h"
@@ -50,18 +51,19 @@
 #include "main/swapper.h"
 #include "main.h"
 #include "managers/action_manager.h"
+#include "managers/codec_manager.h"
 #include "managers/inspector_manager.h"
 #include "managers/ips_manager.h"
 #include "managers/event_manager.h"
 #include "managers/module_manager.h"
 #include "memory/memory_cap.h"
 #include "packet_io/active.h"
+#include "packet_io/packet_tracer.h"
 #include "packet_io/sfdaq.h"
 #include "packet_io/sfdaq_config.h"
 #include "packet_io/sfdaq_instance.h"
 #include "packet_io/sfdaq_module.h"
-#include "packet_tracer/packet_tracer.h"
-#include "profiler/profiler.h"
+#include "profiler/profiler_impl.h"
 #include "pub_sub/daq_message_event.h"
 #include "pub_sub/finalize_packet_event.h"
 #include "side_channel/side_channel.h"
@@ -378,6 +380,7 @@ void Analyzer::post_process_daq_pkt_msg(Packet* p)
         p->pkth = nullptr;  // No longer avail after finalize_message.
 
         {
+            // cppcheck-suppress unreadVariable
             Profile profile(daqPerfStats);
             p->daq_instance->finalize_message(p->daq_msg, verdict);
         }
@@ -406,7 +409,7 @@ void Analyzer::process_daq_pkt_msg(DAQ_Msg_h msg, bool retry)
 
     Packet* p = switcher->get_context()->packet;
     p->context->wire_packet = p;
-    p->context->packet_number = get_packet_number();
+    p->context->packet_number = pc.analyzed_pkts;
     select_default_policy(*pkthdr, p->context->conf);
 
     DetectionEngine::reset();
@@ -471,6 +474,7 @@ void Analyzer::process_daq_msg(DAQ_Msg_h msg, bool retry)
     }
     oops_handler->set_current_message(nullptr, nullptr);
     {
+        // cppcheck-suppress unreadVariable
         Profile profile(daqPerfStats);
         daq_instance->finalize_message(msg, verdict);
     }
@@ -495,12 +499,6 @@ void Analyzer::process_retry_queue()
 /*
  * Public packet processing methods
  */
-bool Analyzer::inspect_rebuilt(Packet* p)
-{
-    DetectionEngine de;
-    return main_hook(p);
-}
-
 bool Analyzer::process_rebuilt_packet(Packet* p, const DAQ_PktHdr_t* pkthdr, const uint8_t* pkt,
     uint32_t pktlen)
 {
@@ -521,6 +519,7 @@ void Analyzer::post_process_packet(Packet* p)
 
 void Analyzer::finalize_daq_message(DAQ_Msg_h msg, DAQ_Verdict verdict)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(daqPerfStats);
     daq_instance->finalize_message(msg, verdict);
 }
@@ -561,6 +560,7 @@ const char* Analyzer::get_state_string()
         case State::RUNNING:     return "RUNNING";
         case State::PAUSED:      return "PAUSED";
         case State::STOPPED:     return "STOPPED";
+        case State::FAILED:      return "FAILED";
         default: assert(false);
     }
 
@@ -587,7 +587,7 @@ void Analyzer::idle()
     timeradd(&now, &increment, &now);
     packet_time_update(&now);
 
-    DataBus::publish(intrinsic_pub_id, IntrinsicEventIds::THREAD_IDLE, nullptr);
+    DataBus::publish_to_all_network_policies(intrinsic_pub_id, IntrinsicEventIds::THREAD_IDLE);
 
     // Service the retry queue with the new packet time.
     process_retry_queue();
@@ -627,7 +627,7 @@ void Analyzer::init_unprivileged()
     // to handle all trace log messages
     TraceApi::thread_init(sc->trace_config);
 
-    CodecManager::thread_init(sc);
+    CodecManager::thread_init();
 
     // this depends on instantiated daq capabilities
     // so it is done here instead of init()
@@ -655,7 +655,6 @@ void Analyzer::init_unprivileged()
 
     // init filters hash tables that depend on alerts
     sfthreshold_alloc(sc->threshold_config->memcap, sc->threshold_config->memcap);
-    SFRF_Alloc(sc->rate_filter_config->memcap);
 }
 
 void Analyzer::reinit(const SnortConfig* sc)
@@ -684,6 +683,7 @@ void Analyzer::term()
     while ((msg = retry_queue->get()) != nullptr)
     {
         daq_stats.retries_discarded++;
+        // cppcheck-suppress unreadVariable
         Profile profile(daqPerfStats);
         daq_instance->finalize_message(msg, DAQ_VERDICT_BLOCK);
     }
@@ -722,19 +722,17 @@ void Analyzer::term()
     delete switcher;
 
     sfthreshold_free();
-    RateFilter_Cleanup();
-
     TraceApi::thread_term();
 }
 
-Analyzer::Analyzer(SFDAQInstance* instance, unsigned i, const char* s, uint64_t msg_cnt)
+Analyzer::Analyzer(SFDAQInstance* instance, unsigned i, const char* s, uint64_t msg_cnt) :
+    id(i),
+    exit_after_cnt(msg_cnt),
+    source(s ? s : ""),
+    daq_instance(instance),
+    retry_queue(new RetryQueue(200)),
+    oops_handler(new OopsHandler())
 {
-    id = i;
-    exit_after_cnt = msg_cnt;
-    source = s ? s : "";
-    daq_instance = instance;
-    oops_handler = new OopsHandler();
-    retry_queue = new RetryQueue(200);
     set_state(State::NEW);
 }
 
@@ -778,7 +776,8 @@ void Analyzer::operator()(Swapper* ps, uint16_t run_num)
     Profiler::stop(pc.analyzed_pkts);
     term();
 
-    set_state(State::STOPPED);
+    if (state != State::FAILED)
+        set_state(State::STOPPED);
 
     oops_handler->tterm();
 }
@@ -874,6 +873,7 @@ DAQ_RecvStatus Analyzer::process_messages()
 
     DAQ_RecvStatus rstat;
     {
+        // cppcheck-suppress unreadVariable
         Profile profile(daqPerfStats);
         rstat = daq_instance->receive_messages(max_recv);
     }
@@ -971,6 +971,8 @@ void Analyzer::start()
     {
         ErrorMessage("Analyzer: Failed to start DAQ instance\n");
         exit_requested = true;
+        set_state(State::FAILED);
+        return;
     }
     set_state(State::STARTED);
 }

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -29,7 +29,6 @@
 // rule groups are selected based on traffic and any fast pattern
 // matches trigger rule tree evaluation.
 
-#include "main/thread.h"
 #include "profiler/profiler_defs.h"
 #include "target_based/snort_protocols.h"
 

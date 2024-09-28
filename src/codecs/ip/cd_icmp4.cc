@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2002-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -565,9 +565,12 @@ namespace
 {
 struct IcmpHdr
 {
+    // cppcheck-suppress unusedStructMember
     uint8_t type;
+    // cppcheck-suppress unusedStructMember
     uint8_t code;
     uint16_t cksum;
+    // cppcheck-suppress unusedStructMember
     uint32_t unused;
 };
 } // namespace

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2022-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2022-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -53,7 +53,7 @@ private:
     static THREAD_LOCAL snort::ProfileStats http_param_ps;
 
     std::string param;       // provide buffer containing specific parameter
-    bool nocase;             // case insensitive match
+    bool nocase = false;             // case insensitive match
     snort::LiteralSearch::Handle* search_handle;
 };
 
@@ -67,11 +67,11 @@ public:
     uint32_t hash() const override;
     bool operator==(const snort::IpsOption& ips) const override;
 
-    static IpsOption* opt_ctor(snort::Module* m, OptTreeNode*)
+    static IpsOption* opt_ctor(snort::Module* m, IpsInfo&)
     { return new HttpParamIpsOption((HttpParamRuleOptModule*)m); }
 
     static void opt_dtor(snort::IpsOption* p) { delete p; }
-    bool retry(Cursor& , const Cursor&) override;
+    bool retry(Cursor&) override;
 
     snort::section_flags get_pdu_section(bool) const override;
 

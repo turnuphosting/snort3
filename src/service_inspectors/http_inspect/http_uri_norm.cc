@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -27,6 +27,8 @@
 
 #include "http_enum.h"
 #include "log/messages.h"
+
+#define MAP_SIZE 65536
 
 using namespace HttpEnums;
 using namespace snort;
@@ -491,9 +493,9 @@ bool UriNormalizer::classic_need_norm(const Field& uri_component, bool do_path,
     return need_norm(uri_component, do_path, uri_param, &unused, &events_sink);
 }
 
-void UriNormalizer::load_default_unicode_map(uint8_t map[65536])
+void UriNormalizer::load_default_unicode_map(uint8_t map[MAP_SIZE])
 {
-    memset(map, 0xFF, 65536);
+    memset(map, 0xFF, MAP_SIZE);
 
     // Default unicode map is just a single string of tokens of the form
     // HHHH:HH (HHHH = unicode, HH = ascii char)

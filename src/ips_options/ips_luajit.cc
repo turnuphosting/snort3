@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,7 +25,6 @@
 #include "framework/decode_data.h"
 #include "framework/module.h"
 #include "hash/hash_key_operations.h"
-#include "helpers/chunk.h"
 #include "lua/lua.h"
 #include "log/messages.h"
 #include "main/thread_config.h"
@@ -34,6 +33,7 @@
 #include "managers/plugin_manager.h"
 #include "managers/script_manager.h"
 #include "profiler/profiler.h"
+#include "utils/chunk.h"
 #include "utils/util.h"
 
 using namespace snort;
@@ -130,13 +130,8 @@ private:
 
 LuaJitOption::LuaJitOption(
     const char* name, std::string& chunk, LuaJitModule* mod)
-    : IpsOption((my_name = snort_strdup(name)))
+    : IpsOption((my_name = snort_strdup(name))), config("args = { " + mod->args + "}")
 {
-    // create an args table with any rule options
-    config = "args = { ";
-    config += mod->args;
-    config += "}";
-
     unsigned max = ThreadConfig::get_instance_max();
     states.reserve(max);
 
@@ -175,6 +170,7 @@ bool LuaJitOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus LuaJitOption::eval(Cursor& c, Packet*)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(luaIpsPerfStats);
 
     cursor = &c;
@@ -215,7 +211,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* opt_ctor(Module* m, struct OptTreeNode*)
+static IpsOption* opt_ctor(Module* m, struct IpsInfo&)
 {
     const char* key = IpsManager::get_option_keyword();
     std::string* chunk = ScriptManager::get_chunk(key);

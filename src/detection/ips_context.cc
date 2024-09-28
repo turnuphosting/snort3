@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -107,12 +107,14 @@ void IpsContext::clear()
     if ( remove_gadget and packet->flow and !packet->is_rebuilt() )
     {
        Stream::disable_reassembly(packet->flow);
+       packet->flow->flags.disable_reassembly_by_ips = true;
 
        if ( packet->flow->gadget )
            packet->flow->clear_gadget();
     }
     remove_gadget = false;
     assert(post_callbacks.empty());
+    matched_buffers.clear();
 }
 
 void IpsContext::set_context_data(unsigned id, IpsContextData* cd)

@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2004-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -21,8 +21,8 @@
 #include "config.h"
 #endif
 
+#include "framework/pig_pen.h"
 #include "main/snort_config.h"
-#include "managers/inspector_manager.h"
 #include "profiler/profiler.h"
 #include "protocols/packet.h"
 #include "stream/stream.h"
@@ -63,6 +63,7 @@ static inline int InspectClientPacket(Packet* p)
 static int SnortFTP(
     FTP_SESSION* FTPsession, Packet* p, int iInspectMode)
 {
+    // cppcheck-suppress unreadVariable
     Profile profile(ftpPerfStats);
 
     if ( !FTPsession || !FTPsession->server_conf || !FTPsession->client_conf )
@@ -195,7 +196,6 @@ public:
     { delete ftp_client; }
 
     void show(const SnortConfig*) const override;
-    void eval(Packet*) override { }
 
     FTP_CLIENT_PROTO_CONF* ftp_client;
 };
@@ -271,7 +271,7 @@ FTP_CLIENT_PROTO_CONF* get_ftp_client(Packet* p)
     FtpClient* client = (FtpClient*)p->flow->data;
     if ( !client )
     {
-        client = (FtpClient*)InspectorManager::get_inspector(FTP_CLIENT_NAME);
+        client = (FtpClient*)PigPen::get_inspector(FTP_CLIENT_NAME);
         assert(client);
         p->flow->set_data(client);
     }

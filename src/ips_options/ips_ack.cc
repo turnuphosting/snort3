@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -41,9 +41,8 @@ static THREAD_LOCAL ProfileStats tcpAckPerfStats;
 class TcpAckOption : public IpsOption
 {
 public:
-    TcpAckOption(const RangeCheck& c) :
-        IpsOption(s_name)
-    { config = c; }
+    TcpAckOption(const RangeCheck& c) : IpsOption(s_name), config(c)
+    { }
 
     uint32_t hash() const override;
     bool operator==(const IpsOption&) const override;
@@ -80,12 +79,15 @@ bool TcpAckOption::operator==(const IpsOption& ips) const
 
 IpsOption::EvalStatus TcpAckOption::eval(Cursor&, Packet* p)
 {
+    // cppcheck-suppress unreadVariable
     RuleProfile profile(tcpAckPerfStats);
 
-    if ( p->ptrs.tcph && config.eval(p->ptrs.tcph->th_ack) )
-        return MATCH;
+    if ( !p->ptrs.tcph )
+        return NO_MATCH;
 
-    return NO_MATCH;
+    auto ack = p->ptrs.tcph->ack();
+
+    return config.eval(ack) ? MATCH : NO_MATCH;
 }
 
 //-------------------------------------------------------------------------
@@ -146,7 +148,7 @@ static void mod_dtor(Module* m)
     delete m;
 }
 
-static IpsOption* ack_ctor(Module* p, OptTreeNode*)
+static IpsOption* ack_ctor(Module* p, IpsInfo&)
 {
     AckModule* m = (AckModule*)p;
     return new TcpAckOption(m->data);

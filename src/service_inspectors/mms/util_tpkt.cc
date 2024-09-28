@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2021-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2021-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -83,7 +83,7 @@ TpktEncapLayerSearchStateType is_tpkt(Cursor* c, TpktFlowData* tpktfd, bool is_f
     // if it turns out not to be a partial it will get caught on the
     // next loop
     const uint8_t tpkt_version = *(c->start());
-    if (tpkt_version == 0x03 and remaining_bytes > 0x00 and remaining_bytes < sizeof(TpktHdr))
+    if (tpkt_version == 0x03 and remaining_bytes < sizeof(TpktHdr))
     {
         return TPKT_ENCAP_LAYER_SEARCH_STATE__PARTIAL;
     }

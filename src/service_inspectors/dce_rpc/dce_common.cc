@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2016-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2016-2024 Cisco and/or its affiliates. All rights reserved.
 //
 // This program is free software; you can redistribute it and/or modify it
 // under the terms of the GNU General Public License Version 2 as published
@@ -25,15 +25,13 @@
 #include "dce_common.h"
 
 #include "detection/detection_engine.h"
-#include "ips_options/extract.h"
+#include "detection/extract.h"
 #include "log/messages.h"
 #include "utils/safec.h"
 
 #include "dce_context_data.h"
 #include "dce_http_proxy_module.h"
 #include "dce_http_server_module.h"
-#include "dce_smb1.h"
-#include "dce_smb_common.h"
 #include "dce_smb_utils.h"
 #include "dce_tcp.h"
 #include "dce_udp.h"

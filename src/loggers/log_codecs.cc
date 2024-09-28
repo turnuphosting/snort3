@@ -1,5 +1,5 @@
 //--------------------------------------------------------------------------
-// Copyright (C) 2014-2023 Cisco and/or its affiliates. All rights reserved.
+// Copyright (C) 2014-2024 Cisco and/or its affiliates. All rights reserved.
 // Copyright (C) 2013-2013 Sourcefire, Inc.
 //
 // This program is free software; you can redistribute it and/or modify it
@@ -23,7 +23,6 @@
 #endif
 
 #include "detection/ips_context.h"
-#include "detection/signature.h"
 #include "events/event.h"
 #include "framework/logger.h"
 #include "framework/module.h"
@@ -139,8 +138,9 @@ void CodecLogger::log(Packet* p, const char* msg, Event* e)
 
     if (e != nullptr)
     {
-        TextLog_Print(test_file, "    gid:%u    sid:%u    rev:%u\t",
-            e->sig_info->gid, e->sig_info->sid, e->sig_info->rev);
+        uint32_t gid, sid, rev;
+        e->get_sig_ids(gid, sid, rev);
+        TextLog_Print(test_file, "    gid:%u    sid:%u    rev:%u\t", gid, sid, rev);
     }
 
     if (flags & ALERT_FLAG_MSG)
